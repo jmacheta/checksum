@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: build-and-test (${{ matrix.preset }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [native-gcc, native-clang, native-asan]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install GCC 14
+        if: matrix.preset != 'native-clang'
+        run: sudo apt-get install -y gcc-14 g++-14
+
+      - name: Install Clang 18
+        if: matrix.preset != 'native-gcc'
+        run: sudo apt-get install -y clang-18
+
+      - name: Select compiler versions
+        run: |
+          echo "CC=$([[ '${{ matrix.preset }}' == native-gcc ]] && echo gcc-14 || echo clang-18)" >> "$GITHUB_ENV"
+          echo "CXX=$([[ '${{ matrix.preset }}' == native-gcc ]] && echo g++-14 || echo clang++-18)" >> "$GITHUB_ENV"
+
+      - name: Cache CPM packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
+        with:
+          path: .cpm-cache
+          key: cpm-${{ hashFiles('cmake/requirements.cmake') }}
+
+      - name: Configure, build and test
+        run: cmake --workflow --preset ${{ matrix.preset }}
+
+  build-and-test-macos:
+    name: build-and-test-macos
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install ninja
+        run: brew install ninja
+
+      - name: Cache CPM packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
+        with:
+          path: .cpm-cache
+          key: cpm-macos-${{ hashFiles('cmake/requirements.cmake') }}
+
+      - name: Configure, build and test
+        run: cmake --workflow --preset native-clang
+
+  build-and-test-windows:
+    name: build-and-test-windows
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Cache CPM packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
+        with:
+          path: .cpm-cache
+          key: cpm-windows-${{ hashFiles('cmake/requirements.cmake') }}
+
+      - name: Configure, build and test
+        run: cmake --workflow --preset native-msvc
+
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
+
+      - name: clang-format check
+        run: |
+          find src tests \( -name '*.cpp' -o -name '*.hpp' \) | xargs clang-format-18 --dry-run --Werror
+
+      - name: Install cmake-format
+        run: pip install cmakelang
+
+      - name: cmake-format check
+        run: |
+          find . \( -name 'CMakeLists.txt' -o -name '*.cmake' \) -not -path './cmake/CPM.cmake' -not -path './build/*' -not -path './.cpm-cache/*' \
+            | xargs cmake-format --check
+
+      - name: cspell
+        run: npx --yes cspell@8 --config .cspell.yml --no-progress "**"

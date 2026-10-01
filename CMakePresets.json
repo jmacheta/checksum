@@ -1,0 +1,243 @@
+{
+    "version": 8,
+    "configurePresets": [
+        {
+            "name": "common",
+            "hidden": true,
+            "generator": "Ninja Multi-Config",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Release;Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_CXX_SCAN_FOR_MODULES": "OFF"
+            },
+            "environment": {
+                "CPM_SOURCE_CACHE": "${sourceDir}/.cpm-cache",
+                "CPM_USE_NAMED_CACHE_DIRECTORIES": "ON"
+            }
+        },
+        {
+            "name": "gcc-clang-common",
+            "hidden": true,
+            "inherits": "common",
+            "cacheVariables": {
+                "CMAKE_C_FLAGS_DEBUG": "-g -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern",
+                "CMAKE_CXX_FLAGS_DEBUG": "-g -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern"
+            },
+            "environment": {
+                "CFLAGS": "-Wall -Wextra -Wpedantic -Wunused-parameter -Winit-self -Wcast-align -Wconversion -Wnull-dereference -Wduplicated-cond -Wsign-conversion -Wlogical-op -Wno-psabi",
+                "CXXFLAGS": "-Wall -Wextra -Wpedantic -Wunused-parameter -Winit-self -Wcast-align -Wconversion -Wnull-dereference -Wduplicated-cond -Wsign-conversion -Wlogical-op -Wno-psabi"
+            }
+        },
+        {
+            "name": "native-gcc",
+            "displayName": "Linux native (GCC)",
+            "description": "Native Linux build using GCC",
+            "inherits": "gcc-clang-common",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "gcc",
+                "CMAKE_CXX_COMPILER": "g++"
+            }
+        },
+        {
+            "name": "native-clang",
+            "displayName": "Linux native (Clang)",
+            "description": "Native Linux build using Clang",
+            "inherits": "gcc-clang-common",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "native-asan",
+            "displayName": "Linux native (ASan+UBSan)",
+            "description": "Native Linux build instrumented with AddressSanitizer and UndefinedBehaviorSanitizer, for tests",
+            "inherits": "gcc-clang-common",
+            "cacheVariables": {
+                "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+            }
+        },
+        {
+            "name": "native-msvc",
+            "displayName": "Windows native (MSVC)",
+            "description": "Native Windows build using MSVC",
+            "inherits": "common",
+            "generator": "Visual Studio 17 2022",
+            "cacheVariables": {
+                "CMAKE_CXX_FLAGS": "/W4 /permissive-"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "native-gcc-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "native-gcc",
+            "configuration": "Debug"
+        },
+        {
+            "name": "native-gcc-release",
+            "displayName": "all [Release]",
+            "configurePreset": "native-gcc",
+            "configuration": "Release"
+        },
+        {
+            "name": "native-clang-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "native-clang",
+            "configuration": "Debug"
+        },
+        {
+            "name": "native-clang-release",
+            "displayName": "all [Release]",
+            "configurePreset": "native-clang",
+            "configuration": "Release"
+        },
+        {
+            "name": "native-asan-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "native-asan",
+            "configuration": "Debug"
+        },
+        {
+            "name": "native-msvc-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "native-msvc",
+            "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "native-gcc-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "native-gcc",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "native-clang-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "native-clang",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "native-asan-debug",
+            "displayName": "Run Tests [Debug, ASan+UBSan]",
+            "configurePreset": "native-asan",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "native-msvc-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "native-msvc",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "native-gcc",
+            "displayName": "Linux native (GCC)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "native-gcc"
+                },
+                {
+                    "type": "build",
+                    "name": "native-gcc-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "native-gcc-debug"
+                }
+            ]
+        },
+        {
+            "name": "native-clang",
+            "displayName": "Linux native (Clang)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "native-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "native-clang-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "native-clang-debug"
+                }
+            ]
+        },
+        {
+            "name": "native-asan",
+            "displayName": "Linux native (ASan+UBSan)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "native-asan"
+                },
+                {
+                    "type": "build",
+                    "name": "native-asan-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "native-asan-debug"
+                }
+            ]
+        },
+        {
+            "name": "native-msvc",
+            "displayName": "Windows native (MSVC)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "native-msvc"
+                },
+                {
+                    "type": "build",
+                    "name": "native-msvc-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "native-msvc-debug"
+                }
+            ]
+        }
+    ]
+}

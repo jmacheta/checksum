@@ -1,0 +1,92 @@
+enabled: true
+readonly: true
+language: en
+caseSensitive: false
+
+useGitignore: false # ensures better compatibility when used in multiple projects
+
+enabledFileTypes:
+ - cpp
+ - c
+ - markdown
+ - cmake
+ - json
+ - yaml
+
+files: /**
+ignorePaths:
+ - .clangd
+ - .clang-format
+ - .cmake-format
+ - .cspell.yml
+ - build/**
+ - install/**
+ - .cpm-cache/**
+ - cmake/CPM.cmake # vendored third-party file, not ours to spell-check
+
+ignoreRegExpList:
+ - /-W(no)*[a-z]+/g # ignore compiler warning flags
+ - /-D[A-Z]+/g # ignore compiler define flags
+
+words:
+- asan
+- castagnoli
+- ccitt
+- cmakelists
+- consteval
+- constexpr
+- cpmaddpackage
+- crc
+- crcs
+- ctest
+- cvref
+- cxxflags
+- darc
+- eabi
+- fconstexpr
+- fetchcontent
+- fsanitize
+- fstack
+- ftrivial
+- glibcxx
+- googletest
+- gtest
+- hdlc
+- iscsi
+- jmacheta
+- kermit
+- koopman
+- libc
+- libstdc
+- macheta
+- modbus
+- msvc
+- ndebug
+- newlib
+- noexcept
+- nolint
+- nolintbegin
+- nolintend
+- nolintnextline
+- noreturn
+- nullopt
+- openpgp
+- parametrised
+- pclmulqdq
+- pmull
+- polys
+- psabi
+- refin
+- refout
+- reveng
+- rocksoft
+- rtti
+- sdlc
+- semiregular
+- stdint
+- templatize
+- ubsan
+- umts
+- vformat
+- xmodem
+- xorout
