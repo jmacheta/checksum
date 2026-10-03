@@ -84,6 +84,7 @@ inline constexpr std::size_t stripe_size = 64;
 inline constexpr std::size_t secret_size = 192;
 inline constexpr std::size_t buffer_size = std::tuple_size_v<decltype(xxh3_state<64>::buffer)>;
 inline constexpr std::size_t small_max = 16;
+inline constexpr std::size_t medium_max = 128;
 inline constexpr std::size_t midsize_max = 240;
 
 // Offsets into the secret, named as in the reference implementation.
@@ -138,6 +139,9 @@ constexpr std::uint64_t avalanche_xxh64(std::uint64_t value) noexcept;
 // The default secret with the seed added to its even words and subtracted from its odd ones.
 constexpr secret_array make_secret(std::uint64_t seed) noexcept;
 
+// function(secret) with the secret of seed: the default one in read-only data for seed 0, else one made on the stack.
+template <class Function> constexpr auto with_secret(std::uint64_t seed, Function function) noexcept;
+
 // Mixes 16 bytes of data with 16 bytes of the secret and the seed.
 constexpr std::uint64_t mix_step(std::byte const *data, std::byte const *secret, std::uint64_t seed) noexcept;
 
@@ -148,32 +152,54 @@ constexpr void mix_two_chunks(xxh3_hash128 &accumulator, std::byte const *first,
 // The hash of 0 to 16 bytes.
 template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte const> data, std::uint64_t seed) noexcept;
 
-// The hash of 17 to 240 bytes.
+// The 128-bit hash of 17 to 240 bytes from its accumulator.
+constexpr xxh3_hash128 finish_medium(xxh3_hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept;
+
+// The hash of 17 to 128 bytes.
 template <unsigned Width> constexpr value<Width> hash_medium(std::span<std::byte const> data, std::uint64_t seed) noexcept;
 
-// Mixes one stripe into the accumulators.
+// The hash of 129 to 240 bytes.
+template <unsigned Width> constexpr value<Width> hash_medium_long(std::span<std::byte const> data, std::uint64_t seed) noexcept;
+
+// Mixes lane Lane of one stripe into the accumulators.
+template <std::size_t Lane>
+constexpr void accumulate_lane(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept;
+
+// Mixes one stripe into the accumulators. Spelled out per lane: as a loop, GCC keeps the accumulators in memory.
 constexpr void accumulate(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept;
 
-constexpr void scramble(accumulator_array &accumulators, secret_array const &secret) noexcept;
+// Scrambles the accumulators with the last 64 bytes of the secret, at secret.
+constexpr void scramble(accumulator_array &accumulators, std::byte const *secret) noexcept;
 
-// Folds the whole stripes of data into the accumulators, the first one stripe_index stripes into a block. The accumulators are scrambled
-// after the last stripe of each block.
-constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index,
-                            secret_array const &secret) noexcept;
+// The portable stripe kernel. A kernel keeps the accumulators in its lanes type and defines the same four functions.
+struct portable_kernel {
+  using lanes = accumulator_array;
+  static constexpr lanes load(accumulator_array const &accumulators) noexcept;
+  static constexpr void store(accumulator_array &accumulators, lanes const &values) noexcept;
+  static constexpr void accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept;
+  static constexpr void scramble(lanes &values, std::byte const *secret) noexcept;
+};
+
+// Folds the whole stripes of data into the accumulators with Kernel, the first one stripe_index stripes into a block, scrambling them
+// after the last stripe of each block. Then mixes in the last stripe of the message at last_stripe, unless it is null.
+template <class Kernel>
+constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+                            std::byte const *last_stripe) noexcept;
 
 // fold_stripes(), defined in src/xxh3/stripe_loop.cpp.
-void stripe_loop(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret) noexcept;
+void stripe_loop(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+                 std::byte const *last_stripe) noexcept;
 
 // fold_stripes() during constant evaluation, else stripe_loop().
-constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret) noexcept;
+constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+                    std::byte const *last_stripe) noexcept;
 
 // Merges the accumulators into 64 bits with 64 bytes of the secret.
 constexpr std::uint64_t merge(accumulator_array const &accumulators, std::byte const *secret, std::uint64_t initial) noexcept;
 
-// The hash of a message of length bytes over 240, from the accumulators of its stripes before the last one and its last 64 bytes.
+// The hash of a message of length bytes over 240, from the accumulators of all its stripes.
 template <unsigned Width>
-constexpr value<Width> finish_large(accumulator_array accumulators, std::byte const *last_stripe, std::uint64_t length,
-                                    secret_array const &secret) noexcept;
+constexpr value<Width> finish_large(accumulator_array const &accumulators, std::uint64_t length, secret_array const &secret) noexcept;
 
 // The hash of more than 240 bytes.
 template <unsigned Width> constexpr value<Width> hash_large(std::span<std::byte const> data, std::uint64_t seed) noexcept;
@@ -227,25 +253,33 @@ constexpr std::uint64_t avalanche(std::uint64_t value) noexcept {
 }
 
 constexpr std::uint64_t avalanche_xxh64(std::uint64_t value) noexcept {
-  value ^= value >> unsigned{primes_64::avalanche_shifts[0]};
+  value ^= value >> static_cast<unsigned>(primes_64::avalanche_shifts[0]);
   value *= primes_64::prime_2;
-  value ^= value >> unsigned{primes_64::avalanche_shifts[1]};
+  value ^= value >> static_cast<unsigned>(primes_64::avalanche_shifts[1]);
   value *= primes_64::prime_3;
-  return value ^ (value >> unsigned{primes_64::avalanche_shifts[2]});
+  return value ^ (value >> static_cast<unsigned>(primes_64::avalanche_shifts[2]));
 }
 
 constexpr secret_array make_secret(std::uint64_t seed) noexcept {
-  secret_array secret{};
-  for(std::size_t index = 0; index < default_secret_words.size(); ++index) {
-    std::uint64_t const word = index % 2 == 0 ? default_secret_words[index] + seed : default_secret_words[index] - seed;
-    for(std::size_t byte = 0; byte < 8; ++byte) {
-      secret[(8 * index) + byte] = static_cast<std::byte>(word >> (8 * byte));
+  std::array<std::uint64_t, secret_size / 8> words = default_secret_words;
+  for(std::size_t index = 0; index < words.size(); ++index) {
+    words[index] = index % 2 == 0 ? words[index] + seed : words[index] - seed;
+    if constexpr(std::endian::native == std::endian::big) {
+      words[index] = std::byteswap(words[index]);
     }
   }
-  return secret;
+  return std::bit_cast<secret_array>(words);
 }
 
 inline constexpr secret_array default_secret = make_secret(0);
+
+template <class Function> constexpr auto with_secret(std::uint64_t seed, Function function) noexcept {
+  if(seed == 0) {
+    return function(default_secret);
+  }
+  secret_array const secret = make_secret(seed);
+  return function(secret);
+}
 
 constexpr std::uint64_t mix_step(std::byte const *data, std::byte const *secret, std::uint64_t seed) noexcept {
   return multiply_fold(load<std::uint64_t>(data) ^ (load<std::uint64_t>(secret) + seed),
@@ -325,87 +359,132 @@ template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte 
   }
 }
 
+constexpr xxh3_hash128 finish_medium(xxh3_hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept {
+  std::uint64_t const high =
+      (accumulator.low * primes_64::prime_1) + (accumulator.high * primes_64::prime_4) + ((length - seed) * primes_64::prime_2);
+  return {.low = avalanche(accumulator.low + accumulator.high), .high = 0 - avalanche(high)};
+}
+
 template <unsigned Width> constexpr value<Width> hash_medium(std::span<std::byte const> data, std::uint64_t seed) noexcept {
   std::byte const *input = data.data();
   std::byte const *secret = default_secret.data();
   std::size_t const length = data.size();
-  std::size_t const rounds = ((length - 1) / 32) + 1;
+  // For XXH3-128, the low half; the high one starts at 0.
+  value<Width> accumulator{length * primes_64::prime_1};
+  // Round index mixes the chunks index * 16 bytes from either end.
+  auto const round = [&](std::size_t index) {
+    std::byte const *first = input + (16 * index);
+    std::byte const *last = input + length - (16 * index) - 16;
+    if constexpr(Width == 64) {
+      accumulator += mix_step(first, secret + (32 * index), seed);
+      accumulator += mix_step(last, secret + (32 * index) + 16, seed);
+    } else {
+      mix_two_chunks(accumulator, first, last, secret + (32 * index), seed);
+    }
+  };
+  // Innermost chunks first, without a loop.
+  if(length > 32) {
+    if(length > 64) {
+      if(length > 96) {
+        round(3);
+      }
+      round(2);
+    }
+    round(1);
+  }
+  round(0);
+  if constexpr(Width == 64) {
+    return avalanche(accumulator);
+  } else {
+    return finish_medium(accumulator, length, seed);
+  }
+}
+
+template <unsigned Width> constexpr value<Width> hash_medium_long(std::span<std::byte const> data, std::uint64_t seed) noexcept {
+  std::byte const *input = data.data();
+  std::byte const *secret = default_secret.data();
+  std::size_t const length = data.size();
   if constexpr(Width == 64) {
     std::uint64_t accumulator = length * primes_64::prime_1;
-    if(length <= 128) {
-      for(std::size_t round = rounds; round-- != 0;) {
-        accumulator += mix_step(input + (16 * round), secret + (32 * round), seed);
-        accumulator += mix_step(input + length - (16 * round) - 16, secret + (32 * round) + 16, seed);
-      }
-    } else {
-      for(std::size_t chunk = 0; chunk < 8; ++chunk) {
-        accumulator += mix_step(input + (16 * chunk), secret + (16 * chunk), seed);
-      }
-      accumulator = avalanche(accumulator);
-      for(std::size_t chunk = 8; chunk < length / 16; ++chunk) {
-        accumulator += mix_step(input + (16 * chunk), secret + (16 * (chunk - 8)) + midsize_start_offset, seed);
-      }
-      accumulator += mix_step(input + length - 16, secret + secret_size_min - midsize_last_offset, seed);
+    for(std::size_t chunk = 0; chunk < 8; ++chunk) {
+      accumulator += mix_step(input + (16 * chunk), secret + (16 * chunk), seed);
     }
+    accumulator = avalanche(accumulator);
+    for(std::size_t chunk = 8; chunk < length / 16; ++chunk) {
+      accumulator += mix_step(input + (16 * chunk), secret + (16 * (chunk - 8)) + midsize_start_offset, seed);
+    }
+    accumulator += mix_step(input + length - 16, secret + secret_size_min - midsize_last_offset, seed);
     return avalanche(accumulator);
   } else {
     xxh3_hash128 accumulator{.low = length * primes_64::prime_1, .high = 0};
-    if(length <= 128) {
-      for(std::size_t round = rounds; round-- != 0;) {
-        mix_two_chunks(accumulator, input + (16 * round), input + length - (16 * round) - 16, secret + (32 * round), seed);
-      }
-    } else {
-      for(std::size_t chunk = 0; chunk < 4; ++chunk) {
-        mix_two_chunks(accumulator, input + (32 * chunk), input + (32 * chunk) + 16, secret + (32 * chunk), seed);
-      }
-      accumulator = {.low = avalanche(accumulator.low), .high = avalanche(accumulator.high)};
-      for(std::size_t chunk = 4; chunk < length / 32; ++chunk) {
-        mix_two_chunks(accumulator, input + (32 * chunk), input + (32 * chunk) + 16, secret + (32 * (chunk - 4)) + midsize_start_offset, seed);
-      }
-      mix_two_chunks(accumulator, input + length - 16, input + length - 32, secret + secret_size_min - midsize_last_offset - 16, 0 - seed);
+    for(std::size_t chunk = 0; chunk < 4; ++chunk) {
+      mix_two_chunks(accumulator, input + (32 * chunk), input + (32 * chunk) + 16, secret + (32 * chunk), seed);
     }
-    std::uint64_t const high =
-        (accumulator.low * primes_64::prime_1) + (accumulator.high * primes_64::prime_4) + ((length - seed) * primes_64::prime_2);
-    return {.low = avalanche(accumulator.low + accumulator.high), .high = 0 - avalanche(high)};
+    accumulator = {.low = avalanche(accumulator.low), .high = avalanche(accumulator.high)};
+    for(std::size_t chunk = 4; chunk < length / 32; ++chunk) {
+      mix_two_chunks(accumulator, input + (32 * chunk), input + (32 * chunk) + 16, secret + (32 * (chunk - 4)) + midsize_start_offset, seed);
+    }
+    mix_two_chunks(accumulator, input + length - 16, input + length - 32, secret + secret_size_min - midsize_last_offset - 16, 0 - seed);
+    return finish_medium(accumulator, length, seed);
   }
+}
+
+template <std::size_t Lane>
+constexpr void accumulate_lane(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept {
+  auto const word = load<std::uint64_t>(stripe + (8 * Lane));
+  std::uint64_t const key = word ^ load<std::uint64_t>(secret + (8 * Lane));
+  std::get<Lane ^ 1U>(accumulators) += word;
+  std::get<Lane>(accumulators) += (key & low_half_mask) * (key >> 32U);
 }
 
 constexpr void accumulate(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept {
-  for(std::size_t lane = 0; lane < accumulators.size(); ++lane) {
-    auto const word = load<std::uint64_t>(stripe + (8 * lane));
-    std::uint64_t const key = word ^ load<std::uint64_t>(secret + (8 * lane));
-    accumulators[lane ^ 1U] += word;
-    accumulators[lane] += (key & low_half_mask) * (key >> 32U);
-  }
+  [&]<std::size_t... Lane>(std::index_sequence<Lane...>) {
+    (accumulate_lane<Lane>(accumulators, stripe, secret), ...);
+  }(std::make_index_sequence<std::tuple_size_v<accumulator_array>>{});
 }
 
-constexpr void scramble(accumulator_array &accumulators, secret_array const &secret) noexcept {
+constexpr void scramble(accumulator_array &accumulators, std::byte const *secret) noexcept {
   for(std::size_t lane = 0; lane < accumulators.size(); ++lane) {
     std::uint64_t const accumulator = accumulators[lane] ^ (accumulators[lane] >> scramble_shift);
-    accumulators[lane] = (accumulator ^ load<std::uint64_t>(secret.data() + secret_size - stripe_size + (8 * lane))) * primes_32::prime_1;
+    accumulators[lane] = (accumulator ^ load<std::uint64_t>(secret + (8 * lane))) * primes_32::prime_1;
   }
 }
 
-constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index,
-                            secret_array const &secret) noexcept {
+constexpr portable_kernel::lanes portable_kernel::load(accumulator_array const &accumulators) noexcept { return accumulators; }
+
+constexpr void portable_kernel::store(accumulator_array &accumulators, lanes const &values) noexcept { accumulators = values; }
+
+constexpr void portable_kernel::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
+  xxh3_detail::accumulate(values, stripe, secret);
+}
+
+constexpr void portable_kernel::scramble(lanes &values, std::byte const *secret) noexcept { xxh3_detail::scramble(values, secret); }
+
+template <class Kernel>
+constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+                            std::byte const *last_stripe) noexcept {
   // A local copy stays in registers: stores through the reference could alias data.
-  accumulator_array lanes = accumulators;
+  typename Kernel::lanes lanes = Kernel::load(accumulators);
   std::byte const *position = data.data();
   for(std::size_t count = data.size() / stripe_size; count != 0; --count, position += stripe_size) {
-    accumulate(lanes, position, secret.data() + (secret_consume_rate * stripe_index));
+    Kernel::accumulate(lanes, position, secret.data() + (secret_consume_rate * stripe_index));
     if(++stripe_index == stripes_per_block) {
-      scramble(lanes, secret);
+      Kernel::scramble(lanes, secret.data() + secret_size - stripe_size);
       stripe_index = 0;
     }
   }
-  accumulators = lanes;
+  if(last_stripe != nullptr) {
+    Kernel::accumulate(lanes, last_stripe, secret.data() + secret_size - stripe_size - secret_last_accumulate_start);
+  }
+  Kernel::store(accumulators, lanes);
 }
 
-constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret) noexcept {
+constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+                    std::byte const *last_stripe) noexcept {
   if consteval {
-    fold_stripes(accumulators, data, stripe_index, secret);
+    fold_stripes<portable_kernel>(accumulators, data, stripe_index, secret, last_stripe);
   } else {
-    stripe_loop(accumulators, data, stripe_index, secret);
+    stripe_loop(accumulators, data, stripe_index, secret, last_stripe);
   }
 }
 
@@ -419,9 +498,7 @@ constexpr std::uint64_t merge(accumulator_array const &accumulators, std::byte c
 }
 
 template <unsigned Width>
-constexpr value<Width> finish_large(accumulator_array accumulators, std::byte const *last_stripe, std::uint64_t length,
-                                    secret_array const &secret) noexcept {
-  accumulate(accumulators, last_stripe, secret.data() + secret_size - stripe_size - secret_last_accumulate_start);
+constexpr value<Width> finish_large(accumulator_array const &accumulators, std::uint64_t length, secret_array const &secret) noexcept {
   std::uint64_t const low = merge(accumulators, secret.data() + secret_merge_start, length * primes_64::prime_1);
   if constexpr(Width == 64) {
     return low;
@@ -431,10 +508,11 @@ constexpr value<Width> finish_large(accumulator_array accumulators, std::byte co
 }
 
 template <unsigned Width> constexpr value<Width> hash_large(std::span<std::byte const> data, std::uint64_t seed) noexcept {
-  secret_array const secret = make_secret(seed);
-  accumulator_array accumulators = initial_accumulators;
-  fold(accumulators, data.first(((data.size() - 1) / stripe_size) * stripe_size), 0, secret);
-  return finish_large<Width>(accumulators, data.data() + data.size() - stripe_size, data.size(), secret);
+  return with_secret(seed, [data](secret_array const &secret) {
+    accumulator_array accumulators = initial_accumulators;
+    fold(accumulators, data.first(((data.size() - 1) / stripe_size) * stripe_size), 0, secret, data.data() + data.size() - stripe_size);
+    return finish_large<Width>(accumulators, data.size(), secret);
+  });
 }
 
 constexpr std::uint64_t folded_length(std::uint64_t length) noexcept { return length == 0 ? 0 : ((length - 1) / buffer_size) * buffer_size; }
@@ -457,11 +535,14 @@ template <unsigned Width> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Wid
     return state;
   }
   // The buffer is full and more input follows: fold it, then all but the last 1 to 256 bytes of data.
-  secret_array const secret = make_secret(state.seed);
-  fold(state.accumulators, state.buffer, stripe_index(folded), secret);
   std::size_t const whole = ((data.size() - 1) / buffer_size) * buffer_size;
+  with_secret(state.seed, [&](secret_array const &secret) {
+    fold(state.accumulators, state.buffer, stripe_index(folded), secret, nullptr);
+    if(whole != 0) {
+      fold(state.accumulators, data.first(whole), stripe_index(folded + buffer_size), secret, nullptr);
+    }
+  });
   if(whole != 0) {
-    fold(state.accumulators, data.first(whole), stripe_index(folded + buffer_size), secret);
     std::ranges::copy(data.subspan(whole - stripe_size, stripe_size), state.buffer.end() - stripe_size);
   }
   std::ranges::copy(data.subspan(whole), state.buffer.begin());
@@ -480,25 +561,31 @@ template <unsigned Width> constexpr xxh3_state<Width>::value_type xxh3_finalize(
   }
   std::uint64_t const folded = folded_length(state.length);
   auto const buffered = static_cast<std::size_t>(state.length - folded);
-  secret_array const secret = make_secret(state.seed);
-  accumulator_array accumulators = state.accumulators;
-  fold(accumulators, std::span(state.buffer).first(((buffered - 1) / stripe_size) * stripe_size), stripe_index(folded), secret);
-  std::array<std::byte, stripe_size> last_stripe{};
+  // The last stripe is in the buffer, or wraps around its end.
+  std::array<std::byte, stripe_size> wrapped{};
+  std::byte const *last_stripe = wrapped.data();
   if(buffered >= stripe_size) {
-    std::ranges::copy(std::span(state.buffer).subspan(buffered - stripe_size, stripe_size), last_stripe.begin());
+    last_stripe = state.buffer.data() + buffered - stripe_size;
   } else {
-    auto const tail = std::ranges::copy(std::span(state.buffer).last(stripe_size - buffered), last_stripe.begin()).out;
+    auto const tail = std::ranges::copy(std::span(state.buffer).last(stripe_size - buffered), wrapped.begin()).out;
     std::ranges::copy(std::span(state.buffer).first(buffered), tail);
   }
-  return finish_large<Width>(accumulators, last_stripe.data(), state.length, secret);
+  return with_secret(state.seed, [&](secret_array const &secret) {
+    accumulator_array accumulators = state.accumulators;
+    fold(accumulators, std::span(state.buffer).first(((buffered - 1) / stripe_size) * stripe_size), stripe_index(folded), secret, last_stripe);
+    return finish_large<Width>(accumulators, state.length, secret);
+  });
 }
 
 template <unsigned Width> constexpr xxh3_state<Width>::value_type xxh3_compute(std::span<std::byte const> data, std::uint64_t seed) noexcept {
   if(data.size() <= xxh3_detail::small_max) {
     return xxh3_detail::hash_small<Width>(data, seed);
   }
-  if(data.size() <= xxh3_detail::midsize_max) {
+  if(data.size() <= xxh3_detail::medium_max) {
     return xxh3_detail::hash_medium<Width>(data, seed);
+  }
+  if(data.size() <= xxh3_detail::midsize_max) {
+    return xxh3_detail::hash_medium_long<Width>(data, seed);
   }
   return xxh3_detail::hash_large<Width>(data, seed);
 }

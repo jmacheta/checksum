@@ -162,6 +162,28 @@ TYPED_TEST(xxh3, chunks_across_stripes_and_blocks) {
   }
 }
 
+// The longest block message split once around stripes, the 256-byte buffer and the 1024-byte blocks, from every start offset of a
+// 16-byte vector.
+TYPED_TEST(xxh3, splits_across_blocks_from_any_offset) {
+  constexpr unsigned width = TypeParam::value;
+  auto const &set = vectors<width>()[1];
+  std::vector<std::size_t> splits;
+  for(std::size_t const boundary : {64U, 256U, 960U, 1024U, 1088U, 2048U, 3072U, 4032U, 4096U}) {
+    for(std::size_t const split : {boundary - 1, boundary, boundary + 1}) {
+      splits.push_back(split);
+    }
+  }
+  for(std::size_t offset = 0; offset < 16; ++offset) {
+    std::vector<std::byte> buffer(offset + message.size());
+    std::ranges::copy(message, buffer.begin() + static_cast<std::ptrdiff_t>(offset));
+    auto const data = std::span<std::byte const>(buffer).subspan(offset);
+    for(std::size_t const split : splits) {
+      xxh3_state<width> const state = xxh3_update(xxh3_state<width>{.seed = set.seed}, data.first(split));
+      ASSERT_EQ(xxh3_finalize(xxh3_update(state, data.subspan(split))), set.blocks.back()) << "offset " << offset << ", split " << split;
+    }
+  }
+}
+
 TYPED_TEST(xxh3, byte_ranges) {
   constexpr unsigned width = TypeParam::value;
   auto const &set = vectors<width>()[1];
