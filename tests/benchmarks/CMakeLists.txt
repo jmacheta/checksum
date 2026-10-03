@@ -9,3 +9,8 @@ add_executable(checksum_bench_internet bench_internet.cpp)
 target_compile_features(checksum_bench_internet PRIVATE cxx_std_23)
 target_link_libraries(checksum_bench_internet PRIVATE checksum::checksum benchmark::benchmark)
 add_test(NAME benchmark_internet_smoke COMMAND checksum_bench_internet --benchmark_filter=^internet/20$ --benchmark_min_time=0.001s)
+
+add_executable(checksum_bench_fletcher bench_fletcher.cpp)
+target_compile_features(checksum_bench_fletcher PRIVATE cxx_std_23)
+target_link_libraries(checksum_bench_fletcher PRIVATE checksum::checksum benchmark::benchmark)
+add_test(NAME benchmark_fletcher_smoke COMMAND checksum_bench_fletcher --benchmark_filter=^fletcher<16>/20$ --benchmark_min_time=0.001s)

@@ -11,6 +11,7 @@ target_sources(
           ut_crc_parameters.cpp
           ut_crc_polynomial.cpp
           ut_crc_vectors.cpp
+          ut_fletcher.cpp
           ut_internet_checksum.cpp
   PRIVATE FILE_SET
           HEADERS

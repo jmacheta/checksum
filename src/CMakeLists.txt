@@ -6,7 +6,13 @@ target_compile_features(checksum PUBLIC cxx_std_23)
 
 target_sources(
   checksum
-  PRIVATE crc/lut_braided.cpp crc/lut_byte.cpp crc/lut_nibble.cpp crc/lut_none.cpp crc/lut_sliced.cpp internet/sum_loop.cpp
+  PRIVATE crc/lut_braided.cpp
+          crc/lut_byte.cpp
+          crc/lut_nibble.cpp
+          crc/lut_none.cpp
+          crc/lut_sliced.cpp
+          fletcher/sum_loop.cpp
+          internet/sum_loop.cpp
   PUBLIC FILE_SET
          HEADERS
          BASE_DIRS
@@ -15,6 +21,7 @@ target_sources(
          include/checksum/byte_range.hpp
          include/checksum/crc.hpp
          include/checksum/crc_catalog.hpp
+         include/checksum/fletcher.hpp
          include/checksum/internet.hpp
 )
 
