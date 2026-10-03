@@ -8,7 +8,8 @@
 
 namespace checksum::xxhash_detail {
 
-template <unsigned Width> word<Width> stripe_loop(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {
+// Not inlined: the aliasing that keeps the lanes scalar holds only behind a call (with LTO, Clang vectorized XXH32 and lost 38 %).
+template <unsigned Width> [[gnu::noinline]] word<Width> stripe_loop(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {
   fold_stripes<Width>(lanes, data);
   return converge<Width>(lanes);
 }

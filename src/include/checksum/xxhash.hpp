@@ -114,8 +114,8 @@ template <unsigned Width> constexpr lane_array<Width> initial_lanes(word<Width> 
 // Merges the four lanes into one value. Spelled out: as a loop, GCC reloads the lanes just stored as one vector, which stalls.
 template <unsigned Width> constexpr word<Width> converge(lane_array<Width> const &lanes) noexcept;
 
-// Folds the whole stripes of data into lanes. The lanes stay in memory, where they may alias data: that keeps compilers from packing
-// them into one vector register, which is slower than scalar code for XXH32.
+// Folds the whole stripes of data into lanes. Behind the call to stripe_loop() the lanes may alias data, which keeps compilers from
+// packing them into one vector register: slower than scalar code for XXH32.
 template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
 // fold_stripes(), then converge(); defined in src/xxhash/stripe_loop.cpp for both widths. Returning the merged value spares the
@@ -265,7 +265,10 @@ template <unsigned Width, byte_range Range> constexpr xxhash_state<Width> xxhash
 
 template <unsigned Width> constexpr xxhash_state<Width>::value_type xxhash_finalize(xxhash_state<Width> const &state) noexcept {
   auto const buffered = static_cast<std::size_t>(state.length % xxhash_detail::stripe_size<Width>);
-  return xxhash_detail::finish<Width>(xxhash_detail::converge<Width>(state.lanes), state.seed, state.length, std::span(state.buffer).first(buffered));
+  // Before the first stripe the lanes are unused, and converging them would cost 8 multiplications for nothing.
+  typename xxhash_state<Width>::value_type const converged =
+      state.length >= xxhash_detail::stripe_size<Width> ? xxhash_detail::converge<Width>(state.lanes) : 0;
+  return xxhash_detail::finish<Width>(converged, state.seed, state.length, std::span(state.buffer).first(buffered));
 }
 
 template <unsigned Width>
