@@ -1,8 +1,9 @@
 #ifndef CHECKSUM_TESTS_XXH3_REFERENCE_VECTORS_HPP
 #define CHECKSUM_TESTS_XXH3_REFERENCE_VECTORS_HPP
 
-// XXH3-64 and XXH3-128 of every prefix of the 300-byte message of fill_message(), of the block_sizes prefixes of a longer one and of a
-// long_message_size-byte one, for three seeds each. Computed with XXH3_64bits_withSeed() and XXH3_128bits_withSeed() of the reference
+// XXH3-64 and XXH3-128 of the message of fill_message(): every prefix up to 300 bytes, the block_sizes prefixes, a digest of the
+// prefixes of 301 to 1100 bytes, a split_message_size-byte message and a long_message_size-byte one for three seeds each, and the
+// edge_sizes prefixes for the edge seeds. Computed with XXH3_64bits_withSeed() and XXH3_128bits_withSeed() of the reference
 // implementation, xxhash.h 0.8.4 of github.com/Cyan4973/xxHash.
 
 #include <checksum/xxh3.hpp>
@@ -17,12 +18,105 @@ namespace xxhash_test {
 // Lengths around the ends of the first, second and fourth 1024-byte blocks.
 inline constexpr std::array<std::size_t, 9> block_sizes{1023, 1024, 1025, 2047, 2048, 2049, 4095, 4096, 4097};
 
+// Prefixes of digest_first_size to digest_last_size bytes are checked by one digest: for each, rotate it left by one bit and exclusive-or
+// the hash in, for XXH3-128 the low then the high half.
+inline constexpr std::size_t digest_first_size = 301;
+inline constexpr std::size_t digest_last_size = 1100;
+
+inline constexpr std::size_t split_message_size = 5000;
+
 template <class Value> struct xxh3_vector_set {
   std::uint64_t seed;
   std::array<Value, prefix_count> prefixes;     // prefixes[size]: the hash of the first size bytes.
   std::array<Value, block_sizes.size()> blocks; // blocks[index]: the hash of the first block_sizes[index] bytes.
   Value long_message;
+  std::uint64_t prefix_digest; // Digest of the hashes of the prefixes of digest_first_size to digest_last_size bytes.
+  Value split_message;         // The hash of the first split_message_size bytes.
 };
+
+// Every length class: empty, 1-3, 4-8, 9-16, 17-128, 129-240, and stripes, the buffer and blocks past 240 bytes.
+inline constexpr std::array<std::size_t, 18> edge_sizes{0, 1, 3, 4, 8, 9, 16, 17, 128, 129, 240, 241, 448, 449, 512, 513, 1024, 4096};
+
+template <class Value> struct xxh3_edge_seed_set {
+  std::uint64_t seed;
+  std::array<Value, edge_sizes.size()> hashes; // hashes[index]: the hash of the first edge_sizes[index] bytes.
+};
+
+// Seeds whose halves are all ones or all zeros.
+inline constexpr std::array<xxh3_edge_seed_set<std::uint64_t>, 3> xxh3_64_edge_seeds{{
+    {.seed = 0xFFFFFFFFFFFFFFFF,
+     .hashes{{0x4C093276AE47A555, 0xCFEEB3D75B3964DD, 0x3FE1D7144E09DE34, 0x347D660DEFDBA321, 0x409D18FF96FE855D, 0x69FF2510F8857292,
+              0x709F2AA333945462, 0x26884D318809E5B1, 0xD162F391C628539D, 0x9A9BF8F699E48D1B, 0xE53BE50791D78008, 0xB6E869807975CDA7,
+              0x0EE6113584B52DC9, 0xD462DAFC0EB66182, 0xD9C211FD51C0F718, 0x62DD7246D333315E, 0x4DA2F04DCA9F5CD7, 0xCF35213B92693DC4}}},
+    {.seed = 0xFFFFFFFF00000000,
+     .hashes{{0x4BD9BB19F765822B, 0x199EEB013A0C4EDE, 0x40037593663BCFA4, 0x5E5FDE41406F1F79, 0x93BE14E00738FD21, 0x8D04B475CB4CFB47,
+              0x2B0C3F5CD016955F, 0x020EDD61228032FD, 0xFE5DB1C11201DE09, 0xEA839B23ABCCFBDB, 0xFC71C5DE0BC2684A, 0xAF2FE39107F78956,
+              0x0C85E44C9810A817, 0xFE29930855E6C720, 0xCDFE462C6D6BFB7A, 0xB83A8976EDFCDC25, 0xDBFD9EAEF711B938, 0xE5DCE03B50FC986B}}},
+    {.seed = 0x00000000FFFFFFFF,
+     .hashes{{0xA4F199794CCFA477, 0xBAACE6469B308D84, 0x6BAF2C9032898748, 0x0D2F488E1B86705C, 0x65D35895EDB5D41E, 0x2F1EB852A1CB814E,
+              0xE80B4F6BA9315FE9, 0xB320F3126CD79398, 0xF9E84A7AF461225A, 0x5CC65DB36D34A2E0, 0xADDC6984CC1DA8A5, 0x54A19D70647C622F,
+              0xAA054F72CD253F11, 0xA8C1ED0FEF73898C, 0x442AB2B676166827, 0x8D1974D205576572, 0x3C12DF4D1A497E65, 0xEEE7096E77F42C05}}},
+}};
+
+inline constexpr std::array<xxh3_edge_seed_set<checksum::xxh3_hash128>, 3> xxh3_128_edge_seeds{{
+    {.seed = 0xFFFFFFFFFFFFFFFF,
+     .hashes{{{.low = 0x2D10110A247D19DD, .high = 0x5334EC22748B5FCD},
+              {.low = 0xCFEEB3D75B3964DD, .high = 0xCA2BC6ABFBC14CC0},
+              {.low = 0x3FE1D7144E09DE34, .high = 0xAA465AEBAD433FF1},
+              {.low = 0x4B18BE6DFC5EBBD9, .high = 0x5BCB9E4D1F852DE6},
+              {.low = 0x3D037531488020D3, .high = 0xA657A0BBA8B9101C},
+              {.low = 0xB105C544B9D98EBF, .high = 0x8562F8826855AE15},
+              {.low = 0xFF4C84C416E06312, .high = 0xF4E900C36AA25A15},
+              {.low = 0xF426FF297D29BE2D, .high = 0xCA569205D8BFE501},
+              {.low = 0x5A6772E43E75670F, .high = 0xDF7C52DFD1360D4B},
+              {.low = 0x5F6BAA726EA7044D, .high = 0x8BE557EB115FA1D3},
+              {.low = 0x2DABAF5AA545EED9, .high = 0xAE29EEAB8A08E080},
+              {.low = 0xB6E869807975CDA7, .high = 0x25E6BFABFB8ACD4F},
+              {.low = 0x0EE6113584B52DC9, .high = 0x8774709FDDE0D7D4},
+              {.low = 0xD462DAFC0EB66182, .high = 0xFB5C4CD128B932FB},
+              {.low = 0xD9C211FD51C0F718, .high = 0xA8E0A59D9F8F2776},
+              {.low = 0x62DD7246D333315E, .high = 0x55394B4F0B2643E1},
+              {.low = 0x4DA2F04DCA9F5CD7, .high = 0x41F140B633D4D4F0},
+              {.low = 0xCF35213B92693DC4, .high = 0x34B6FE6122FE4862}}}},
+    {.seed = 0xFFFFFFFF00000000,
+     .hashes{{{.low = 0x957A4D995DAC1405, .high = 0xFFF5C455048FA8C3},
+              {.low = 0x199EEB013A0C4EDE, .high = 0x09185BE9A8014309},
+              {.low = 0x40037593663BCFA4, .high = 0x9BF5585627A84197},
+              {.low = 0xCAC6748E3EF17F64, .high = 0xCEB26ADE7EAB94D3},
+              {.low = 0x7A256E90352EB49C, .high = 0xE765D7AD619615F2},
+              {.low = 0x35B62A50846BA52E, .high = 0x449A14663427EE2E},
+              {.low = 0x35CFADC410BDBBD2, .high = 0x28227BD5C5091208},
+              {.low = 0x1BA2EC0E37F79EDE, .high = 0x1121DBAA7A0A554E},
+              {.low = 0x8829F4ADE8A522AA, .high = 0x807082B5466FA978},
+              {.low = 0xFC49A8BC8385BA21, .high = 0xB1CE4D3486D7F513},
+              {.low = 0x66D003881265B26E, .high = 0xB4B30D77B2E962BD},
+              {.low = 0xAF2FE39107F78956, .high = 0xCB12403A00FA5463},
+              {.low = 0x0C85E44C9810A817, .high = 0x94B3CAAD8DCBCD8C},
+              {.low = 0xFE29930855E6C720, .high = 0x39A50E3E84371CB1},
+              {.low = 0xCDFE462C6D6BFB7A, .high = 0x170A4FD84777D1B7},
+              {.low = 0xB83A8976EDFCDC25, .high = 0xED8ADB3E1E621400},
+              {.low = 0xDBFD9EAEF711B938, .high = 0xC95314086AD144D8},
+              {.low = 0xE5DCE03B50FC986B, .high = 0xB39CFBE8F599F11D}}}},
+    {.seed = 0x00000000FFFFFFFF,
+     .hashes{{{.low = 0x763882CDD330595D, .high = 0x8A40A9C7C0CD392D},
+              {.low = 0xBAACE6469B308D84, .high = 0x7E5ECFE9996BB607},
+              {.low = 0x6BAF2C9032898748, .high = 0x499E4A9BAD120362},
+              {.low = 0x5E66FE903A23A816, .high = 0xC03CA01994D51E77},
+              {.low = 0x0EDD5F9510629A1D, .high = 0x491ADCD3EB664130},
+              {.low = 0x0C7916A7586A457C, .high = 0xB509EA587C7B1352},
+              {.low = 0xEA62679AFD2328B8, .high = 0x4F9D53895CF47400},
+              {.low = 0xA5C4E87D8F94F3B6, .high = 0xAD81C80641DC0C8B},
+              {.low = 0x3BF49A52CEB10C4A, .high = 0xA90DAFB028F960CB},
+              {.low = 0x5861248D6A96A2EC, .high = 0x36B6E633CB2D568A},
+              {.low = 0xEB5647E348BD4270, .high = 0x92D6E896586C5E02},
+              {.low = 0x54A19D70647C622F, .high = 0x07104854E5F72FBC},
+              {.low = 0xAA054F72CD253F11, .high = 0x90DDEF7AB63C1F86},
+              {.low = 0xA8C1ED0FEF73898C, .high = 0x53ADA5AE9C12B222},
+              {.low = 0x442AB2B676166827, .high = 0xBA2F4B1AD6870939},
+              {.low = 0x8D1974D205576572, .high = 0x13ED9DDDD9DB38AC},
+              {.low = 0x3C12DF4D1A497E65, .high = 0xA33721E21B83379E},
+              {.low = 0xEEE7096E77F42C05, .high = 0xE5B222A15EC95457}}}},
+}};
 
 inline constexpr std::array<xxh3_vector_set<std::uint64_t>, 3> xxh3_64_vectors{{
     {.seed = 0x0000000000000000,
@@ -82,7 +176,9 @@ inline constexpr std::array<xxh3_vector_set<std::uint64_t>, 3> xxh3_64_vectors{{
          0x3ED66F28048CD54B,
          0x0C24A412CF2E0DF3,
      }},
-     .long_message = 0x5AFDB75381728914},
+     .long_message = 0x5AFDB75381728914,
+     .prefix_digest = 0xA5D0EDAE4319AB7E,
+     .split_message = 0x912D518E8FA40CC7},
     {.seed = 0x000000000000002A,
      .prefixes{{
          0xB029411FF43D84D2, 0x45A98CC4F97A04F8, 0x20DE2F79128471E6, 0xBFDA50692ED25888, 0x0F110633E929144E, 0x693AB9080AA1D75F, 0xBED31781D46FC985,
@@ -140,7 +236,9 @@ inline constexpr std::array<xxh3_vector_set<std::uint64_t>, 3> xxh3_64_vectors{{
          0xC5323F3FE27E4CCE,
          0xB911B0BA8CDA14B5,
      }},
-     .long_message = 0xCD5C431EAA6862D3},
+     .long_message = 0xCD5C431EAA6862D3,
+     .prefix_digest = 0x4071825DBEB36901,
+     .split_message = 0x25C94D06CC27ACD1},
     {.seed = 0xFEDCBA9876543210,
      .prefixes{{
          0xE2BDA2B8C0A330DA, 0x2483C51821994D96, 0xF2F7A277587F277B, 0x6567912879E8CB0D, 0x1DA5778B7C0BB23B, 0x1A46DE5E1BA7342D, 0xC9919192A9267999,
@@ -198,7 +296,9 @@ inline constexpr std::array<xxh3_vector_set<std::uint64_t>, 3> xxh3_64_vectors{{
          0x65114BFD9150E30A,
          0x95F12A8E3C4E4927,
      }},
-     .long_message = 0x7D955D9C2904B5A4},
+     .long_message = 0x7D955D9C2904B5A4,
+     .prefix_digest = 0x3A922F0E4539D2CB,
+     .split_message = 0x85C10E7BDC91BC71},
 }};
 
 inline constexpr std::array<xxh3_vector_set<checksum::xxh3_hash128>, 3> xxh3_128_vectors{{
@@ -367,7 +467,9 @@ inline constexpr std::array<xxh3_vector_set<checksum::xxh3_hash128>, 3> xxh3_128
          {.low = 0x3ED66F28048CD54B, .high = 0x1DEC5A8A3E7058AF},
          {.low = 0x0C24A412CF2E0DF3, .high = 0xD73E3BE4B0205AAD},
      }},
-     .long_message = {.low = 0x5AFDB75381728914, .high = 0x4685F0A9B20474CE}},
+     .long_message = {.low = 0x5AFDB75381728914, .high = 0x4685F0A9B20474CE},
+     .prefix_digest = 0x3CA5EA6867A40F18,
+     .split_message = {.low = 0x912D518E8FA40CC7, .high = 0x3779C74D6DB39D9C}},
     {.seed = 0x000000000000002A,
      .prefixes{{
          {.low = 0x3C1D09E9FE249164, .high = 0x16C20ACD33F7AF2F}, {.low = 0x45A98CC4F97A04F8, .high = 0x01347441FADA42DE},
@@ -533,7 +635,9 @@ inline constexpr std::array<xxh3_vector_set<checksum::xxh3_hash128>, 3> xxh3_128
          {.low = 0xC5323F3FE27E4CCE, .high = 0xDD4D0DD4CEF7CBFD},
          {.low = 0xB911B0BA8CDA14B5, .high = 0xC2DEB8E25E616134},
      }},
-     .long_message = {.low = 0xCD5C431EAA6862D3, .high = 0xA8C59F113AB2553E}},
+     .long_message = {.low = 0xCD5C431EAA6862D3, .high = 0xA8C59F113AB2553E},
+     .prefix_digest = 0x8337AA9A2436B49C,
+     .split_message = {.low = 0x25C94D06CC27ACD1, .high = 0xEB1A5DB59F019520}},
     {.seed = 0xFEDCBA9876543210,
      .prefixes{{
          {.low = 0x6F0610ACD4631B3D, .high = 0x258C3140E9ACDE45}, {.low = 0x2483C51821994D96, .high = 0xA671BB1B91E92318},
@@ -699,7 +803,9 @@ inline constexpr std::array<xxh3_vector_set<checksum::xxh3_hash128>, 3> xxh3_128
          {.low = 0x65114BFD9150E30A, .high = 0x10DE639A08CF56C7},
          {.low = 0x95F12A8E3C4E4927, .high = 0xE9AB54B54DB132F4},
      }},
-     .long_message = {.low = 0x7D955D9C2904B5A4, .high = 0xEAEC8BDCAE7D66D9}},
+     .long_message = {.low = 0x7D955D9C2904B5A4, .high = 0xEAEC8BDCAE7D66D9},
+     .prefix_digest = 0xCDC48C2C697C0DEA,
+     .split_message = {.low = 0x85C10E7BDC91BC71, .high = 0x5EE56692C435B99D}},
 }};
 
 } // namespace xxhash_test

@@ -1,4 +1,4 @@
-// XXH3-64 and XXH3-128: reference values, splits, alignments, ranges and the portable multiplication.
+// XXH3-64 and XXH3-128: reference values, edge seeds, splits, alignments, ranges and the portable multiplication.
 
 #include <checksum/xxh3.hpp>
 #include <xxh3_reference_vectors.hpp>
@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -21,17 +22,23 @@ namespace {
 
 using namespace checksum;
 using xxhash_test::block_sizes;
+using xxhash_test::edge_sizes;
+using xxhash_test::xxh3_128_edge_seeds;
 using xxhash_test::xxh3_128_vectors;
+using xxhash_test::xxh3_64_edge_seeds;
 using xxhash_test::xxh3_64_vectors;
 
 constexpr std::size_t prefix_limit = xxhash_test::prefix_count - 1;
 
-// The message of the reference vectors, as long as the longest block size.
-constexpr std::array<std::byte, block_sizes.back()> message = [] {
-  std::array<std::byte, block_sizes.back()> result{};
+// The first Size bytes of the message of the reference vectors.
+template <std::size_t Size> constexpr std::array<std::byte, Size> make_message() {
+  std::array<std::byte, Size> result{};
   xxhash_test::fill_message(result);
   return result;
-}();
+}
+
+// The message as long as the longest block size.
+constexpr std::array<std::byte, block_sizes.back()> message = make_message<block_sizes.back()>();
 
 template <unsigned Width> constexpr auto const &vectors() {
   if constexpr(Width == 64) {
@@ -39,6 +46,25 @@ template <unsigned Width> constexpr auto const &vectors() {
   } else {
     return xxh3_128_vectors;
   }
+}
+
+template <unsigned Width> constexpr auto const &edge_seed_vectors() {
+  if constexpr(Width == 64) {
+    return xxh3_64_edge_seeds;
+  } else {
+    return xxh3_128_edge_seeds;
+  }
+}
+
+// Number of edge_sizes prefixes of message up to size_limit bytes whose hash differs from the reference, for every edge seed.
+template <unsigned Width> constexpr std::size_t edge_seed_mismatches(std::size_t size_limit) {
+  std::size_t mismatches = 0;
+  for(auto const &set : edge_seed_vectors<Width>()) {
+    for(std::size_t index = 0; index < edge_sizes.size() && edge_sizes[index] <= size_limit; ++index) {
+      mismatches += xxh3_compute<Width>(std::span(message).first(edge_sizes[index]), set.seed) != set.hashes[index] ? 1U : 0U;
+    }
+  }
+  return mismatches;
 }
 
 // Number of prefixes of message up to size_limit bytes whose hash differs from the reference, for every seed.
@@ -76,6 +102,8 @@ static_assert(xxh3_compute<128>(std::span(message).first(241), xxh3_128_vectors[
 static_assert(xxh3_compute<64>(std::span(message).first(block_sizes[2]), xxh3_64_vectors[2].seed) == xxh3_64_vectors[2].blocks[2]);
 static_assert(chunked<128>(std::span(message).first(prefix_limit), 7, xxh3_128_vectors[2].seed) == xxh3_128_vectors[2].prefixes[prefix_limit]);
 static_assert(chunked<64>(std::span(message).first(block_sizes[2]), 100, xxh3_64_vectors[1].seed) == xxh3_64_vectors[1].blocks[2]);
+static_assert(edge_seed_mismatches<64>(513) == 0);
+static_assert(edge_seed_mismatches<128>(513) == 0);
 static_assert(xxh3_detail::multiply_portable(~std::uint64_t{0}, ~std::uint64_t{0}) == xxh3_hash128{.low = 1, .high = ~std::uint64_t{1}});
 static_assert(xxh3_detail::multiply_portable(0x9E3779B185EBCA87U, 0xC2B2AE3D27D4EB4FU) ==
               xxh3_hash128{.low = 0xDEF35B010F796CA9U, .high = 0x7854787AA57880A8U});
@@ -105,6 +133,75 @@ TYPED_TEST(xxh3, reference_values) {
       ASSERT_EQ(xxh3_compute<width>(data, set.seed), set.blocks[index]) << "seed " << set.seed << ", size " << block_sizes[index];
       ASSERT_EQ(xxh3_finalize(xxh3_update(xxh3_state<width>{.seed = set.seed}, data)), set.blocks[index])
           << "seed " << set.seed << ", size " << block_sizes[index];
+    }
+  }
+}
+
+TYPED_TEST(xxh3, edge_seeds) {
+  constexpr unsigned width = TypeParam::value;
+  for(auto const &set : edge_seed_vectors<width>()) {
+    for(std::size_t index = 0; index < edge_sizes.size(); ++index) {
+      auto const data = std::span(message).first(edge_sizes[index]);
+      ASSERT_EQ(xxh3_compute<width>(data, set.seed), set.hashes[index]) << "seed " << set.seed << ", size " << edge_sizes[index];
+      ASSERT_EQ(chunked<width>(data, 63, set.seed), set.hashes[index]) << "seed " << set.seed << ", size " << edge_sizes[index];
+    }
+  }
+}
+
+// One-shot hashes of every length past the prefixes up to beyond the first block, checked by their digest.
+TYPED_TEST(xxh3, one_shot_lengths) {
+  constexpr unsigned width = TypeParam::value;
+  for(auto const &set : vectors<width>()) {
+    std::uint64_t digest = 0;
+    for(std::size_t size = xxhash_test::digest_first_size; size <= xxhash_test::digest_last_size; ++size) {
+      auto const hash = xxh3_compute<width>(std::span(message).first(size), set.seed);
+      if constexpr(width == 64) {
+        digest = std::rotl(digest, 1) ^ hash;
+      } else {
+        digest = std::rotl(digest, 1) ^ hash.low;
+        digest = std::rotl(digest, 1) ^ hash.high;
+      }
+    }
+    EXPECT_EQ(digest, set.prefix_digest) << "seed " << set.seed;
+  }
+}
+
+// The split message in pieces of random sizes from a fixed xorshift64 sequence: short ones, ones around the 256-byte buffer, long ones.
+TYPED_TEST(xxh3, random_splits) {
+  constexpr unsigned width = TypeParam::value;
+  static constexpr auto split_message = make_message<xxhash_test::split_message_size>();
+  std::uint64_t random = 0x9E3779B97F4A7C15U;
+  auto const next = [&random] {
+    random ^= random << 13U;
+    random ^= random >> 7U;
+    random ^= random << 17U;
+    return static_cast<std::size_t>(random);
+  };
+  for(auto const &set : vectors<width>()) {
+    for(int round = 0; round < 200; ++round) {
+      xxh3_state<width> state{.seed = set.seed};
+      std::span<std::byte const> data = split_message;
+      while(!data.empty()) {
+        std::size_t piece = 0;
+        switch(next() % 4) {
+        case 0:
+          piece = next() % 8;
+          break;
+        case 1:
+          piece = next() % 300;
+          break;
+        case 2:
+          piece = (256 * (1 + (next() % 5))) + (next() % 3) - 1;
+          break;
+        default:
+          piece = next() % 3000;
+          break;
+        }
+        piece = std::min(piece, data.size());
+        state = xxh3_update(state, data.first(piece));
+        data = data.subspan(piece);
+      }
+      ASSERT_EQ(xxh3_finalize(state), set.split_message) << "seed " << set.seed << ", round " << round;
     }
   }
 }

@@ -51,7 +51,8 @@ struct xxh3_state {
       buffer{}; ///< The input after the folded part, from the start. While it holds fewer than 64 bytes, its end keeps the stripe before them.
 };
 
-/// Folds data into state; data may be split anywhere.
+/// Folds data into state; data may be split anywhere. With a seed other than 0, each call that folds the buffer builds the 192-byte
+/// secret again, as xxh3_finalize() does: on x86-64 about 25 % slower than seed 0 in 256-byte pieces, 6 % in 4 KiB pieces.
 template <unsigned Width> [[nodiscard]] constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept;
 
 /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
@@ -87,13 +88,15 @@ inline constexpr std::size_t small_max = 16;
 inline constexpr std::size_t medium_max = 128;
 inline constexpr std::size_t midsize_max = 240;
 
-// Offsets into the secret, named as in the reference implementation.
+// Sizes of and offsets into the secret, and the bytes of secret each stripe advances, named as in the reference implementation.
 inline constexpr std::size_t secret_size_min = 136;
 inline constexpr std::size_t midsize_start_offset = 3;
 inline constexpr std::size_t midsize_last_offset = 17;
 inline constexpr std::size_t secret_consume_rate = 8;
 inline constexpr std::size_t secret_last_accumulate_start = 7;
 inline constexpr std::size_t secret_merge_start = 11;
+
+// Stripes of a block, after which the accumulators are scrambled.
 inline constexpr std::size_t stripes_per_block = (secret_size - stripe_size) / secret_consume_rate;
 
 using secret_array = std::array<std::byte, secret_size>;
@@ -132,9 +135,9 @@ template <class Integer> constexpr Integer secret_xor(std::byte const *secret) n
 // The halves of the full product, combined by exclusive or.
 constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) noexcept;
 
-constexpr std::uint64_t avalanche(std::uint64_t value) noexcept;
+constexpr std::uint64_t avalanche(std::uint64_t hash) noexcept;
 
-constexpr std::uint64_t avalanche_xxh64(std::uint64_t value) noexcept;
+constexpr std::uint64_t avalanche_xxh64(std::uint64_t hash) noexcept;
 
 // The default secret with the seed added to its even words and subtracted from its odd ones.
 constexpr secret_array make_secret(std::uint64_t seed) noexcept;
@@ -159,7 +162,7 @@ constexpr xxh3_hash128 finish_medium(xxh3_hash128 const &accumulator, std::uint6
 template <unsigned Width> constexpr value<Width> hash_medium(std::span<std::byte const> data, std::uint64_t seed) noexcept;
 
 // The hash of 129 to 240 bytes.
-template <unsigned Width> constexpr value<Width> hash_medium_long(std::span<std::byte const> data, std::uint64_t seed) noexcept;
+template <unsigned Width> constexpr value<Width> hash_midsize(std::span<std::byte const> data, std::uint64_t seed) noexcept;
 
 // Mixes lane Lane of one stripe into the accumulators.
 template <std::size_t Lane>
@@ -180,18 +183,18 @@ struct portable_kernel {
   static constexpr void scramble(lanes &values, std::byte const *secret) noexcept;
 };
 
-// Folds the whole stripes of data into the accumulators with Kernel, the first one stripe_index stripes into a block, scrambling them
+// Folds the whole stripes of data into the accumulators with Kernel, the first one block_stripe stripes into a block, scrambling them
 // after the last stripe of each block. Then mixes in the last stripe of the message at last_stripe, unless it is null.
 template <class Kernel>
-constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                             std::byte const *last_stripe) noexcept;
 
 // fold_stripes(), defined in src/xxh3/stripe_loop.cpp.
-void stripe_loop(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+void stripe_loop(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                  std::byte const *last_stripe) noexcept;
 
 // fold_stripes() during constant evaluation, else stripe_loop().
-constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                     std::byte const *last_stripe) noexcept;
 
 // Merges the accumulators into 64 bits with 64 bytes of the secret.
@@ -209,6 +212,9 @@ constexpr std::uint64_t folded_length(std::uint64_t length) noexcept;
 
 // Position in its block of the stripe at offset folded.
 constexpr std::size_t stripe_index(std::uint64_t folded) noexcept;
+
+// xxh3_update() in place: copying the state costs more than folding a short piece.
+template <unsigned Width> constexpr void update(xxh3_state<Width> &state, std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::xxh3_detail
 
@@ -246,18 +252,18 @@ constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) n
   return product.low ^ product.high;
 }
 
-constexpr std::uint64_t avalanche(std::uint64_t value) noexcept {
-  value ^= value >> avalanche_shift;
-  value *= prime_mx1;
-  return value ^ (value >> 32U);
+constexpr std::uint64_t avalanche(std::uint64_t hash) noexcept {
+  hash ^= hash >> avalanche_shift;
+  hash *= prime_mx1;
+  return hash ^ (hash >> 32U);
 }
 
-constexpr std::uint64_t avalanche_xxh64(std::uint64_t value) noexcept {
-  value ^= value >> static_cast<unsigned>(primes_64::avalanche_shifts[0]);
-  value *= primes_64::prime_2;
-  value ^= value >> static_cast<unsigned>(primes_64::avalanche_shifts[1]);
-  value *= primes_64::prime_3;
-  return value ^ (value >> static_cast<unsigned>(primes_64::avalanche_shifts[2]));
+constexpr std::uint64_t avalanche_xxh64(std::uint64_t hash) noexcept {
+  hash ^= hash >> static_cast<unsigned>(primes_64::avalanche_shifts[0]);
+  hash *= primes_64::prime_2;
+  hash ^= hash >> static_cast<unsigned>(primes_64::avalanche_shifts[1]);
+  hash *= primes_64::prime_3;
+  return hash ^ (hash >> static_cast<unsigned>(primes_64::avalanche_shifts[2]));
 }
 
 constexpr secret_array make_secret(std::uint64_t seed) noexcept {
@@ -323,15 +329,15 @@ template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte 
     std::uint64_t const last = load<std::uint32_t>(input + length - 4);
     std::uint64_t const modified_seed = seed ^ (std::uint64_t{std::byteswap(static_cast<std::uint32_t>(seed))} << 32U);
     if constexpr(Width == 64) {
-      std::uint64_t value = (secret_xor<std::uint64_t>(secret + 8) - modified_seed) ^ (last | (first << 32U));
-      value ^= std::rotl(value, mix_rotations[0]) ^ std::rotl(value, mix_rotations[1]);
-      value *= prime_mx2;
-      value ^= (value >> mix_shifts[0]) + length;
-      value *= prime_mx2;
-      return value ^ (value >> mix_shifts[1]);
+      std::uint64_t mixed = (secret_xor<std::uint64_t>(secret + 8) - modified_seed) ^ (last | (first << 32U));
+      mixed ^= std::rotl(mixed, mix_rotations[0]) ^ std::rotl(mixed, mix_rotations[1]);
+      mixed *= prime_mx2;
+      mixed ^= (mixed >> mix_shifts[0]) + length;
+      mixed *= prime_mx2;
+      return mixed ^ (mixed >> mix_shifts[1]);
     } else {
-      std::uint64_t const value = (secret_xor<std::uint64_t>(secret + 16) + modified_seed) ^ (first | (last << 32U));
-      xxh3_hash128 const product = multiply(value, primes_64::prime_1 + (length << 2U));
+      std::uint64_t const mixed = (secret_xor<std::uint64_t>(secret + 16) + modified_seed) ^ (first | (last << 32U));
+      xxh3_hash128 const product = multiply(mixed, primes_64::prime_1 + (length << 2U));
       std::uint64_t const high = product.high + (product.low << 1U);
       std::uint64_t low = product.low ^ (high >> 3U);
       low ^= low >> mix_shifts[0];
@@ -400,7 +406,7 @@ template <unsigned Width> constexpr value<Width> hash_medium(std::span<std::byte
   }
 }
 
-template <unsigned Width> constexpr value<Width> hash_medium_long(std::span<std::byte const> data, std::uint64_t seed) noexcept {
+template <unsigned Width> constexpr value<Width> hash_midsize(std::span<std::byte const> data, std::uint64_t seed) noexcept {
   std::byte const *input = data.data();
   std::byte const *secret = default_secret.data();
   std::size_t const length = data.size();
@@ -461,16 +467,16 @@ constexpr void portable_kernel::accumulate(lanes &values, std::byte const *strip
 constexpr void portable_kernel::scramble(lanes &values, std::byte const *secret) noexcept { xxh3_detail::scramble(values, secret); }
 
 template <class Kernel>
-constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                             std::byte const *last_stripe) noexcept {
   // A local copy stays in registers: stores through the reference could alias data.
   typename Kernel::lanes lanes = Kernel::load(accumulators);
   std::byte const *position = data.data();
   for(std::size_t count = data.size() / stripe_size; count != 0; --count, position += stripe_size) {
-    Kernel::accumulate(lanes, position, secret.data() + (secret_consume_rate * stripe_index));
-    if(++stripe_index == stripes_per_block) {
+    Kernel::accumulate(lanes, position, secret.data() + (secret_consume_rate * block_stripe));
+    if(++block_stripe == stripes_per_block) {
       Kernel::scramble(lanes, secret.data() + secret_size - stripe_size);
-      stripe_index = 0;
+      block_stripe = 0;
     }
   }
   if(last_stripe != nullptr) {
@@ -479,12 +485,12 @@ constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte
   Kernel::store(accumulators, lanes);
 }
 
-constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t stripe_index, secret_array const &secret,
+constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                     std::byte const *last_stripe) noexcept {
   if consteval {
-    fold_stripes<portable_kernel>(accumulators, data, stripe_index, secret, last_stripe);
+    fold_stripes<portable_kernel>(accumulators, data, block_stripe, secret, last_stripe);
   } else {
-    stripe_loop(accumulators, data, stripe_index, secret, last_stripe);
+    stripe_loop(accumulators, data, block_stripe, secret, last_stripe);
   }
 }
 
@@ -519,12 +525,7 @@ constexpr std::uint64_t folded_length(std::uint64_t length) noexcept { return le
 
 constexpr std::size_t stripe_index(std::uint64_t folded) noexcept { return static_cast<std::size_t>((folded / stripe_size) % stripes_per_block); }
 
-} // namespace checksum::xxh3_detail
-
-namespace checksum {
-
-template <unsigned Width> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept {
-  using namespace xxh3_detail;
+template <unsigned Width> constexpr void update(xxh3_state<Width> &state, std::span<std::byte const> data) noexcept {
   std::uint64_t const folded = folded_length(state.length);
   auto const buffered = static_cast<std::size_t>(state.length - folded);
   state.length += data.size();
@@ -532,7 +533,7 @@ template <unsigned Width> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Wid
   std::ranges::copy(data.first(fill), state.buffer.begin() + static_cast<std::ptrdiff_t>(buffered));
   data = data.subspan(fill);
   if(data.empty()) {
-    return state;
+    return;
   }
   // The buffer is full and more input follows: fold it, then all but the last 1 to 256 bytes of data.
   std::size_t const whole = ((data.size() - 1) / buffer_size) * buffer_size;
@@ -546,11 +547,19 @@ template <unsigned Width> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Wid
     std::ranges::copy(data.subspan(whole - stripe_size, stripe_size), state.buffer.end() - stripe_size);
   }
   std::ranges::copy(data.subspan(whole), state.buffer.begin());
+}
+
+} // namespace checksum::xxh3_detail
+
+namespace checksum {
+
+template <unsigned Width> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept {
+  xxh3_detail::update(state, data);
   return state;
 }
 
 template <unsigned Width, byte_range Range> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = xxh3_update(state, chunk); });
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { xxh3_detail::update(state, chunk); });
   return state;
 }
 
@@ -585,7 +594,7 @@ template <unsigned Width> constexpr xxh3_state<Width>::value_type xxh3_compute(s
     return xxh3_detail::hash_medium<Width>(data, seed);
   }
   if(data.size() <= xxh3_detail::midsize_max) {
-    return xxh3_detail::hash_medium_long<Width>(data, seed);
+    return xxh3_detail::hash_midsize<Width>(data, seed);
   }
   return xxh3_detail::hash_large<Width>(data, seed);
 }

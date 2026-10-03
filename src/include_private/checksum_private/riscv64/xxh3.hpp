@@ -1,10 +1,10 @@
 #ifndef CHECKSUM_PRIVATE_RISCV64_XXH3_HPP
 #define CHECKSUM_PRIVATE_RISCV64_XXH3_HPP
 
-// RISC-V vector kernel of the XXH3 stripe loop (V extension, little-endian RV64), for any vector length. Included only by
+// RISC-V vector kernel of the XXH3 stripe loop (V extension, little-endian RV64), for vector lengths from 128 bits. Included only by
 // xxh3_arch.hpp.
 
-#if !defined(__riscv_vector) || __riscv_v_elen < 64
+#if !defined(__riscv_vector) || __riscv_v_elen < 64 || __riscv_v_min_vlen < 128
 #include <checksum_private/generic/xxh3.hpp>
 #else
 
