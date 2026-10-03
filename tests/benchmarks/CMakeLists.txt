@@ -15,6 +15,11 @@ target_compile_features(checksum_bench_fletcher PRIVATE cxx_std_23)
 target_link_libraries(checksum_bench_fletcher PRIVATE checksum::checksum benchmark::benchmark)
 add_test(NAME benchmark_fletcher_smoke COMMAND checksum_bench_fletcher --benchmark_filter=^fletcher<16>/20$ --benchmark_min_time=0.001s)
 
+add_executable(checksum_bench_fletcher4 bench_fletcher4.cpp)
+target_compile_features(checksum_bench_fletcher4 PRIVATE cxx_std_23)
+target_link_libraries(checksum_bench_fletcher4 PRIVATE checksum::checksum benchmark::benchmark)
+add_test(NAME benchmark_fletcher4_smoke COMMAND checksum_bench_fletcher4 --benchmark_filter=^fletcher4/20$ --benchmark_min_time=0.001s)
+
 add_executable(checksum_bench_adler32 bench_adler32.cpp)
 target_compile_features(checksum_bench_adler32 PRIVATE cxx_std_23)
 target_link_libraries(checksum_bench_adler32 PRIVATE checksum::checksum benchmark::benchmark)

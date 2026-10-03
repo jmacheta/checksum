@@ -209,6 +209,7 @@ words:
 - xors
 - xorshift
 - xxhash
+- zcommon
 - zextsi
 - zmodem
 - znver

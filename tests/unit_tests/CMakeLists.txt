@@ -13,6 +13,7 @@ target_sources(
           ut_crc_polynomial.cpp
           ut_crc_vectors.cpp
           ut_fletcher.cpp
+          ut_fletcher4.cpp
           ut_internet_checksum.cpp
           ut_murmur3.cpp
           ut_xxhash.cpp
@@ -24,6 +25,7 @@ target_sources(
           include/crc_catalog_checks.hpp
           include/crc_reference_vectors.hpp
           include/crc_test_support.hpp
+          include/fletcher4_reference_vectors.hpp
           include/murmur3_reference_vectors.hpp
           include/xxhash_reference_vectors.hpp
 )
