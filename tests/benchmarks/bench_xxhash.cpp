@@ -45,7 +45,7 @@ void xxh3_128(benchmark::State &state) {
   run(state, [](std::span<std::byte const> data) { return checksum::xxh3_compute<128>(data); });
 }
 
-// IPv4 and UDP headers, a cache line, a full Ethernet payload, a page and a large buffer.
+// IPv4 and UDP headers, a cache line, a short packet, a full Ethernet payload, a page and a large buffer.
 BENCHMARK(xxhash32)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
 BENCHMARK(xxhash64)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
 BENCHMARK(xxh3_64)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);

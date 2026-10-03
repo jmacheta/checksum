@@ -28,7 +28,7 @@ void adler32(benchmark::State &state) {
   state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
 }
 
-// IPv4 and UDP headers, a full Ethernet payload, a page and a large buffer.
+// IPv4 and UDP headers, a cache line, a short packet, a full Ethernet payload, a page and a large buffer.
 BENCHMARK(adler32)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
 
 } // namespace

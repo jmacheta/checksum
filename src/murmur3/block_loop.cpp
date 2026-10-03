@@ -7,11 +7,12 @@
 
 namespace checksum::murmur3_detail {
 
-template <unsigned Width> lane_array<Width> block_loop(lane_array<Width> lanes, std::span<std::byte const> data) noexcept {
-  return fold_blocks<Width>(lanes, data);
+// Inlining is harmless: each lane depends on the previous one, so there is nothing to vectorize.
+template <unsigned Width> void block_loop(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {
+  lanes = fold_blocks<Width>(lanes, data);
 }
 
-template lane_array<32> block_loop<32>(lane_array<32>, std::span<std::byte const>) noexcept;
-template lane_array<128> block_loop<128>(lane_array<128>, std::span<std::byte const>) noexcept;
+template void block_loop<32>(lane_array<32> &, std::span<std::byte const>) noexcept;
+template void block_loop<128>(lane_array<128> &, std::span<std::byte const>) noexcept;
 
 } // namespace checksum::murmur3_detail

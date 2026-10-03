@@ -150,6 +150,27 @@ TYPED_TEST(murmur3, byte_ranges) {
   EXPECT_EQ(murmur3_compute<width>(std::list<std::byte>(message.begin(), message.end()), set.seed), set.prefixes[300]);
 }
 
+// Before the first block, the lanes and the buffer bytes past the message are unused and may hold anything.
+TYPED_TEST(murmur3, short_state_ignores_unused_fields) {
+  constexpr unsigned width = TypeParam::value;
+  auto const &set = vectors<width>()[2];
+  for(std::size_t size = 0; size < width / 8; ++size) {
+    murmur3_state<width> state{.length = size, .seed = set.seed};
+    state.lanes.fill(0xA5A5A5A5U);
+    state.buffer.fill(std::byte{0x5A});
+    std::ranges::copy(std::span(message).first(size), state.buffer.begin());
+    EXPECT_EQ(murmur3_finalize(state), set.prefixes[size]) << "size " << size;
+  }
+}
+
+// Width 32 mixes in the length modulo 2^32.
+TEST(murmur3_x86_32, length_wraps) {
+  murmur3_state<32> state{.lanes = {0x12345678U}, .length = (std::uint64_t{1} << 32) + 5, .buffer = {std::byte{0x42}}};
+  murmur3_state<32> wrapped = state;
+  wrapped.length = 5;
+  EXPECT_EQ(murmur3_finalize(state), murmur3_finalize(wrapped));
+}
+
 TYPED_TEST(murmur3, long_message) {
   constexpr unsigned width = TypeParam::value;
   std::vector<std::byte> data(murmur3_test::long_message_size);

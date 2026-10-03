@@ -110,11 +110,12 @@ template <unsigned Width> constexpr lane_array<Width> initial_lanes(std::uint32_
 // Folds the whole blocks of data into lanes.
 template <unsigned Width> constexpr lane_array<Width> fold_blocks(lane_array<Width> lanes, std::span<std::byte const> data) noexcept;
 
-// fold_blocks(); defined in src/murmur3/block_loop.cpp for both widths.
-template <unsigned Width> lane_array<Width> block_loop(lane_array<Width> lanes, std::span<std::byte const> data) noexcept;
+// fold_blocks(); defined in src/murmur3/block_loop.cpp for both widths. Lanes by reference keep the array out of the stack arguments
+// and the return slot.
+template <unsigned Width> void block_loop(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
 // fold_blocks() during constant evaluation, else block_loop().
-template <unsigned Width> constexpr lane_array<Width> fold(lane_array<Width> lanes, std::span<std::byte const> data) noexcept;
+template <unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
 // The hash of a message of length bytes: lanes hold its whole blocks, tail holds the rest.
 template <unsigned Width>
@@ -186,26 +187,31 @@ template <unsigned Width> constexpr lane_array<Width> fold_blocks(lane_array<Wid
   return lanes;
 }
 
-template <unsigned Width> constexpr lane_array<Width> fold(lane_array<Width> lanes, std::span<std::byte const> data) noexcept {
+template <unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {
   if consteval {
-    return fold_blocks<Width>(lanes, data);
+    lanes = fold_blocks<Width>(lanes, data);
   } else {
-    return block_loop<Width>(lanes, data);
+    block_loop<Width>(lanes, data);
   }
 }
 
 template <unsigned Width>
 constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::uint64_t length, std::span<std::byte const> tail) noexcept {
   // The tail is scrambled as a block padded with zeros; scrambling a zero word gives zero, so absent words change nothing.
-  lane_array<Width> words{};
-  for(std::size_t index = 0; index < tail.size(); ++index) {
-    words[index / sizeof(lane<Width>)] |= std::to_integer<lane<Width>>(tail[index]) << (8 * (index % sizeof(lane<Width>)));
+  std::array<std::byte, block_size<Width>> block{};
+  if consteval {
+    std::ranges::copy(tail, block.begin());
+  } else {
+    // The guard spares the library call for an empty tail.
+    if(!tail.empty()) {
+      std::memcpy(block.data(), tail.data(), tail.size());
+    }
   }
   if constexpr(Width == 32) {
-    return avalanche<Width>(lanes[0] ^ scramble<Width>(words[0], 0) ^ static_cast<std::uint32_t>(length));
+    return avalanche<Width>(lanes[0] ^ scramble<Width>(load<std::uint32_t>(block.data()), 0) ^ static_cast<std::uint32_t>(length));
   } else {
-    std::uint64_t low = lanes[0] ^ scramble<Width>(words[0], 0) ^ length;
-    std::uint64_t high = lanes[1] ^ scramble<Width>(words[1], 1) ^ length;
+    std::uint64_t low = lanes[0] ^ scramble<Width>(load<std::uint64_t>(block.data()), 0) ^ length;
+    std::uint64_t high = lanes[1] ^ scramble<Width>(load<std::uint64_t>(block.data() + 8), 1) ^ length;
     low += high;
     high += low;
     low = avalanche<Width>(low);
@@ -238,7 +244,7 @@ template <unsigned Width> constexpr murmur3_state<Width> murmur3_update(murmur3_
   }
   std::size_t const whole = data.size() - (data.size() % block_size);
   if(whole != 0) {
-    state.lanes = murmur3_detail::fold<Width>(state.lanes, data.first(whole));
+    murmur3_detail::fold<Width>(state.lanes, data.first(whole));
   }
   std::ranges::copy(data.subspan(whole), state.buffer.begin());
   return state;
@@ -260,7 +266,7 @@ template <unsigned Width> constexpr murmur3_state<Width>::value_type murmur3_com
   std::size_t const whole = data.size() - (data.size() % murmur3_detail::block_size<Width>);
   murmur3_detail::lane_array<Width> lanes = murmur3_detail::initial_lanes<Width>(seed);
   if(whole != 0) {
-    lanes = murmur3_detail::fold<Width>(lanes, data.first(whole));
+    murmur3_detail::fold<Width>(lanes, data.first(whole));
   }
   return murmur3_detail::finish<Width>(lanes, data.size(), data.subspan(whole));
 }

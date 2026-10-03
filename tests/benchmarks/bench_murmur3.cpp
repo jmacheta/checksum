@@ -32,7 +32,7 @@ void murmur3_32(benchmark::State &state) { run<32>(state); }
 
 void murmur3_128(benchmark::State &state) { run<128>(state); }
 
-// IPv4 and UDP headers, a cache line, a full Ethernet payload, a page and a large buffer.
+// IPv4 and UDP headers, a cache line, a short packet, a full Ethernet payload, a page and a large buffer.
 BENCHMARK(murmur3_32)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
 BENCHMARK(murmur3_128)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
 
