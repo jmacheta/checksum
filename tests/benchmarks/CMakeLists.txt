@@ -19,3 +19,8 @@ add_executable(checksum_bench_adler32 bench_adler32.cpp)
 target_compile_features(checksum_bench_adler32 PRIVATE cxx_std_23)
 target_link_libraries(checksum_bench_adler32 PRIVATE checksum::checksum benchmark::benchmark)
 add_test(NAME benchmark_adler32_smoke COMMAND checksum_bench_adler32 --benchmark_filter=^adler32/20$ --benchmark_min_time=0.001s)
+
+add_executable(checksum_bench_xxhash bench_xxhash.cpp)
+target_compile_features(checksum_bench_xxhash PRIVATE cxx_std_23)
+target_link_libraries(checksum_bench_xxhash PRIVATE checksum::checksum benchmark::benchmark)
+add_test(NAME benchmark_xxhash_smoke COMMAND checksum_bench_xxhash --benchmark_filter=^xxhash64/20$ --benchmark_min_time=0.001s)

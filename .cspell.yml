@@ -207,6 +207,7 @@ words:
 - xorout
 - xors
 - xorshift
+- xxhash
 - zextsi
 - zmodem
 - znver
