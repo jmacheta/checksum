@@ -1,52 +1,23 @@
 {
     "version": 8,
+    "include": [
+        "cmake/common_presets.json",
+        "cmake/emulator_presets.json",
+        "cmake/x86_64_presets.json",
+        "cmake/benchmark_presets.json"
+    ],
     "configurePresets": [
-        {
-            "name": "common",
-            "hidden": true,
-            "generator": "Ninja Multi-Config",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "cacheVariables": {
-                "CMAKE_CONFIGURATION_TYPES": "Release;Debug",
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-                "CMAKE_CXX_SCAN_FOR_MODULES": "OFF"
-            },
-            "environment": {
-                "CPM_SOURCE_CACHE": "${sourceDir}/.cpm-cache",
-                "CPM_USE_NAMED_CACHE_DIRECTORIES": "ON"
-            }
-        },
-        {
-            "name": "gcc-clang-common",
-            "hidden": true,
-            "inherits": "common",
-            "cacheVariables": {
-                "CMAKE_C_FLAGS_DEBUG": "-g -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern",
-                "CMAKE_CXX_FLAGS_DEBUG": "-g -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern"
-            },
-            "environment": {
-                "CFLAGS": "-Wall -Wextra -Wpedantic -Wunused-parameter -Winit-self -Wcast-align -Wconversion -Wnull-dereference -Wduplicated-cond -Wsign-conversion -Wlogical-op -Wno-psabi",
-                "CXXFLAGS": "-Wall -Wextra -Wpedantic -Wunused-parameter -Winit-self -Wcast-align -Wconversion -Wnull-dereference -Wduplicated-cond -Wsign-conversion -Wlogical-op -Wno-psabi"
-            }
-        },
         {
             "name": "native-gcc",
             "displayName": "Linux native (GCC)",
             "description": "Native Linux build using GCC",
-            "inherits": "gcc-clang-common",
-            "cacheVariables": {
-                "CMAKE_C_COMPILER": "gcc",
-                "CMAKE_CXX_COMPILER": "g++"
-            }
+            "inherits": "gcc"
         },
         {
             "name": "native-clang",
             "displayName": "Linux native (Clang)",
             "description": "Native Linux build using Clang",
-            "inherits": "gcc-clang-common",
-            "cacheVariables": {
-                "CMAKE_CXX_COMPILER": "clang++"
-            }
+            "inherits": "clang"
         },
         {
             "name": "native-asan",
@@ -54,19 +25,41 @@
             "description": "Native Linux build instrumented with AddressSanitizer and UndefinedBehaviorSanitizer, for tests",
             "inherits": "gcc-clang-common",
             "cacheVariables": {
-                "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1",
-                "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1",
-                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined -Wl,--gc-sections"
+            },
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1"
             }
         },
         {
-            "name": "native-msvc",
-            "displayName": "Windows native (MSVC)",
-            "description": "Native Windows build using MSVC",
-            "inherits": "common",
-            "generator": "Visual Studio 17 2022",
+            "name": "native-gcc-no-exceptions",
+            "displayName": "Linux native (GCC, -fno-exceptions -fno-rtti)",
+            "description": "Native Linux build using GCC with exceptions and RTTI disabled in every target",
+            "inherits": "native-gcc",
+            "environment": {
+                "CHECKSUM_EXTRA_CXXFLAGS": "-fno-exceptions -fno-rtti"
+            }
+        },
+        {
+            "name": "native-gcc-portable",
+            "displayName": "Linux native (GCC, portable CRC loops)",
+            "description": "Native Linux build using GCC with CHECKSUM_ACCELERATION=OFF: generic architecture header, portable loops only",
+            "inherits": "native-gcc",
             "cacheVariables": {
-                "CMAKE_CXX_FLAGS": "/W4 /permissive-"
+                "CHECKSUM_ACCELERATION": "OFF"
+            }
+        },
+        {
+            "name": "native-clang-libcxx",
+            "displayName": "Linux native (Clang, libc++)",
+            "description": "Native Linux build using Clang and libc++",
+            "inherits": "native-clang",
+            "environment": {
+                "CHECKSUM_EXTRA_CXXFLAGS": "-stdlib=libc++"
+            },
+            "cacheVariables": {
+                "CMAKE_EXE_LINKER_FLAGS": "-stdlib=libc++ -Wl,--gc-sections"
             }
         }
     ],
@@ -102,9 +95,21 @@
             "configuration": "Debug"
         },
         {
-            "name": "native-msvc-debug",
+            "name": "native-gcc-no-exceptions-debug",
             "displayName": "all [Debug]",
-            "configurePreset": "native-msvc",
+            "configurePreset": "native-gcc-no-exceptions",
+            "configuration": "Debug"
+        },
+        {
+            "name": "native-gcc-portable-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "native-gcc-portable",
+            "configuration": "Debug"
+        },
+        {
+            "name": "native-clang-libcxx-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "native-clang-libcxx",
             "configuration": "Debug"
         }
     ],
@@ -149,9 +154,35 @@
             }
         },
         {
-            "name": "native-msvc-debug",
+            "name": "native-gcc-no-exceptions-debug",
             "displayName": "Run Tests [Debug]",
-            "configurePreset": "native-msvc",
+            "configurePreset": "native-gcc-no-exceptions",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "native-gcc-portable-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "native-gcc-portable",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "native-clang-libcxx-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "native-clang-libcxx",
             "configuration": "Debug",
             "output": {
                 "outputOnFailure": true
@@ -221,21 +252,59 @@
             ]
         },
         {
-            "name": "native-msvc",
-            "displayName": "Windows native (MSVC)",
+            "name": "native-gcc-no-exceptions",
+            "displayName": "Linux native (GCC, -fno-exceptions -fno-rtti)",
             "description": "Configure, build [Debug], test",
             "steps": [
                 {
                     "type": "configure",
-                    "name": "native-msvc"
+                    "name": "native-gcc-no-exceptions"
                 },
                 {
                     "type": "build",
-                    "name": "native-msvc-debug"
+                    "name": "native-gcc-no-exceptions-debug"
                 },
                 {
                     "type": "test",
-                    "name": "native-msvc-debug"
+                    "name": "native-gcc-no-exceptions-debug"
+                }
+            ]
+        },
+        {
+            "name": "native-gcc-portable",
+            "displayName": "Linux native (GCC, portable CRC loops)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "native-gcc-portable"
+                },
+                {
+                    "type": "build",
+                    "name": "native-gcc-portable-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "native-gcc-portable-debug"
+                }
+            ]
+        },
+        {
+            "name": "native-clang-libcxx",
+            "displayName": "Linux native (Clang, libc++)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "native-clang-libcxx"
+                },
+                {
+                    "type": "build",
+                    "name": "native-clang-libcxx-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "native-clang-libcxx-debug"
                 }
             ]
         }

@@ -1,0 +1,55 @@
+{
+    "version": 8,
+    "configurePresets": [
+        {
+            "name": "common",
+            "hidden": true,
+            "generator": "Ninja Multi-Config",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Release;Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_CXX_SCAN_FOR_MODULES": "OFF"
+            },
+            "environment": {
+                "CPM_SOURCE_CACHE": "${sourceDir}/.cpm-cache",
+                "CPM_USE_NAMED_CACHE_DIRECTORIES": "ON"
+            }
+        },
+        {
+            "name": "gcc-clang-common",
+            "hidden": true,
+            "inherits": "common",
+            "cacheVariables": {
+                "CMAKE_C_FLAGS_DEBUG": "-g -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern",
+                "CMAKE_CXX_FLAGS_DEBUG": "-g -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern"
+            },
+            "environment": {
+                "CHECKSUM_WARNINGS": "-Wall -Wextra -Wpedantic -Wunused-parameter -Winit-self -Wcast-align -Wconversion -Wnull-dereference -Wduplicated-cond -Wsign-conversion -Wlogical-op -Wno-psabi",
+                "CFLAGS": "$env{CHECKSUM_WARNINGS} $env{CHECKSUM_SECTIONS} $env{CHECKSUM_EXTRA_CFLAGS}",
+                "CXXFLAGS": "$env{CHECKSUM_WARNINGS} $env{CHECKSUM_SECTIONS} $env{CHECKSUM_EXTRA_CXXFLAGS}",
+                "CHECKSUM_EXTRA_CFLAGS": "",
+                "CHECKSUM_EXTRA_CXXFLAGS": "",
+                "CHECKSUM_SECTIONS": "-ffunction-sections -fdata-sections",
+                "LDFLAGS": "-Wl,--gc-sections"
+            }
+        },
+        {
+            "name": "gcc",
+            "hidden": true,
+            "inherits": "gcc-clang-common",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "gcc",
+                "CMAKE_CXX_COMPILER": "g++"
+            }
+        },
+        {
+            "name": "clang",
+            "hidden": true,
+            "inherits": "gcc-clang-common",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        }
+    ]
+}

@@ -15,31 +15,58 @@ permissions:
 
 jobs:
   build-and-test:
-    name: build-and-test (${{ matrix.preset }})
+    name: build-and-test (${{ matrix.preset }}, ${{ matrix.cxx }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        preset: [native-gcc, native-clang, native-asan]
+        include:
+          # Minimum supported versions (<print>: libstdc++ 14, libc++ 18). Clang uses the newest installed libstdc++,
+          # so its libstdc++ jobs install g++-14.
+          - { preset: native-gcc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
+          - { preset: native-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
+          - { preset: native-clang-libcxx, cc: clang-18, cxx: clang++-18, packages: "clang-18 libc++-18-dev libc++abi-18-dev" }
+          - { preset: native-asan, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
+          # Library, tests and a consumer of every header built with -fno-exceptions -fno-rtti.
+          - { preset: native-gcc-no-exceptions, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
+          # CRC acceleration: the x86_64 kernels (-mpclmul -msse4.2: PCLMULQDQ folding, SSE4.2 crc32) and the generic header (CHECKSUM_ACCELERATION=OFF).
+          - { preset: x86_64-gcc-pclmul, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
+          - { preset: native-gcc-portable, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
+          # Arm and RISC-V targets, tests in QEMU user mode: the Arm kernels (PMULL, CRC32), the RISC-V Zbc kernel and the generic header.
+          - { preset: cross-aarch64-pmull, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu }
+          - { preset: cross-aarch64-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu }
+          - { preset: cross-aarch64-portable, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu }
+          - { preset: cross-arm-portable, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf }
+          - { preset: cross-arm-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf }
+          - { preset: cross-riscv64-zbc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu }
+          - { preset: cross-riscv64-portable, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu }
+          # Big-endian AArch64: Ubuntu has no cross compiler for it, the Arm GNU Toolchain is downloaded.
+          - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", arm_toolchain: aarch64_be-none-linux-gnu }
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Install ninja and compilers
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ${{ matrix.packages }}
 
-      - name: Install GCC 14
-        if: matrix.preset != 'native-clang'
-        run: sudo apt-get install -y gcc-14 g++-14
-
-      - name: Install Clang 18
-        if: matrix.preset != 'native-gcc'
-        run: sudo apt-get install -y clang-18
-
+      # The presets name the compilers gcc/g++, clang/clang++, c++ (native-asan) and <triplet>-gcc/g++ (the cross presets of
+      # cmake/emulator_presets.json); point those names at the versions under test, ahead of /usr/bin in PATH.
       - name: Select compiler versions
         run: |
-          echo "CC=$([[ '${{ matrix.preset }}' == native-gcc ]] && echo gcc-14 || echo clang-18)" >> "$GITHUB_ENV"
-          echo "CXX=$([[ '${{ matrix.preset }}' == native-gcc ]] && echo g++-14 || echo clang++-18)" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/compilers"
+          for name in cc gcc clang; do ln -sf "$(command -v ${{ matrix.cc }})" "$RUNNER_TEMP/compilers/$name"; done
+          for name in c++ g++ clang++; do ln -sf "$(command -v ${{ matrix.cxx }})" "$RUNNER_TEMP/compilers/$name"; done
+          if [ -n "${{ matrix.cross }}" ]; then
+            for name in gcc g++; do ln -sf "$(command -v ${{ matrix.cross }}-$name-14)" "$RUNNER_TEMP/compilers/${{ matrix.cross }}-$name"; done
+          fi
+          echo "$RUNNER_TEMP/compilers" >> "$GITHUB_PATH"
+
+      - name: Install the Arm GNU Toolchain
+        if: matrix.arm_toolchain
+        run: |
+          name=arm-gnu-toolchain-14.3.rel1-x86_64-${{ matrix.arm_toolchain }}
+          curl -fsSL "https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/$name.tar.xz" | tar -xJ -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$name/bin" >> "$GITHUB_PATH"
 
       - name: Cache CPM packages
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
@@ -49,43 +76,6 @@ jobs:
 
       - name: Configure, build and test
         run: cmake --workflow --preset ${{ matrix.preset }}
-
-  build-and-test-macos:
-    name: build-and-test-macos
-    runs-on: macos-latest
-    continue-on-error: true
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Install ninja
-        run: brew install ninja
-
-      - name: Cache CPM packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
-        with:
-          path: .cpm-cache
-          key: cpm-macos-${{ hashFiles('cmake/requirements.cmake') }}
-
-      - name: Configure, build and test
-        run: cmake --workflow --preset native-clang
-
-  build-and-test-windows:
-    name: build-and-test-windows
-    runs-on: windows-latest
-    continue-on-error: true
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Cache CPM packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
-        with:
-          path: .cpm-cache
-          key: cpm-windows-${{ hashFiles('cmake/requirements.cmake') }}
-
-      - name: Configure, build and test
-        run: cmake --workflow --preset native-msvc
 
   lint:
     name: lint

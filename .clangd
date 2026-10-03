@@ -50,10 +50,11 @@ Diagnostics:
       readability-implicit-bool-conversion.UseUpperCaseLiteralSuffix: true
       readability-implicit-bool-conversion.AllowLogicalOperatorConversion: true
 
-      # Identifier naming Rules: lower_case by default. UPPER_CASE reserved for macros. CamelCase for Template parameters.
+      # Identifier naming rules: lower_case (std style) for everything, including types and concepts. UPPER_CASE is
+      # reserved for macros, CamelCase for template parameters; data members have plain names, no suffix.
       # These are our DEFAULTS, not absolutes - deviating is fine where there's a good reason (e.g.
       # mirroring an external API's exact names, like a vendor DLL's exported symbols).
-      
+
       readability-identifier-length.MinimumVariableNameLength: 3
       readability-identifier-length.MinimumParameterNameLength: 3
       readability-identifier-length.MinimumLoopCounterNameLength: 1
@@ -64,13 +65,14 @@ Diagnostics:
       readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
       readability-identifier-naming.EnumConstantCase: UPPER_CASE
       readability-identifier-naming.ScopedEnumConstantCase: lower_case
-      readability-identifier-naming.EnumCase: CamelCase
-      readability-identifier-naming.ClassCase: CamelCase
-      readability-identifier-naming.StructCase: CamelCase
-      readability-identifier-naming.UnionCase: CamelCase
+      readability-identifier-naming.EnumCase: lower_case
+      readability-identifier-naming.ClassCase: lower_case
+      readability-identifier-naming.StructCase: lower_case
+      readability-identifier-naming.UnionCase: lower_case
+      readability-identifier-naming.ConceptCase: lower_case
       readability-identifier-naming.TemplateParameterCase: CamelCase
-      readability-identifier-naming.TypeAliasCase: CamelCase
-      readability-identifier-naming.TypedefCase: CamelCase
+      readability-identifier-naming.TypeAliasCase: lower_case
+      readability-identifier-naming.TypedefCase: lower_case
 
 
   # Parser-level diagnostics that fire on files parsed without a matching

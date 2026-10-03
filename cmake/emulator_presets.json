@@ -1,0 +1,454 @@
+{
+    "version": 8,
+    "include": [
+        "common_presets.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "cross-common",
+            "hidden": true,
+            "inherits": "gcc-clang-common",
+            "description": "Cross build for Linux whose tests run in QEMU user mode: executables are linked statically, so QEMU needs no target sysroot; -cpu max emulates every optional instruction-set extension, the instruction-set flags of each preset choose the kernels",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_NAME": "Linux"
+            },
+            "environment": {
+                "LDFLAGS": "-static -Wl,--gc-sections"
+            }
+        },
+        {
+            "name": "cross-aarch64-base",
+            "hidden": true,
+            "inherits": "cross-common",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_PROCESSOR": "aarch64",
+                "CMAKE_C_COMPILER": "aarch64-linux-gnu-gcc",
+                "CMAKE_CXX_COMPILER": "aarch64-linux-gnu-g++",
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-aarch64;-cpu;max"
+            }
+        },
+        {
+            "name": "cross-aarch64be-base",
+            "hidden": true,
+            "inherits": "cross-common",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_PROCESSOR": "aarch64_be",
+                "CMAKE_C_COMPILER": "aarch64_be-none-linux-gnu-gcc",
+                "CMAKE_CXX_COMPILER": "aarch64_be-none-linux-gnu-g++",
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-aarch64_be;-cpu;max"
+            }
+        },
+        {
+            "name": "cross-arm-base",
+            "hidden": true,
+            "inherits": "cross-common",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_PROCESSOR": "arm",
+                "CMAKE_C_COMPILER": "arm-linux-gnueabihf-gcc",
+                "CMAKE_CXX_COMPILER": "arm-linux-gnueabihf-g++",
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-arm;-cpu;max"
+            }
+        },
+        {
+            "name": "cross-riscv64-base",
+            "hidden": true,
+            "inherits": "cross-common",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_PROCESSOR": "riscv64",
+                "CMAKE_C_COMPILER": "riscv64-linux-gnu-gcc",
+                "CMAKE_CXX_COMPILER": "riscv64-linux-gnu-g++",
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-riscv64;-cpu;max"
+            }
+        },
+        {
+            "name": "cross-aarch64-pmull",
+            "displayName": "AArch64 Linux in QEMU (PMULL and CRC32)",
+            "description": "AArch64 cross build with -march=armv8-a+crc+crypto: PMULL folding and CRC32 instructions (aarch64 header); tests run in QEMU",
+            "inherits": "cross-aarch64-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a+crc+crypto",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=armv8-a+crc+crypto"
+            }
+        },
+        {
+            "name": "cross-aarch64-crc32",
+            "displayName": "AArch64 Linux in QEMU (CRC32 instructions)",
+            "description": "AArch64 cross build with -march=armv8-a+crc (no PMULL): CRC32 instructions for CRC-32 and CRC-32C (aarch64 header); tests run in QEMU",
+            "inherits": "cross-aarch64-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a+crc",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=armv8-a+crc"
+            }
+        },
+        {
+            "name": "cross-aarch64-portable",
+            "displayName": "AArch64 Linux in QEMU (portable)",
+            "description": "AArch64 cross build with -march=armv8-a (no PMULL): generic header; tests run in QEMU",
+            "inherits": "cross-aarch64-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=armv8-a"
+            }
+        },
+        {
+            "name": "cross-aarch64be",
+            "displayName": "Big-endian AArch64 Linux in QEMU (CRC32, no PMULL)",
+            "description": "Big-endian AArch64 cross build with -march=armv8-a+crc+crypto: CRC32 instructions, the PMULL kernel is not used on big-endian (arm header); tests run in QEMU_be",
+            "inherits": "cross-aarch64be-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a+crc+crypto",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=armv8-a+crc+crypto"
+            }
+        },
+        {
+            "name": "cross-arm-crc32",
+            "displayName": "32-bit Arm Linux in QEMU (CRC32 instructions)",
+            "description": "32-bit Arm (hard float) cross build with -march=armv8-a+crc: CRC32 instructions in AArch32 (arm header); tests run in QEMU",
+            "inherits": "cross-arm-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a+crc",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=armv8-a+crc"
+            }
+        },
+        {
+            "name": "cross-arm-portable",
+            "displayName": "32-bit Arm Linux in QEMU (portable)",
+            "description": "32-bit Arm (hard float) cross build: generic header on a 32-bit target; tests run in QEMU",
+            "inherits": "cross-arm-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "",
+                "CHECKSUM_EXTRA_CXXFLAGS": ""
+            }
+        },
+        {
+            "name": "cross-riscv64-zbc",
+            "displayName": "RISC-V 64 Linux in QEMU (Zbc)",
+            "description": "Cross build for RISC-V 64 Linux with -march=rv64gc_zbb_zbc, tests in QEMU user mode: the Zbc carry-less multiplication folding kernel",
+            "inherits": "cross-riscv64-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=rv64gc_zbb_zbc",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=rv64gc_zbb_zbc"
+            }
+        },
+        {
+            "name": "cross-riscv64-portable",
+            "displayName": "RISC-V 64 Linux in QEMU (portable)",
+            "description": "Cross build for RISC-V 64 Linux (rv64gc), tests in QEMU user mode: the portable loops",
+            "inherits": "cross-riscv64-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=rv64gc",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=rv64gc"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "cross-aarch64-pmull-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-aarch64-pmull",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-aarch64-crc32-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-aarch64-crc32",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-aarch64-portable-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-aarch64-portable",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-aarch64be-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-aarch64be",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-arm-crc32-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-arm-crc32",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-arm-portable-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-arm-portable",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-riscv64-zbc-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-riscv64-zbc",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-riscv64-portable-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-riscv64-portable",
+            "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "cross-aarch64-pmull-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-aarch64-pmull",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "cross-aarch64-crc32-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-aarch64-crc32",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "cross-aarch64-portable-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-aarch64-portable",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "cross-aarch64be-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-aarch64be",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "cross-arm-crc32-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-arm-crc32",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "cross-arm-portable-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-arm-portable",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "cross-riscv64-zbc-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-riscv64-zbc",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "cross-riscv64-portable-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-riscv64-portable",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "cross-aarch64-pmull",
+            "displayName": "AArch64 Linux in QEMU (PMULL and CRC32)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-aarch64-pmull"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-aarch64-pmull-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-aarch64-pmull-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-aarch64-crc32",
+            "displayName": "AArch64 Linux in QEMU (CRC32 instructions)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-aarch64-crc32"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-aarch64-crc32-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-aarch64-crc32-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-aarch64-portable",
+            "displayName": "AArch64 Linux in QEMU (portable)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-aarch64-portable"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-aarch64-portable-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-aarch64-portable-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-aarch64be",
+            "displayName": "Big-endian AArch64 Linux in QEMU (CRC32, no PMULL)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-aarch64be"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-aarch64be-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-aarch64be-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-arm-crc32",
+            "displayName": "32-bit Arm Linux in QEMU (CRC32 instructions)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-arm-crc32"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-arm-crc32-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-arm-crc32-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-arm-portable",
+            "displayName": "32-bit Arm Linux in QEMU (portable)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-arm-portable"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-arm-portable-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-arm-portable-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-riscv64-zbc",
+            "displayName": "RISC-V 64 Linux in QEMU (Zbc)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-riscv64-zbc"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-riscv64-zbc-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-riscv64-zbc-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-riscv64-portable",
+            "displayName": "RISC-V 64 Linux in QEMU (portable)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-riscv64-portable"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-riscv64-portable-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-riscv64-portable-debug"
+                }
+            ]
+        }
+    ]
+}

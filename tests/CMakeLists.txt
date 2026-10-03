@@ -1,1 +1,3 @@
 add_subdirectory(unit_tests)
+add_subdirectory(compile_fail)
+add_subdirectory(benchmarks)

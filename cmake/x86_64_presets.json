@@ -1,0 +1,62 @@
+{
+    "version": 8,
+    "include": [
+        "common_presets.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "x86_64-gcc-pclmul",
+            "displayName": "x86-64 (GCC, PCLMULQDQ and SSE4.2 at compile time)",
+            "description": "Native Linux build using GCC with -mpclmul -msse4.2: CRC folding with PCLMULQDQ and the SSE4.2 crc32 instruction (x86_64 header)",
+            "inherits": "gcc",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-mpclmul -msse4.2",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-mpclmul -msse4.2"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "x86_64-gcc-pclmul-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "x86_64-gcc-pclmul",
+            "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "x86_64-gcc-pclmul-debug",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "x86_64-gcc-pclmul",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "x86_64-gcc-pclmul",
+            "displayName": "Linux native (GCC, PCLMULQDQ at compile time)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "x86_64-gcc-pclmul"
+                },
+                {
+                    "type": "build",
+                    "name": "x86_64-gcc-pclmul-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "x86_64-gcc-pclmul-debug"
+                }
+            ]
+        }
+    ]
+}
