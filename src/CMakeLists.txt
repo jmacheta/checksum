@@ -6,7 +6,8 @@ target_compile_features(checksum PUBLIC cxx_std_23)
 
 target_sources(
   checksum
-  PRIVATE crc/lut_braided.cpp
+  PRIVATE adler32/sum_loop.cpp
+          crc/lut_braided.cpp
           crc/lut_byte.cpp
           crc/lut_nibble.cpp
           crc/lut_none.cpp
@@ -18,6 +19,7 @@ target_sources(
          BASE_DIRS
          include
          FILES
+         include/checksum/adler32.hpp
          include/checksum/byte_range.hpp
          include/checksum/crc.hpp
          include/checksum/crc_catalog.hpp
