@@ -43,7 +43,7 @@
         },
         {
             "name": "native-gcc-portable",
-            "displayName": "Linux native (GCC, portable CRC loops)",
+            "displayName": "Linux native (GCC, portable loops)",
             "description": "Native Linux build using GCC with CHECKSUM_ACCELERATION=OFF: generic architecture header, portable loops only",
             "inherits": "native-gcc",
             "cacheVariables": {
@@ -272,7 +272,7 @@
         },
         {
             "name": "native-gcc-portable",
-            "displayName": "Linux native (GCC, portable CRC loops)",
+            "displayName": "Linux native (GCC, portable loops)",
             "description": "Configure, build [Debug], test",
             "steps": [
                 {

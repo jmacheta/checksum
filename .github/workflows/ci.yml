@@ -29,7 +29,7 @@ jobs:
           - { preset: native-asan, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
           # Library, tests and a consumer of every header built with -fno-exceptions -fno-rtti.
           - { preset: native-gcc-no-exceptions, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
-          # CRC acceleration: the x86_64 kernels (-mpclmul -msse4.2: PCLMULQDQ folding, SSE4.2 crc32) and the generic header (CHECKSUM_ACCELERATION=OFF).
+          # Acceleration: the x86_64 kernels (-mpclmul -msse4.2 -mavx2: PCLMULQDQ folding, SSE4.2 crc32, AVX2 Internet checksum) and the portable code (CHECKSUM_ACCELERATION=OFF).
           - { preset: x86_64-gcc-pclmul, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
           - { preset: native-gcc-portable, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
           # Arm and RISC-V targets, tests in QEMU user mode: the Arm kernels (PMULL, CRC32), the RISC-V Zbc kernel and the generic header.

@@ -2,9 +2,12 @@
 
 [![CI](https://github.com/jmacheta/checksum/actions/workflows/ci.yml/badge.svg)](https://github.com/jmacheta/checksum/actions/workflows/ci.yml)
 
-A C++23 library for checksums, built for everything from microcontrollers to servers. It currently provides CRCs:
-any width from 1 to 64 bits, 112 named parameter sets, compile-time or run-time computation, and CPU acceleration
-where the compiler flags allow it.
+A C++23 library for checksums, built for everything from microcontrollers to servers. It currently provides:
+
+- **CRCs:** any width from 1 to 64 bits, 112 named parameter sets;
+- **the Internet checksum** (RFC 1071) of IPv4, ICMP, UDP and TCP.
+
+Both compute at compile time or at run time, with CPU acceleration where the compiler flags allow it.
 
 ```cpp
 #include <checksum/crc_catalog.hpp>
@@ -14,6 +17,9 @@ static_assert(checksum::crc_engine_for<checksum::crc32>.compute("123456789"sv) =
 
 constexpr auto const &crc32 = checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_sliced>;
 std::uint32_t value = crc32.compute(std::span(buffer));
+
+#include <checksum/internet.hpp>
+std::uint16_t ip_checksum = checksum::internet_compute(std::span(ipv4_header));
 ```
 
 ## Design goals
@@ -21,8 +27,8 @@ std::uint32_t value = crc32.compute(std::span(buffer));
 - **Modern C++:** C++23, `constexpr` everywhere it can be, concepts and ranges in the API.
 - **Memory-efficient:** no dynamic allocation and no global state. You choose how much table memory to spend on speed,
   from a few bytes up, and pay nothing for what you do not use.
-- **Fast:** portable loops that compete on their own, plus CRC and carry-less multiplication instructions on x86-64,
-  Arm and RISC-V.
+- **Fast:** portable loops that compete on their own, plus CRC, carry-less multiplication and vector instructions on
+  x86-64, Arm and RISC-V.
 - **Portable and embedded-friendly:** no exceptions, RTTI or OS calls; works on bare-metal toolchains and any
   endianness, with identical results everywhere.
 
@@ -48,6 +54,8 @@ CPU acceleration follows your compiler flags (for example `-march=native` or `-m
 
 - [CRC user guide](doc/crc.md): parameters, the catalog, engines, strategies and their memory cost, CPU
   acceleration, measured performance and limitations.
+- [Internet checksum user guide](doc/internet.md): the API, splitting messages, CPU acceleration, measured performance
+  and limitations.
 - [examples/crc](examples/crc): compile-time CRC, a file checksum, a custom CRC, run-time parameters, a MODBUS frame
   and a strategy driving an MCU CRC peripheral.
 

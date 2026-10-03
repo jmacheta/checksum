@@ -6,12 +6,12 @@
     "configurePresets": [
         {
             "name": "x86_64-gcc-pclmul",
-            "displayName": "x86-64 (GCC, PCLMULQDQ and SSE4.2 at compile time)",
-            "description": "Native Linux build using GCC with -mpclmul -msse4.2: CRC folding with PCLMULQDQ and the SSE4.2 crc32 instruction (x86_64 header)",
+            "displayName": "x86-64 (GCC, PCLMULQDQ, SSE4.2 and AVX2 at compile time)",
+            "description": "Native Linux build using GCC with -mpclmul -msse4.2 -mavx2: CRC folding with PCLMULQDQ, the SSE4.2 crc32 instruction and the AVX2 Internet checksum kernel",
             "inherits": "gcc",
             "environment": {
-                "CHECKSUM_EXTRA_CFLAGS": "-mpclmul -msse4.2",
-                "CHECKSUM_EXTRA_CXXFLAGS": "-mpclmul -msse4.2"
+                "CHECKSUM_EXTRA_CFLAGS": "-mpclmul -msse4.2 -mavx2",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-mpclmul -msse4.2 -mavx2"
             }
         }
     ],

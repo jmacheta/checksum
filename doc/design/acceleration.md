@@ -1,11 +1,12 @@
 # CPU acceleration
 
-How algorithms use CPU instructions, which architectures are worth it, and the CRC kernels as the worked example.
-Measured figures are in the user guides ([CRC](../crc.md#8-performance)).
+How algorithms use CPU instructions and which architectures are worth it, per algorithm. Measured figures are in the
+user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#5-performance)).
 
 ## Rules
 
-- **Compile time only.** A private dispatch header (`checksum_private/crc_arch.hpp`) includes one architecture
+- **Compile time only.** A private dispatch header per algorithm (`checksum_private/crc_arch.hpp`,
+  `internet_arch.hpp`) includes one architecture
   header, chosen by the macros the compiler predefines for the flags of each translation unit (`__PCLMUL__`,
   `__ARM_FEATURE_CRC32`, `__riscv_zbc`, ...). A generic header covers every other target and the option
   `CHECKSUM_ACCELERATION=OFF`. No run-time CPU detection, no target attributes, no static state; the build never
@@ -22,7 +23,7 @@ Measured figures are in the user guides ([CRC](../crc.md#8-performance)).
 - **Measure before adding.** A kernel stays only if it beats the portable loops on real hardware at the sizes where
   it runs; thresholds come from measurements.
 
-## Which architectures are worth accelerating
+## CRC: which architectures are worth accelerating
 
 | Target | Verdict | Why |
 | --- | --- | --- |
@@ -65,3 +66,29 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
   mispredicted branch (about 10 ns per call) on the A72.
 - Byte-table loop: the split variant for out-of-order cores costs 30-40 % on the Cortex-M4, so targets with 32-bit
   pointers run the plain loop for registers wider than 8 bits.
+
+## Internet checksum
+
+A one's complement sum needs only additions, and the order of the bytes does not matter, so the portable loop is
+already fast. It adds native `std::size_t` words in two add-with-carry chains and swaps the bytes of the result once:
+on x86-64 that is 6 000 MB/s at 20 B and about 50 000 MB/s from 4 KiB, without any instruction-set flags. A kernel has
+to beat that, not a byte loop.
+
+| Target | Verdict | Why |
+| --- | --- | --- |
+| x86-64 AVX2 | Yes, from 256 B | 64-byte blocks, 32-bit halves summed into 64-bit lanes: 1.5-1.9× the portable loop at 1500 B-4 KiB, equal at 256 B, slower below. |
+| x86-64 SSE2 (baseline) | No | The same scheme with 16-byte vectors matched the scalar carry loop and was never faster. |
+| x86-64 AVX-512 | Not measured | No AVX-512 hardware available; the AVX2 kernel is near the L1 bandwidth, so the gain is likely small. |
+| Compiler auto-vectorization | No | GCC `-O3 -march=native` vectorizes a 32-bit-word loop to about 47 000 MB/s, below the scalar carry loop; Clang does not vectorize it. |
+| AArch64 NEON (`uadalp`) | Candidate | NEON is part of the AArch64 baseline, and pairwise add-accumulate takes 16 bytes per instruction. Needs a measurement on hardware against the portable loop, which compiles to `adds`/`adc`. |
+| Cortex-M4 / ARMv7E-M | Candidate, assembly only | The portable loop compiles to about 21 instructions per 16 bytes; an `ldm` + `adcs` chain needs about 9. Neither compiler builtins (`__builtin_addc`) nor 64-bit accumulators reach that from C++, so it would be the library's first inline assembly. Measure before adding. |
+| RISC-V | Not done | No carry flag: the portable loop costs three instructions per word. RVV could help; untested. |
+
+Decisions, with the measurement behind each (Core Ultra 7 155H):
+
+- Two carry chains of 64-bit words: 1.3× one chain at 64 B, 2.6× at 4 KiB. A four-chain prototype was up to 1.3×
+  faster again with Clang but 4× slower with GCC, which kept its array in memory; untried with separate variables.
+- The tail is loaded in fixed 4-, 2- and 1-byte steps: a `memcpy` of variable size called the library function and
+  made a 20-byte input 3.5× slower.
+- One final fold after the carry chains are merged: three separate folds cost 8-20 % at 20-64 B.
+- The AVX2 kernel works in passes of 2^26 blocks (4 GiB), so its 64-bit lanes never overflow.

@@ -31,6 +31,8 @@ ignoreRegExpList:
 
 words:
 - adccp
+- adcs
+- addc
 - addtogroup
 - aixm
 - alderlake
@@ -91,6 +93,7 @@ words:
 - icelake
 - ifndef
 - ifold
+- igmp
 - immintrin
 - inlines
 - iscsi
@@ -105,8 +108,10 @@ words:
 - loadu
 - macheta
 - madler
+- mavx
 - mcpu
 - mcrf
+- memcpy
 - microcontroller
 - microcontrollers
 - mifare
@@ -144,8 +149,8 @@ words:
 - retval
 - reveng
 - riello
-- riscv
 - RISCV
+- riscv
 - rocksoft
 - rodata
 - rohc
@@ -154,6 +159,7 @@ words:
 - semiregular
 - setr
 - smbus
+- srli
 - stdint
 - strequal
 - taskset
@@ -161,6 +167,7 @@ words:
 - templatize
 - TESTW
 - tparam
+- uadalp
 - ubsan
 - umts
 - undefines

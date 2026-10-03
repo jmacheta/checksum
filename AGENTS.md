@@ -11,3 +11,4 @@ below when the task touches their area.
 | [doc/design/testing.md](doc/design/testing.md) | Writing tests, or deciding which presets to run for a change. |
 | [doc/design/acceleration.md](doc/design/acceleration.md) | Touching architecture headers or table loops, or considering a new CPU target. |
 | [doc/crc.md](doc/crc.md) | Working on the CRC: user-visible behavior, strategies, measured performance, limitations. Keep it true when behavior changes. |
+| [doc/internet.md](doc/internet.md) | Working on the Internet checksum: API, behavior, acceleration, measured performance, limitations. Keep it true when behavior changes. |

@@ -19,9 +19,11 @@ rules.
 - One public namespace, `checksum`. Each algorithm prefixes its names (`crc_`) and keeps its implementation in its
   own detail namespace (`checksum::crc_detail`).
 - Few headers: an algorithm has its main header and, if it has named parameter sets, a catalog header
-  (`checksum/crc.hpp`, `checksum/crc_catalog.hpp`). Headers shared only by `src/` go to
-  `src/include_private/checksum_private/`.
-- Platform-specific code lives only in the architecture headers (`crc_arch_*.hpp`), selected by the preprocessor.
+  (`checksum/crc.hpp`, `checksum/crc_catalog.hpp`, `checksum/internet.hpp`). What every algorithm needs (the
+  `byte_range` concept, chunking of non-contiguous ranges) is in `checksum/byte_range.hpp`, with its details in
+  `checksum::detail`. Headers shared only by `src/` go to `src/include_private/checksum_private/`.
+- Platform-specific code lives only in the architecture headers (`<algorithm>_arch_*.hpp`), selected by the
+  preprocessor.
 - `constexpr` first: parameter validation and table generation work at compile time, so named engines are constants
   in read-only data.
 - Bounded template bloat: no functions are instantiated per parameter set. Run-time loops are compiled once in

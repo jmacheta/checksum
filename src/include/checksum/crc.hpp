@@ -1,6 +1,8 @@
 #ifndef CHECKSUM_CRC_HPP
 #define CHECKSUM_CRC_HPP
 
+#include <checksum/byte_range.hpp>
+
 #include <array>
 #include <bit>
 #include <cassert>
@@ -9,7 +11,6 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <ranges>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -23,20 +24,6 @@
  */
 
 namespace checksum {
-
-/// std::byte, char, unsigned char, signed char or char8_t, optionally cv-qualified.
-template <class Type>
-concept byte_like = std::same_as<std::remove_cv_t<Type>, std::byte> || std::same_as<std::remove_cv_t<Type>, char> ||
-                    std::same_as<std::remove_cv_t<Type>, unsigned char> || std::same_as<std::remove_cv_t<Type>, signed char> ||
-                    std::same_as<std::remove_cv_t<Type>, char8_t>;
-
-/// An input range of non-volatile byte_like values. Arrays of char and char8_t are rejected so that the '\0' of a string literal is never hashed:
-/// pass text as std::string_view.
-template <class Range>
-concept byte_range = std::ranges::input_range<Range> && byte_like<std::ranges::range_value_t<Range>> &&
-                     !std::is_volatile_v<std::remove_reference_t<std::ranges::range_reference_t<Range>>> &&
-                     !(std::is_array_v<std::remove_cvref_t<Range>> && (std::same_as<std::remove_cv_t<std::ranges::range_value_t<Range>>, char> ||
-                                                                       std::same_as<std::remove_cv_t<std::ranges::range_value_t<Range>>, char8_t>));
 
 /// A generator polynomial in Koopman notation: bit i is the coefficient of x^(i + 1) and the x^0 term is implicit. Every value is valid; the
 /// highest set bit is the x^width term, and 0 is the polynomial 1 (width 0, rejected by every engine).
@@ -352,9 +339,6 @@ template <class Register, class Fold> constexpr Register fold_internal(register_
 template <class Register>
 constexpr Register update_tail(register_form<Register> const &form, Register state, std::byte tail, unsigned count) noexcept;
 
-// Calls visit(std::span<std::byte const>) once for a contiguous range at run time, otherwise once per 64-byte chunk copied to the stack.
-template <byte_range Range, class Visitor> constexpr void for_each_chunk(Range &&data, Visitor visit) noexcept;
-
 // Run-time loops, one per built-in strategy, defined and explicitly instantiated for every register type and bit order in
 // src/crc/lut_*.cpp. They take and return the internal register.
 template <bool Reflected, class Register>
@@ -589,36 +573,6 @@ constexpr Register update_tail(register_form<Register> const &form, Register sta
   });
 }
 
-// data is deliberately used as an lvalue: std::ranges::data rejects non-borrowed rvalue ranges.
-// NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-template <byte_range Range, class Visitor> constexpr void for_each_chunk(Range &&data, Visitor visit) noexcept {
-  using value_type = std::remove_cv_t<std::ranges::range_value_t<Range>>;
-  if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
-    if constexpr(std::same_as<value_type, std::byte>) {
-      visit(std::span<std::byte const>(std::ranges::data(data), std::ranges::size(data)));
-      return;
-    } else {
-      if !consteval {
-        visit(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
-        return;
-      }
-    }
-  }
-  constexpr std::size_t chunk_size = 64;
-  std::array<std::byte, chunk_size> chunk{};
-  std::size_t used = 0;
-  for(auto &&value : data) {
-    chunk[used++] = static_cast<std::byte>(static_cast<unsigned char>(value));
-    if(used == chunk_size) {
-      visit(std::span<std::byte const>(chunk.data(), used));
-      used = 0;
-    }
-  }
-  if(used != 0) {
-    visit(std::span<std::byte const>(chunk.data(), used));
-  }
-}
-
 } // namespace checksum::crc_detail
 
 namespace checksum {
@@ -709,8 +663,8 @@ template <crc_register Register, crc_strategy_for<Register> Strategy>
 template <byte_range Range>
 constexpr typename crc_engine<Register, Strategy>::state_type crc_engine<Register, Strategy>::update(state_type state, Range &&data) const noexcept {
   state = checked_state(state);
-  crc_detail::for_each_chunk(std::forward<Range>(data),
-                             [&](std::span<std::byte const> chunk) { state = Strategy::template update<Register>(table, state, chunk); });
+  detail::for_each_chunk(std::forward<Range>(data),
+                         [&](std::span<std::byte const> chunk) { state = Strategy::template update<Register>(table, state, chunk); });
   return state;
 }
 
