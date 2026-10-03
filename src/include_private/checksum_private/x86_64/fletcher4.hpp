@@ -32,7 +32,7 @@ inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept
   __m256i sum2 = sum1;
   __m256i sum3 = sum1;
   __m256i sum4 = sum1;
-  for(; groups != 0; --groups, data += lane_count * 4) {
+  for(; groups != 0; --groups, data += lane_count * word_size) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector load.
     sum1 = _mm256_add_epi64(sum1, _mm256_cvtepu32_epi64(_mm_loadu_si128(reinterpret_cast<__m128i const *>(data))));
     sum2 = _mm256_add_epi64(sum2, sum1);
@@ -62,7 +62,7 @@ inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept
   __m128i sum3_high = zero;
   __m128i sum4_low = zero;
   __m128i sum4_high = zero;
-  for(; groups != 0; --groups, data += lane_count * 4) {
+  for(; groups != 0; --groups, data += lane_count * word_size) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector load.
     __m128i const words = _mm_loadu_si128(reinterpret_cast<__m128i const *>(data));
     sum1_low = _mm_add_epi64(sum1_low, _mm_unpacklo_epi32(words, zero));

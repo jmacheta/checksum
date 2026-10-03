@@ -4,10 +4,8 @@
 #include <checksum_private/fletcher4_arch.hpp>
 
 #include <array>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <span>
 
@@ -15,17 +13,16 @@ namespace checksum::fletcher4_detail {
 
 namespace {
 
-static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big);
-
 // Bytes of one word per lane.
 inline constexpr std::size_t group_size = lane_count * word_size;
 
 // Shortest input for the lanes. The portable ones overtake the word loop on a Cortex-A72 at 256 bytes with GCC, 384 with Clang; on 32-bit targets
 // their 64-bit sums run out of registers, 3 times slower there.
 inline constexpr std::size_t lanes_minimum_size =
-    lane_kernel_available ? lane_kernel_minimum_size : (sizeof(std::size_t) == 8 ? 256 : std::numeric_limits<std::size_t>::max());
+    lane_kernel_available ? lane_kernel_minimum_size
+                          : (std::numeric_limits<std::size_t>::digits == 64 ? 256 : std::numeric_limits<std::size_t>::max());
 
-// The little-endian word at data.
+// The little-endian word at data, from byte loads that compilers merge where unaligned loads are allowed: no memcpy call elsewhere.
 std::uint64_t load(std::byte const *data) noexcept;
 
 // weights[sum][source][lane]: the weight of the lane's source sum in that sum of the words in message order. Word i of n has the weights 1,
@@ -41,22 +38,18 @@ constexpr std::array<std::array<std::array<std::int64_t, lane_count>, 4>, 4> wei
 [[gnu::always_inline, maybe_unused]] inline lane_sums sum_lanes(std::byte const *data, std::size_t groups) noexcept;
 
 // The state after the words that lanes summed, a multiple of lane_count; the earlier sums add to the later ones once per word.
-fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint64_t words) noexcept;
+[[maybe_unused]] fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint64_t words) noexcept;
 
 // One word at a time, then the bytes of an unfinished word.
 [[gnu::always_inline]] inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
 // The lanes of the CPU kernel, else the portable ones, then sum_words() over what they left. Not inlined, so that short inputs
 // run sum_loop() without a call.
-[[gnu::noinline]] fletcher4_state sum_long(fletcher4_state state, std::span<std::byte const> data) noexcept;
+[[gnu::noinline, maybe_unused]] fletcher4_state sum_long(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
 std::uint64_t load(std::byte const *data) noexcept {
-  std::uint32_t word = 0;
-  std::memcpy(&word, data, sizeof(word));
-  if constexpr(std::endian::native == std::endian::big) {
-    word = std::byteswap(word);
-  }
-  return word;
+  return std::to_integer<std::uint32_t>(data[0]) | (std::to_integer<std::uint32_t>(data[1]) << 8) | (std::to_integer<std::uint32_t>(data[2]) << 16) |
+         (std::to_integer<std::uint32_t>(data[3]) << 24);
 }
 
 [[gnu::always_inline, maybe_unused]] inline lane_sums sum_lanes(std::byte const *data, std::size_t groups) noexcept {
@@ -116,7 +109,12 @@ fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint
 } // namespace
 
 fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data) noexcept {
-  return data.size() >= lanes_minimum_size ? sum_long(state, data) : sum_words(state, data);
+  // Without lanes, sum_long() is not even linked.
+  if constexpr(lanes_minimum_size == std::numeric_limits<std::size_t>::max()) {
+    return sum_words(state, data);
+  } else {
+    return data.size() >= lanes_minimum_size ? sum_long(state, data) : sum_words(state, data);
+  }
 }
 
 } // namespace checksum::fletcher4_detail

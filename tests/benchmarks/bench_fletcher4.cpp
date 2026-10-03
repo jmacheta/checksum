@@ -29,7 +29,7 @@ void fletcher4(benchmark::State &state) {
 }
 
 // IPv4 and UDP headers, a full Ethernet payload, a page and a large buffer.
-BENCHMARK(fletcher4)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
+BENCHMARK(fletcher4)->Arg(20)->Arg(64)->Arg(192)->Arg(256)->Arg(384)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
 
 } // namespace
 

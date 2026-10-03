@@ -12,13 +12,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace checksum::fletcher4_detail {
 
 inline constexpr bool lane_kernel_available = true;
 
 // Where the kernel overtakes the word loop on a Cortex-A72 with GCC and Clang. On AArch32 it pays a slower combination of the lanes.
-inline constexpr std::size_t lane_kernel_minimum_size = sizeof(void *) == 8 ? 192 : 384;
+inline constexpr std::size_t lane_kernel_minimum_size = std::numeric_limits<std::size_t>::digits == 64 ? 192 : 384;
 
 // Lanes 0 and 1 in the low vectors, 2 and 3 in the high ones.
 inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept {
@@ -30,7 +31,7 @@ inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept
   uint64x2_t sum3_high = vdupq_n_u64(0);
   uint64x2_t sum4_low = vdupq_n_u64(0);
   uint64x2_t sum4_high = vdupq_n_u64(0);
-  for(; groups != 0; --groups, data += lane_count * 4) {
+  for(; groups != 0; --groups, data += lane_count * word_size) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): byte view for the vector load.
     uint32x4_t const words = vreinterpretq_u32_u8(vld1q_u8(reinterpret_cast<std::uint8_t const *>(data)));
     sum1_low = vaddw_u32(sum1_low, vget_low_u32(words));
