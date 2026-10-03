@@ -129,6 +129,10 @@ template <unsigned Width> constexpr word<Width> fold_and_converge(lane_array<Wid
 template <unsigned Width>
 constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint64_t length, std::span<std::byte const> tail) noexcept;
 
+// The XXH32 hash of data of at least one stripe, defined in src/xxhash/stripe_loop.cpp. Its lanes are locals, which GCC and Clang
+// keep in scalar registers: on Cortex-M4 a stripe takes 24.5 cycles, against 28.6 through stripe_loop().
+std::uint32_t run_time_xxh32(std::span<std::byte const> data, std::uint32_t seed) noexcept;
+
 } // namespace checksum::xxhash_detail
 
 ///@}
@@ -275,6 +279,13 @@ template <unsigned Width> constexpr xxhash_state<Width>::value_type xxhash_final
 template <unsigned Width>
 constexpr xxhash_state<Width>::value_type xxhash_compute(std::span<std::byte const> data, typename xxhash_state<Width>::value_type seed) noexcept {
   std::size_t const whole = data.size() - (data.size() % xxhash_detail::stripe_size<Width>);
+  if constexpr(Width == 32) {
+    if !consteval {
+      if(whole != 0) {
+        return xxhash_detail::run_time_xxh32(data, seed);
+      }
+    }
+  }
   typename xxhash_state<Width>::value_type converged = 0;
   if(whole != 0) {
     xxhash_detail::lane_array<Width> lanes = xxhash_detail::initial_lanes<Width>(seed);

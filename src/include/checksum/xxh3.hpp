@@ -132,8 +132,12 @@ constexpr xxh3_hash128 multiply(std::uint64_t left, std::uint64_t right) noexcep
 // The exclusive or of the two Integer words at secret.
 template <class Integer> constexpr Integer secret_xor(std::byte const *secret) noexcept;
 
-// The halves of the full product, combined by exclusive or.
+// The halves of the full product, combined by exclusive or; run_time_multiply_fold() at run time without a 128-bit type.
 constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) noexcept;
+
+// multiply_fold(), defined in src/xxh3/stripe_loop.cpp. Inlined, its four multiplications make the 17-128 byte path too long for the
+// 1 KiB instruction cache of an STM32L4: 128 bytes at 14 instead of 19 MB/s.
+std::uint64_t run_time_multiply_fold(std::uint64_t left, std::uint64_t right) noexcept;
 
 constexpr std::uint64_t avalanche(std::uint64_t hash) noexcept;
 
@@ -168,7 +172,8 @@ template <unsigned Width> constexpr value<Width> hash_midsize(std::span<std::byt
 template <std::size_t Lane>
 constexpr void accumulate_lane(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept;
 
-// Mixes one stripe into the accumulators. Spelled out per lane: as a loop, GCC keeps the accumulators in memory.
+// Mixes one stripe into the accumulators. Spelled out per lane: as a loop, GCC keeps the accumulators in memory; GCC for Cortex-M4
+// outlines the unforced lanes and calls them per stripe.
 constexpr void accumulate(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept;
 
 // Scrambles the accumulators with the last 64 bytes of the secret, at secret.
@@ -248,6 +253,11 @@ template <class Integer> constexpr Integer secret_xor(std::byte const *secret) n
 }
 
 constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) noexcept {
+#ifndef __SIZEOF_INT128__
+  if !consteval {
+    return run_time_multiply_fold(left, right);
+  }
+#endif
   xxh3_hash128 const product = multiply(left, right);
   return product.low ^ product.high;
 }
@@ -444,7 +454,7 @@ constexpr void accumulate_lane(accumulator_array &accumulators, std::byte const 
 }
 
 constexpr void accumulate(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept {
-  [&]<std::size_t... Lane>(std::index_sequence<Lane...>) {
+  [&]<std::size_t... Lane> [[gnu::always_inline]] (std::index_sequence<Lane...>) {
     (accumulate_lane<Lane>(accumulators, stripe, secret), ...);
   }(std::make_index_sequence<std::tuple_size_v<accumulator_array>>{});
 }
@@ -472,11 +482,14 @@ constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte
   // A local copy stays in registers: stores through the reference could alias data.
   typename Kernel::lanes lanes = Kernel::load(accumulators);
   std::byte const *position = data.data();
+  std::byte const *key = secret.data() + (secret_consume_rate * block_stripe);
+  std::byte const *const block_end = secret.data() + (secret_consume_rate * stripes_per_block);
   for(std::size_t count = data.size() / stripe_size; count != 0; --count, position += stripe_size) {
-    Kernel::accumulate(lanes, position, secret.data() + (secret_consume_rate * block_stripe));
-    if(++block_stripe == stripes_per_block) {
+    Kernel::accumulate(lanes, position, key);
+    key += secret_consume_rate;
+    if(key == block_end) {
       Kernel::scramble(lanes, secret.data() + secret_size - stripe_size);
-      block_stripe = 0;
+      key = secret.data();
     }
   }
   if(last_stripe != nullptr) {
