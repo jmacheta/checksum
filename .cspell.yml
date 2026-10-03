@@ -108,6 +108,7 @@ words:
 - libstdc
 - loadu
 - macheta
+- maddubs
 - madler
 - mavx
 - mcpu
@@ -139,12 +140,14 @@ words:
 - parametrised
 - pclmul
 - pclmulqdq
+- pmaddubsw
 - pmull
 - polys
 - predefines
 - prng
 - profibus
 - psabi
+- psadbw
 - pshufb
 - refin
 - refout
@@ -162,7 +165,9 @@ words:
 - setr
 - smbus
 - smhasher
+- smlad
 - srli
+- ssse
 - stdint
 - strequal
 - taskset
@@ -177,7 +182,9 @@ words:
 - undefines
 - usada
 - uxtah
+- uxtb
 - vaddq
+- vaddw
 - vbslq
 - vcgeq
 - vdupq
@@ -189,9 +196,11 @@ words:
 - vfpv
 - vgetq
 - vlen
+- vmlal
 - vmull
 - vpadalq
 - VPCLMULQDQ
+- vpaddlq
 - vqtbl
 - vreinterpret
 - vreinterpretq

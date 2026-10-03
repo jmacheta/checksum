@@ -58,11 +58,11 @@ TEST(adler32, published_examples) {
   EXPECT_EQ(adler32_compute("123456789"sv), 0x091E01DEU);
 }
 
-// All lengths past the unrolled loop and its tail, at every alignment of a word.
+// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a vector.
 TEST(adler32, matches_model) {
-  auto const data = random_bytes(1100 + 16, 32);
+  auto const data = random_bytes(2100 + 16, 32);
   for(std::size_t offset = 0; offset < 16; ++offset) {
-    for(std::size_t size = 0; size <= 1100; ++size) {
+    for(std::size_t size = 0; size <= 2100; ++size) {
       auto const message = std::span<std::byte const>(data).subspan(offset, size);
       ASSERT_EQ(adler32_compute(message), reference(message)) << "offset " << offset << ", size " << size;
     }
@@ -76,6 +76,27 @@ TEST(adler32, all_ones) {
     std::vector<std::byte> const data(size, std::byte{0xFF});
     ASSERT_EQ(adler32_compute(data), reference(data)) << "size " << size;
     ASSERT_EQ(adler32_finalize(adler32_update(largest, data)), reference(data, 65520, 65520)) << "size " << size;
+  }
+}
+
+// Around the chunk sizes of every kernel (1 KiB to 256 KiB), from every alignment of a word, with all-ones and random bytes and
+// from the largest canonical sums.
+TEST(adler32, chunk_boundaries) {
+  constexpr std::size_t largest_chunk = std::size_t{256} << 10U;
+  std::vector<std::byte> const ones((2 * largest_chunk) + 64, std::byte{0xFF});
+  auto const random = random_bytes(ones.size(), 7);
+  for(auto const &data : {ones, random}) {
+    for(std::size_t const chunk :
+        {std::size_t{1024}, std::size_t{2048}, std::size_t{4096}, std::size_t{5600}, std::size_t{16} << 10U, std::size_t{32} << 10U, largest_chunk}) {
+      for(std::size_t const size : {chunk - 1, chunk, chunk + 1, chunk + 35, (2 * chunk) + 35}) {
+        for(std::size_t offset = 0; offset < 4; ++offset) {
+          auto const message = std::span<std::byte const>(data).subspan(offset, size);
+          ASSERT_EQ(adler32_compute(message), reference(message)) << "size " << size << ", offset " << offset;
+          ASSERT_EQ(adler32_finalize(adler32_update(adler32_state{.sum1 = 65520, .sum2 = 65520}, message)), reference(message, 65520, 65520))
+              << "size " << size << ", offset " << offset;
+        }
+      }
+    }
   }
 }
 
@@ -93,7 +114,7 @@ TEST(adler32, split_anywhere) {
   }
 }
 
-// Short and odd prefixes entering chunks long enough for the unrolled loop and several deferred reductions.
+// Short and odd prefixes entering chunks long enough for the kernels and several deferred reductions.
 TEST(adler32, split_before_long_chunks) {
   auto const data = random_bytes(20000, 5);
   auto const message = std::span<std::byte const>(data);

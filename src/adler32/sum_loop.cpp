@@ -1,6 +1,7 @@
 // Run-time loop of the Adler-32 checksum.
 
 #include <checksum/adler32.hpp>
+#include <checksum_private/fletcher_arch.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -34,16 +35,25 @@ static_assert(std::numeric_limits<std::size_t>::digits != 64 || bytes_per_reduct
 static_assert(std::numeric_limits<std::size_t>::digits != 32 || bytes_per_reduction() == 5'552);
 
 // value modulo 65521, without a division: 2^16 is 15 modulo 65521, so the high bits fold onto the low ones.
-std::size_t reduce(std::size_t value) noexcept {
+template <class Integer> Integer reduce(Integer value) noexcept;
+
+// The portable loop.
+[[gnu::always_inline]] inline adler32_state sum_bytes(adler32_state state, std::span<std::byte const> data) noexcept;
+
+// The byte kernel of Fletcher-16, then the portable loop over what it left. Not inlined, so that short inputs run sum_loop()
+// without a call.
+[[gnu::noinline, maybe_unused]] adler32_state sum_long(adler32_state state, std::span<std::byte const> data) noexcept;
+
+using byte_kernel = fletcher_detail::kernel<8>;
+
+template <class Integer> Integer reduce(Integer value) noexcept {
   while(value > 0xFFFF) {
     value = (value & 0xFFFF) + (15 * (value >> 16U));
   }
   return reduce_once(static_cast<std::uint32_t>(value));
 }
 
-} // namespace
-
-adler32_state sum_loop(adler32_state state, std::span<std::byte const> data) noexcept {
+[[gnu::always_inline]] inline adler32_state sum_bytes(adler32_state state, std::span<std::byte const> data) noexcept {
   constexpr std::size_t run = bytes_per_reduction();
   static_assert(run >= 4);
   std::size_t sum1 = reduce_once(state.sum1);
@@ -70,6 +80,26 @@ adler32_state sum_loop(adler32_state state, std::span<std::byte const> data) noe
     sum2 = reduce(sum2);
   }
   return {.sum1 = static_cast<std::uint16_t>(sum1), .sum2 = static_cast<std::uint16_t>(sum2)};
+}
+
+[[gnu::noinline, maybe_unused]] adler32_state sum_long(adler32_state state, std::span<std::byte const> data) noexcept {
+  if constexpr(byte_kernel::available) {
+    fletcher_detail::sum_pair sums{.sum1 = state.sum1, .sum2 = state.sum2};
+    std::size_t const size = fletcher_detail::sum_chunks<8>(sums, data, [](std::uint64_t value) { return reduce(value); });
+    return sum_bytes({.sum1 = static_cast<std::uint16_t>(sums.sum1), .sum2 = static_cast<std::uint16_t>(sums.sum2)}, data.subspan(size));
+  } else {
+    return sum_bytes(state, data);
+  }
+}
+
+} // namespace
+
+adler32_state sum_loop(adler32_state state, std::span<std::byte const> data) noexcept {
+  if constexpr(byte_kernel::available) {
+    return data.size() >= byte_kernel::minimum_size ? sum_long(state, data) : sum_bytes(state, data);
+  } else {
+    return sum_bytes(state, data);
+  }
 }
 
 } // namespace checksum::adler32_detail

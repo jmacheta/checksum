@@ -80,12 +80,12 @@ TEST(fletcher_vectors, published_examples) {
   EXPECT_EQ(fletcher_compute<64>("abcdefgh"sv), 0x312E2B28CCCAC8C6);
 }
 
-// All lengths past the unrolled loop and its tail, at every alignment of a word.
+// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a vector.
 TYPED_TEST(fletcher, matches_model) {
   constexpr unsigned width = TypeParam::value;
-  auto const data = random_bytes(1100 + 16, width);
+  auto const data = random_bytes(2100 + 16, width);
   for(std::size_t offset = 0; offset < 16; ++offset) {
-    for(std::size_t size = 0; size <= 1100; ++size) {
+    for(std::size_t size = 0; size <= 2100; ++size) {
       auto const message = std::span<std::byte const>(data).subspan(offset, size);
       ASSERT_EQ(fletcher_compute<width>(message), reference<width>(message)) << "offset " << offset << ", size " << size;
     }
@@ -98,6 +98,31 @@ TYPED_TEST(fletcher, all_ones) {
   for(std::size_t const size : {(std::size_t{4} << 20), (std::size_t{4} << 20) + 1, (std::size_t{4} << 20) + 3}) {
     std::vector<std::byte> const data(size, std::byte{0xFF});
     ASSERT_EQ(fletcher_compute<width>(data), reference<width>(data)) << "size " << size;
+  }
+}
+
+// Around the chunk sizes of every kernel (1 KiB to 256 KiB), from every alignment of a word, with all-ones and random bytes and
+// from sums equal to M.
+TYPED_TEST(fletcher, chunk_boundaries) {
+  constexpr unsigned width = TypeParam::value;
+  using sum_type = fletcher_state<width>::sum_type;
+  constexpr auto largest = static_cast<sum_type>(-1);
+  constexpr std::size_t largest_chunk = std::size_t{256} << 10U;
+  std::vector<std::byte> const ones((2 * largest_chunk) + 64, std::byte{0xFF});
+  auto const random = random_bytes(ones.size(), 7);
+  for(auto const &data : {ones, random}) {
+    for(std::size_t const chunk :
+        {std::size_t{1024}, std::size_t{2048}, std::size_t{4096}, std::size_t{5600}, std::size_t{16} << 10U, std::size_t{32} << 10U, largest_chunk}) {
+      for(std::size_t const size : {chunk - 1, chunk, chunk + 1, chunk + 35, (2 * chunk) + 35}) {
+        for(std::size_t offset = 0; offset < 4; ++offset) {
+          auto const message = std::span<std::byte const>(data).subspan(offset, size);
+          ASSERT_EQ(fletcher_compute<width>(message), reference<width>(message)) << "size " << size << ", offset " << offset;
+          ASSERT_EQ(fletcher_update(fletcher_state<width>{.sum1 = largest, .sum2 = largest}, message),
+                    fletcher_update(fletcher_state<width>{}, message))
+              << "size " << size << ", offset " << offset;
+        }
+      }
+    }
   }
 }
 
@@ -124,10 +149,10 @@ TYPED_TEST(fletcher, split_anywhere) {
   }
 }
 
-// An unfinished block entering chunks long enough for the unrolled loop.
+// An unfinished block entering chunks long enough for the kernels and their chunk boundaries.
 TYPED_TEST(fletcher, split_before_long_chunks) {
   constexpr unsigned width = TypeParam::value;
-  auto const data = random_bytes(5000, 5);
+  auto const data = random_bytes(20000, 5);
   auto const message = std::span<std::byte const>(data);
   auto const whole = reference<width>(message);
   for(std::size_t const first : {1U, 2U, 3U, 5U, 63U, 255U, 257U, 1023U, 1501U, 4093U}) {

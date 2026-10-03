@@ -1,6 +1,7 @@
 // Run-time loop of the Fletcher checksums.
 
 #include <checksum/fletcher.hpp>
+#include <checksum_private/fletcher_arch.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -55,7 +56,19 @@ template <unsigned Width> accumulator<Width> load(std::byte const *data) noexcep
   return block;
 }
 
-template <unsigned Width> fletcher_state<Width> sum_blocks(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
+// The portable loop.
+template <unsigned Width>
+[[gnu::always_inline]] inline fletcher_state<Width> sum_blocks(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
+
+// The CPU kernel, then the portable loop over what it left. Not inlined, so that short inputs run sum_any() without a call.
+template <unsigned Width>
+[[gnu::noinline, maybe_unused]] fletcher_state<Width> sum_long(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
+
+// The kernel from its minimum size, else the portable loop.
+template <unsigned Width> fletcher_state<Width> sum_any(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
+
+template <unsigned Width>
+[[gnu::always_inline]] inline fletcher_state<Width> sum_blocks(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
   using sum_type = fletcher_state<Width>::sum_type;
   constexpr std::size_t size = block_size<Width>;
   constexpr std::size_t run = blocks_per_reduction<Width>();
@@ -80,8 +93,8 @@ template <unsigned Width> fletcher_state<Width> sum_blocks(fletcher_state<Width>
       sum1 += load<Width>(position);
       sum2 += sum1;
     }
-    sum1 = reduce<Width>(sum1);
-    sum2 = reduce<Width>(sum2);
+    sum1 = static_cast<accumulator<Width>>(reduce<Width>(sum1));
+    sum2 = static_cast<accumulator<Width>>(reduce<Width>(sum2));
   }
   // The bytes of an unfinished block, at most 3, go to sum1 only.
   std::size_t const tail = data.size() % size;
@@ -93,12 +106,29 @@ template <unsigned Width> fletcher_state<Width> sum_blocks(fletcher_state<Width>
           .block_offset = static_cast<std::uint8_t>(tail)};
 }
 
+template <unsigned Width>
+[[gnu::noinline, maybe_unused]] fletcher_state<Width> sum_long(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
+  using sum_type = fletcher_state<Width>::sum_type;
+  sum_pair sums{.sum1 = state.sum1, .sum2 = state.sum2};
+  std::size_t const size = sum_chunks<Width / 2>(sums, data, [](std::uint64_t value) { return reduce<Width>(value); });
+  state = {.sum1 = static_cast<sum_type>(sums.sum1), .sum2 = static_cast<sum_type>(sums.sum2), .block_offset = 0};
+  return sum_blocks(state, data.subspan(size));
+}
+
+template <unsigned Width> fletcher_state<Width> sum_any(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
+  if constexpr(kernel<Width / 2>::available) {
+    return data.size() >= kernel<Width / 2>::minimum_size ? sum_long(state, data) : sum_blocks(state, data);
+  } else {
+    return sum_blocks(state, data);
+  }
+}
+
 } // namespace
 
-fletcher_state<16> sum_loop(fletcher_state<16> state, std::span<std::byte const> data) noexcept { return sum_blocks(state, data); }
+fletcher_state<16> sum_loop(fletcher_state<16> state, std::span<std::byte const> data) noexcept { return sum_any(state, data); }
 
-fletcher_state<32> sum_loop(fletcher_state<32> state, std::span<std::byte const> data) noexcept { return sum_blocks(state, data); }
+fletcher_state<32> sum_loop(fletcher_state<32> state, std::span<std::byte const> data) noexcept { return sum_any(state, data); }
 
-fletcher_state<64> sum_loop(fletcher_state<64> state, std::span<std::byte const> data) noexcept { return sum_blocks(state, data); }
+fletcher_state<64> sum_loop(fletcher_state<64> state, std::span<std::byte const> data) noexcept { return sum_any(state, data); }
 
 } // namespace checksum::fletcher_detail
