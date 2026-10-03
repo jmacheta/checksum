@@ -118,12 +118,12 @@ template <unsigned Width> constexpr word<Width> converge(lane_array<Width> const
 // packing them into one vector register: slower than scalar code for XXH32.
 template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
-// fold_stripes(), then converge(); defined in src/xxhash/stripe_loop.cpp for both widths. Returning the merged value spares the
-// caller reloading the lanes right after their stores.
-template <unsigned Width> word<Width> stripe_loop(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
+// fold_stripes(), then converge() if wanted, else 0; defined in src/xxhash/stripe_loop.cpp for both widths. Returning the merged
+// value spares the caller reloading the lanes right after their stores.
+template <unsigned Width> word<Width> stripe_loop(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
 
-// fold_stripes() and converge() during constant evaluation, else stripe_loop().
-template <unsigned Width> constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
+// fold_stripes() and converge() if wanted, during constant evaluation, else stripe_loop().
+template <unsigned Width> constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
 
 // The hash of a message of length bytes: converged holds its stripes if length reaches a stripe, tail holds the rest.
 template <unsigned Width>
@@ -185,12 +185,13 @@ template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, 
   }
 }
 
-template <unsigned Width> constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {
+template <unsigned Width>
+constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept {
   if consteval {
     fold_stripes<Width>(lanes, data);
-    return converge<Width>(lanes);
+    return converged ? converge<Width>(lanes) : 0;
   } else {
-    return stripe_loop<Width>(lanes, data);
+    return stripe_loop<Width>(lanes, data, converged);
   }
 }
 
@@ -252,7 +253,7 @@ template <unsigned Width> constexpr xxhash_state<Width> xxhash_update(xxhash_sta
   }
   std::size_t const whole = data.size() - (data.size() % stripe_size);
   if(whole != 0) {
-    xxhash_detail::fold_and_converge<Width>(state.lanes, data.first(whole));
+    xxhash_detail::fold_and_converge<Width>(state.lanes, data.first(whole), false);
   }
   std::ranges::copy(data.subspan(whole), state.buffer.begin());
   return state;
@@ -277,7 +278,7 @@ constexpr xxhash_state<Width>::value_type xxhash_compute(std::span<std::byte con
   typename xxhash_state<Width>::value_type converged = 0;
   if(whole != 0) {
     xxhash_detail::lane_array<Width> lanes = xxhash_detail::initial_lanes<Width>(seed);
-    converged = xxhash_detail::fold_and_converge<Width>(lanes, data.first(whole));
+    converged = xxhash_detail::fold_and_converge<Width>(lanes, data.first(whole), true);
   }
   return xxhash_detail::finish<Width>(converged, seed, data.size(), data.subspan(whole));
 }

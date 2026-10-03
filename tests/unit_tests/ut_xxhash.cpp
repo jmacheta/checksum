@@ -159,4 +159,29 @@ TYPED_TEST(xxhash, long_message) {
   }
 }
 
+// Seeds of all ones wrap every lane's initial value; hashes from xxhash.h 0.8.4.
+TEST(xxhash, all_ones_seed) {
+  struct expected_hashes {
+    std::size_t size;
+    std::uint32_t xxh32;
+    std::uint64_t xxh64;
+  };
+  constexpr std::array<expected_hashes, 9> expected{{{0, 0x9061DA9DU, 0x298F4C84B24F5380U},
+                                                     {1, 0xC69BCB3AU, 0x88E1E5E6C9D685D0U},
+                                                     {15, 0xA39D9FA4U, 0x877DDBE62F7884ECU},
+                                                     {16, 0x3048FD14U, 0x53DECA0A5E9FA4EEU},
+                                                     {31, 0xE991E9D2U, 0x05A4D1DA768C4435U},
+                                                     {32, 0x6B7A0148U, 0x4E2BDC2F1263D056U},
+                                                     {33, 0xE0D1E0E3U, 0xCD076AEE4ECC8F1FU},
+                                                     {64, 0xED7B1FE3U, 0x532DF1276DD21320U},
+                                                     {300, 0x0CB5B0CAU, 0x536EB91EDFE26C25U}}};
+  for(auto const &hashes : expected) {
+    auto const data = std::span(message).first(hashes.size);
+    EXPECT_EQ(xxhash_compute<32>(data, 0xFFFFFFFFU), hashes.xxh32) << "size " << hashes.size;
+    EXPECT_EQ(xxhash_compute<64>(data, ~std::uint64_t{0}), hashes.xxh64) << "size " << hashes.size;
+    EXPECT_EQ(chunked<32>(data, 7, 0xFFFFFFFFU), hashes.xxh32) << "size " << hashes.size;
+    EXPECT_EQ(chunked<64>(data, 7, ~std::uint64_t{0}), hashes.xxh64) << "size " << hashes.size;
+  }
+}
+
 } // namespace
