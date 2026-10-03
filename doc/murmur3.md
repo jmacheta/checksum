@@ -64,7 +64,8 @@ the unused bytes of the buffer are ignored.
 MurmurHash3 has no kernel, on any target. Every block updates the hash lanes through a rotation, a multiplication and
 an addition of their previous values, and in MurmurHash3_x64_128 the second lane also takes the first lane of the same
 block. Blocks cannot be processed in parallel, so vector instructions have nothing to work on. The one run-time
-function, the block loop, is compiled once per width in `src/murmur3/block_loop.cpp`.
+function, the block loop, is compiled once per width in `src/murmur3/block_loop.cpp`; MurmurHash3_x64_128 inputs under
+256 bytes fold inline instead, which saves the call.
 
 MurmurHash3_x64_128 needs 64-bit multiplications, which 32-bit targets build from several 32-bit ones. On 32-bit
 targets MurmurHash3_x86_32 is the faster of the two; on 64-bit targets MurmurHash3_x64_128 is faster from about
@@ -78,16 +79,16 @@ GCC 14.3, `-O2`, one core. MB/s (10⁶ bytes per second):
 
 | Hash, mode | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| x86_32, AArch64 | 743 | 1 002 | 1 097 | 1 172 | 1 182 | 1 144 |
-| x64_128, AArch64 | 496 | 1 081 | 1 487 | 1 619 | 1 681 | 1 615 |
-| x86_32, AArch32 | 639 | 908 | 1 015 | 1 107 | 1 125 | 1 093 |
-| x64_128, AArch32 | 208 | 403 | 514 | 552 | 552 | 546 |
+| x86_32, AArch64 | 646 | 951 | 1 078 | 1 168 | 1 181 | 1 142 |
+| x64_128, AArch64 | 646 | 1 081 | 1 430 | 1 634 | 1 672 | 1 619 |
+| x86_32, AArch32 | 653 | 952 | 1 063 | 1 166 | 1 180 | 1 093 |
+| x64_128, AArch32 | 278 | 408 | 536 | 595 | 604 | 599 |
 
 ### 5.2 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 
 GCC 14.3, `-O2`, code in flash and data in RAM, measured with the cycle counter. At 4 KiB MurmurHash3_x86_32 takes
-3.02 cycles per byte (26 MB/s at 80 MHz) and MurmurHash3_x64_128 4.42 (18 MB/s). Both chips run the same cycles per
-byte, so the figures scale with the clock.
+3.03 cycles per byte (26 MB/s at 80 MHz) and MurmurHash3_x64_128 4.43 (18 MB/s); at 20 bytes they reach 9.6 and
+6.8 MB/s. Both chips run the same cycles per byte, so the figures scale with the clock.
 
 x86-64 has not been measured.
 

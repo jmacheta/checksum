@@ -99,6 +99,9 @@ template <> struct algorithm_constants<128> {
 // Reads a little-endian integer from the first sizeof(Integer) bytes at data.
 template <class Integer> constexpr Integer load(std::byte const *data) noexcept;
 
+// Reads a little-endian integer from the first size bytes at data, size < sizeof(Integer), with fixed-size loads.
+template <class Integer> constexpr Integer load_partial(std::byte const *data, std::size_t size) noexcept;
+
 // Scrambles one input word before it is mixed into a lane: the low word of a block (half 0) or the high word (half 1).
 template <unsigned Width> constexpr lane<Width> scramble(lane<Width> word, std::size_t half) noexcept;
 
@@ -114,7 +117,11 @@ template <unsigned Width> constexpr lane_array<Width> fold_blocks(lane_array<Wid
 // and the return slot.
 template <unsigned Width> void block_loop(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
-// fold_blocks() during constant evaluation, else block_loop().
+// x64_128 inputs shorter than this fold inline: the call costs up to 40 % at 20 bytes on Cortex-A72 and Cortex-M4. Inlining longer
+// ones costs 8 % on AArch32, and inlining x86_32 lost up to 11 % on Cortex-M4.
+inline constexpr std::size_t out_of_line_size = 256;
+
+// fold_blocks() during constant evaluation or for short x64_128 inputs, else block_loop().
 template <unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
 // The hash of a message of length bytes: lanes hold its whole blocks, tail holds the rest.
@@ -139,6 +146,25 @@ template <class Integer> constexpr Integer load(std::byte const *data) noexcept 
     if constexpr(std::endian::native == std::endian::big) {
       value = std::byteswap(value);
     }
+  }
+  return value;
+}
+
+template <class Integer> constexpr Integer load_partial(std::byte const *data, std::size_t size) noexcept {
+  Integer value = 0;
+  std::size_t offset = 0;
+  if constexpr(sizeof(Integer) == 8) {
+    if((size & 4U) != 0) {
+      value = load<std::uint32_t>(data);
+      offset = 4;
+    }
+  }
+  if((size & 2U) != 0) {
+    value |= (std::to_integer<Integer>(data[offset]) | (std::to_integer<Integer>(data[offset + 1]) << 8)) << (8 * offset);
+    offset += 2;
+  }
+  if((size & 1U) != 0) {
+    value |= std::to_integer<Integer>(data[offset]) << (8 * offset);
   }
   return value;
 }
@@ -191,27 +217,26 @@ template <unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::spa
   if consteval {
     lanes = fold_blocks<Width>(lanes, data);
   } else {
-    block_loop<Width>(lanes, data);
+    if(Width == 128 && data.size() < out_of_line_size) {
+      lanes = fold_blocks<Width>(lanes, data);
+    } else {
+      block_loop<Width>(lanes, data);
+    }
   }
 }
 
 template <unsigned Width>
 constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::uint64_t length, std::span<std::byte const> tail) noexcept {
   // The tail is scrambled as a block padded with zeros; scrambling a zero word gives zero, so absent words change nothing.
-  std::array<std::byte, block_size<Width>> block{};
-  if consteval {
-    std::ranges::copy(tail, block.begin());
-  } else {
-    // The guard spares the library call for an empty tail.
-    if(!tail.empty()) {
-      std::memcpy(block.data(), tail.data(), tail.size());
-    }
-  }
   if constexpr(Width == 32) {
-    return avalanche<Width>(lanes[0] ^ scramble<Width>(load<std::uint32_t>(block.data()), 0) ^ static_cast<std::uint32_t>(length));
+    return avalanche<Width>(lanes[0] ^ scramble<Width>(load_partial<std::uint32_t>(tail.data(), tail.size()), 0) ^
+                            static_cast<std::uint32_t>(length));
   } else {
-    std::uint64_t low = lanes[0] ^ scramble<Width>(load<std::uint64_t>(block.data()), 0) ^ length;
-    std::uint64_t high = lanes[1] ^ scramble<Width>(load<std::uint64_t>(block.data() + 8), 1) ^ length;
+    bool const two_words = tail.size() >= 8;
+    std::uint64_t const low_word = two_words ? load<std::uint64_t>(tail.data()) : load_partial<std::uint64_t>(tail.data(), tail.size());
+    std::uint64_t const high_word = two_words ? load_partial<std::uint64_t>(tail.data() + 8, tail.size() - 8) : 0;
+    std::uint64_t low = lanes[0] ^ scramble<Width>(low_word, 0) ^ length;
+    std::uint64_t high = lanes[1] ^ scramble<Width>(high_word, 1) ^ length;
     low += high;
     high += low;
     low = avalanche<Width>(low);
