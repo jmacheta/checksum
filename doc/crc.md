@@ -20,7 +20,8 @@ target_link_libraries(app PRIVATE checksum::checksum)
 | CMake option | Default | Effect |
 | --- | --- | --- |
 | `CHECKSUM_ACCELERATION` | `ON` | Lets `crc_lut_sliced` and `crc_lut_braided` use the CPU instructions that the compiler flags enable (section 7). `OFF` keeps only the portable loops. |
-| `CHECKSUM_TESTS` | top-level project | Unit tests, negative compile tests and benchmarks (downloads GoogleTest, Google Benchmark and zlib). |
+| `CHECKSUM_TESTS` | top-level project | Unit tests and negative compile tests (downloads GoogleTest). |
+| `CHECKSUM_BENCHMARKS` | `OFF` | Benchmarks (downloads Google Benchmark and zlib); on in the `native-*-bench` presets. |
 | `CHECKSUM_EXAMPLES` | top-level project | Builds `examples/crc`. |
 
 Compile and link the application with `-ffunction-sections -fdata-sections` and `-Wl,--gc-sections`: the library

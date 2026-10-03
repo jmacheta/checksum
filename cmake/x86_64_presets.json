@@ -26,16 +26,10 @@
     "testPresets": [
         {
             "name": "x86_64-gcc-pclmul-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "x86_64-gcc-pclmul",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         }
     ],
     "workflowPresets": [

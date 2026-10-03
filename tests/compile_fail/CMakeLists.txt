@@ -18,6 +18,7 @@ foreach (test IN LISTS compile_fail_tests)
   target_compile_definitions(compile_fail_${name} PRIVATE CHECKSUM_EXPECT_COMPILE_ERROR)
 
   add_test(NAME compile_fail.${name} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target compile_fail_${name} --config $<CONFIG>)
-  # PASS_REGULAR_EXPRESSION ignores the exit code; a successful build prints no diagnostic, so it cannot pass.
-  set_tests_properties(compile_fail.${name} PROPERTIES PASS_REGULAR_EXPRESSION "${expected}")
+  # PASS_REGULAR_EXPRESSION ignores the exit code; a successful build prints no diagnostic, so it cannot pass. Runs of the build tool on one build
+  # tree must not overlap under ctest --parallel.
+  set_tests_properties(compile_fail.${name} PROPERTIES PASS_REGULAR_EXPRESSION "${expected}" RESOURCE_LOCK build_tree)
 endforeach ()

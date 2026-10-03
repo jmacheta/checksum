@@ -116,81 +116,45 @@
     "testPresets": [
         {
             "name": "native-gcc-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "native-gcc",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "native-clang-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "native-clang",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "native-asan-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug, ASan+UBSan]",
             "configurePreset": "native-asan",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "native-gcc-no-exceptions-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "native-gcc-no-exceptions",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "native-gcc-portable-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "native-gcc-portable",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "native-clang-libcxx-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "native-clang-libcxx",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         }
     ],
     "workflowPresets": [

@@ -210,120 +210,66 @@
     "testPresets": [
         {
             "name": "cross-aarch64-pmull-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64-pmull",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-aarch64-crc32-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64-crc32",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-aarch64-portable-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64-portable",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-aarch64be-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64be",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-arm-crc32-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-arm-crc32",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-arm-portable-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-arm-portable",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-riscv64-zbc-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-riscv64-zbc",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-riscv64-rvv-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-riscv64-rvv",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-riscv64-portable-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-riscv64-portable",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         }
     ],
     "workflowPresets": [
