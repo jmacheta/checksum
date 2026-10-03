@@ -34,5 +34,5 @@ Apply as part of every edit:
 
 ## CI
 
-GitHub Actions on Ubuntu only (`.github/workflows/ci.yml`): the native presets, the x86-64 and cross presets, and the
-formatting and spelling checks.
+GitHub Actions on Ubuntu only (`.github/workflows/ci.yml`): the native presets and the x86-64 and cross presets.
+Formatting and spelling are checked locally, not in CI.

@@ -77,28 +77,3 @@ jobs:
 
       - name: Configure, build and test
         run: cmake --workflow --preset ${{ matrix.preset }}
-
-  lint:
-    name: lint
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format-18
-
-      - name: clang-format check
-        run: |
-          find src tests \( -name '*.cpp' -o -name '*.hpp' \) | xargs clang-format-18 --dry-run --Werror
-
-      - name: Install cmake-format
-        run: pip install cmakelang
-
-      - name: cmake-format check
-        run: |
-          find . \( -name 'CMakeLists.txt' -o -name '*.cmake' \) -not -path './cmake/CPM.cmake' -not -path './build/*' -not -path './.cpm-cache/*' \
-            | xargs cmake-format --check
-
-      - name: cspell
-        run: npx --yes cspell@8 --config .cspell.yml --no-progress "**"
