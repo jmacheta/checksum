@@ -179,7 +179,8 @@ TEST(adler32, byte_ranges) {
   EXPECT_EQ(adler32_update(adler32_state{}, std::list<std::byte>(data.begin(), data.end())), adler32_update(adler32_state{}, data));
 }
 
-// Sums from 65521 count modulo 65521, at compile time and at run time; results are canonical.
+// Sums from 65521 count modulo 65521, at compile time and at run time, with messages long enough for the kernels; results
+// are canonical.
 TEST(adler32, edge_states) {
   constexpr adler32_state maximum{.sum1 = 0xFFFF, .sum2 = 0xFFFF};
   constexpr adler32_state equivalent{.sum1 = 14, .sum2 = 14};
@@ -189,7 +190,7 @@ TEST(adler32, edge_states) {
   EXPECT_EQ(adler32_update(maximum, std::span<std::byte const>{}), equivalent);
   EXPECT_EQ(adler32_finalize(adler32_state{.sum1 = 65521, .sum2 = 65521}), 0U);
 
-  auto const data = random_bytes(37, 6);
+  auto const data = random_bytes(300, 6);
   auto const message = std::span<std::byte const>(data);
   for(std::uint32_t sum = 65516; sum <= 0xFFFF; ++sum) {
     adler32_state const state{.sum1 = static_cast<std::uint16_t>(sum), .sum2 = static_cast<std::uint16_t>(sum)};

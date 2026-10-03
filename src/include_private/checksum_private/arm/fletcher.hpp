@@ -1,8 +1,9 @@
 #ifndef CHECKSUM_PRIVATE_ARM_FLETCHER_HPP
 #define CHECKSUM_PRIVATE_ARM_FLETCHER_HPP
 
-// Arm kernels of the Fletcher checksums and Adler-32: NEON on little-endian AArch64 and AArch32, else unrolled loops on
-// little-endian 32-bit Arm, for bytes with the DSP instructions (e.g. Cortex-M4/M7/M33). Included only by fletcher_arch.hpp.
+// Arm kernels of the Fletcher checksums and Adler-32, included only by fletcher_arch.hpp: NEON on little-endian AArch64 and
+// AArch32, else the DSP instructions for bytes on little-endian M-profile cores (e.g. Cortex-M4/M7/M33). Only for tests in
+// QEMU user mode, the cross-arm-portable preset defines CHECKSUM_TEST_ARM_DSP to use the DSP kernel on an A-profile core.
 
 #include <checksum_private/generic/fletcher.hpp>
 
@@ -27,8 +28,9 @@ template <> struct kernel<8> {
   // A 16-bit lane of the column sums gains at most 255 per block.
   static constexpr std::size_t max_blocks = 256;
   static_assert(255 * max_blocks <= std::numeric_limits<std::uint16_t>::max());
-  // Not measured on Arm yet: the Cortex-A72 prototype was 5 times the portable loop at 4 KiB.
+  // Faster than the portable loop from 64 bytes on a Cortex-A72 (Raspberry Pi 4), in AArch64 and AArch32.
   static constexpr std::size_t minimum_size = 64;
+  static constexpr std::size_t alignment = 1;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
@@ -38,8 +40,8 @@ template <> struct kernel<16> {
   // A 32-bit lane of the previous sums gains at most 2 * 65535 * j at block j.
   static constexpr std::size_t max_blocks = 128;
   static_assert(std::uint64_t{2 * 65'535} * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
-  // Not measured on Arm yet: the Cortex-A72 prototype was 3 times the portable loop at 4 KiB.
-  static constexpr std::size_t minimum_size = 64;
+  // Slower than the portable loop at 64 bytes on a Cortex-A72 (Raspberry Pi 4), in AArch64 and AArch32.
+  static constexpr std::size_t minimum_size = 128;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
@@ -48,7 +50,7 @@ template <> struct kernel<32> {
   static constexpr std::size_t block_size = 16;
   // The 64-bit lanes have room for far more; 65536 values per chunk keep the weighted sum of the chunk within 64 bits.
   static constexpr std::size_t max_blocks = 65'536 / 4;
-  // Not measured on Arm yet: the Cortex-A72 prototype was 1.7 times the portable loop at 4 KiB.
+  // Threshold measured on a Cortex-A72 (Raspberry Pi 4).
   static constexpr std::size_t minimum_size = 256;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
@@ -131,11 +133,10 @@ inline chunk_sums kernel<32>::sum(std::byte const *data, std::size_t blocks) noe
 
 } // namespace checksum::fletcher_detail
 
-#elif defined(__arm__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#elif defined(__arm__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && defined(__ARM_FEATURE_DSP) && defined(__ARM_FEATURE_SIMD32) &&                \
+    defined(__ARM_FEATURE_UNALIGNED) && ((defined(__ARM_ARCH_PROFILE) && __ARM_ARCH_PROFILE == 'M') || defined(CHECKSUM_TEST_ARM_DSP))
 
-#if defined(__ARM_FEATURE_DSP) && defined(__ARM_FEATURE_SIMD32)
 #include <arm_acle.h>
-#endif
 
 #include <cstddef>
 #include <cstdint>
@@ -147,37 +148,16 @@ namespace checksum::fletcher_detail {
 // The little-endian word at data.
 inline std::uint32_t load_word(std::byte const *data) noexcept;
 
-#if defined(__ARM_FEATURE_DSP) && defined(__ARM_FEATURE_SIMD32)
 template <> struct kernel<8> {
   static constexpr bool available = true;
   static constexpr std::size_t block_size = 8;
   // The weighted sum of n bytes, at most 255 * n(n + 1) / 2, stays within 32 bits.
   static constexpr std::size_t max_blocks = 700;
   static_assert(std::uint64_t{255} * (block_size * max_blocks) * ((block_size * max_blocks) + 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
-  // Not measured in the library yet: the Cortex-M4 prototype ran 2.52 cycles per byte against 5.30 at 4 KiB.
+  // Faster than the portable loop from 64 bytes on a Cortex-M4 (nRF52840, STM32L4A6).
   static constexpr std::size_t minimum_size = 64;
-  static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
-};
-#endif
-
-template <> struct kernel<16> {
-  static constexpr bool available = true;
-  static constexpr std::size_t block_size = 16;
-  // The sum of the running sums before each of w words, at most 2 * 65535 * w(w - 1) / 2, stays within 32 bits.
-  static constexpr std::size_t max_blocks = 64;
-  static_assert(std::uint64_t{65'535} * (4 * max_blocks) * ((4 * max_blocks) - 1) <= std::numeric_limits<std::uint32_t>::max());
-  // Not measured in the library yet: the Cortex-M4 prototype ran 2.00 cycles per byte against 2.50 at 4 KiB.
-  static constexpr std::size_t minimum_size = 64;
-  static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
-};
-
-template <> struct kernel<32> {
-  static constexpr bool available = true;
-  static constexpr std::size_t block_size = 16;
-  // 65536 values per chunk keep the weighted sum of the chunk within 64 bits.
-  static constexpr std::size_t max_blocks = 65'536 / 4;
-  // Not measured in the library yet: the Cortex-M4 prototype ran 1.77 cycles per byte against 2.37 at 4 KiB.
-  static constexpr std::size_t minimum_size = 256;
+  // Word loads from an address that is not a multiple of 4 make the Cortex-M4 loop 15-25 % slower.
+  static constexpr std::size_t alignment = 4;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
@@ -191,10 +171,9 @@ inline std::uint32_t load_word(std::byte const *data) noexcept {
   return word;
 }
 
-#if defined(__ARM_FEATURE_DSP) && defined(__ARM_FEATURE_SIMD32)
 // Per 8 bytes: weighted += 8 * sum, usada8 adds the bytes to sum, and smlad adds bytes 0 and 2 (uxtb16) and 1 and 3 (after a
-// rotation) of each word with their weights 8 .. 1.
-inline chunk_sums kernel<8>::sum(std::byte const *data, std::size_t blocks) noexcept {
+// rotation) of each word with their weights 8 .. 1. Not inlined: inside the chunk loop, GCC reloaded two weights in every iteration.
+[[gnu::noinline]] inline chunk_sums kernel<8>::sum(std::byte const *data, std::size_t blocks) noexcept {
   std::uint32_t sum = 0;
   std::uint32_t weighted = 0;
   for(; blocks != 0; --blocks, data += block_size) {
@@ -209,51 +188,6 @@ inline chunk_sums kernel<8>::sum(std::byte const *data, std::size_t blocks) noex
     total = __smlad(static_cast<std::int32_t>(__uxtb16(second)), 0x0002'0004, total);
     total = __smlad(static_cast<std::int32_t>(__uxtb16(__ror(second, 8))), 0x0001'0003, total);
     weighted = static_cast<std::uint32_t>(total);
-  }
-  return {.sum = sum, .weighted = weighted};
-}
-#endif
-
-// Per word: previous += sum, then the word adds its halves to sum and its first half to first_halves. A word adds
-// 2 * sum + 2 * first half + second half to sum2, so the weighted sum is 2 * previous + sum + first_halves.
-inline chunk_sums kernel<16>::sum(std::byte const *data, std::size_t blocks) noexcept {
-  std::uint32_t sum = 0;
-  std::uint32_t previous = 0;
-  std::uint32_t first_halves = 0;
-  for(; blocks != 0; --blocks, data += block_size) {
-    std::uint32_t const first = load_word(data);
-    std::uint32_t const second = load_word(data + 4);
-    std::uint32_t const third = load_word(data + 8);
-    std::uint32_t const fourth = load_word(data + 12);
-    previous += sum;
-    sum += (first & 0xFFFFU) + (first >> 16U);
-    first_halves += first & 0xFFFFU;
-    previous += sum;
-    sum += (second & 0xFFFFU) + (second >> 16U);
-    first_halves += second & 0xFFFFU;
-    previous += sum;
-    sum += (third & 0xFFFFU) + (third >> 16U);
-    first_halves += third & 0xFFFFU;
-    previous += sum;
-    sum += (fourth & 0xFFFFU) + (fourth >> 16U);
-    first_halves += fourth & 0xFFFFU;
-  }
-  return {.sum = sum, .weighted = (2 * std::uint64_t{previous}) + sum + first_halves};
-}
-
-// Four words per step, each added to sum and then sum to weighted.
-inline chunk_sums kernel<32>::sum(std::byte const *data, std::size_t blocks) noexcept {
-  std::uint64_t sum = 0;
-  std::uint64_t weighted = 0;
-  for(; blocks != 0; --blocks, data += block_size) {
-    sum += load_word(data);
-    weighted += sum;
-    sum += load_word(data + 4);
-    weighted += sum;
-    sum += load_word(data + 8);
-    weighted += sum;
-    sum += load_word(data + 12);
-    weighted += sum;
   }
   return {.sum = sum, .weighted = weighted};
 }

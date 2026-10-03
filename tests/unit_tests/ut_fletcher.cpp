@@ -218,13 +218,14 @@ TYPED_TEST(fletcher, byte_ranges) {
   EXPECT_EQ(fletcher_update(fletcher_state<width>{}, std::list<std::byte>(data.begin(), data.end())), fletcher_update(fletcher_state<width>{}, data));
 }
 
-// M counts as 0 and the block offset is taken modulo the block size, at compile time and at run time.
+// M counts as 0 and the block offset is taken modulo the block size, at compile time and at run time, with messages long
+// enough for the kernels.
 TYPED_TEST(fletcher, edge_states) {
   constexpr unsigned width = TypeParam::value;
   using sum_type = fletcher_state<width>::sum_type;
   constexpr auto largest = static_cast<sum_type>(-1);
   constexpr std::size_t block_size = width / 16;
-  auto const data = random_bytes(37, 6);
+  auto const data = random_bytes(300, 6);
   auto const message = std::span<std::byte const>(data);
 
   constexpr fletcher_state<width> maximum{.sum1 = largest, .sum2 = largest, .block_offset = 0xFF};

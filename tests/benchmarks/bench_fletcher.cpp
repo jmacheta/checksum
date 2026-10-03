@@ -12,7 +12,7 @@
 namespace {
 
 template <unsigned Width> void fletcher(benchmark::State &state) {
-  std::vector<std::byte> data(static_cast<std::size_t>(state.range(0)));
+  std::vector<std::byte> data(static_cast<std::size_t>(state.range(0) + state.range(1)));
   std::uint32_t seed = 0x12345678U; // xorshift32
   for(auto &byte : data) {
     seed ^= seed << 13U;
@@ -20,7 +20,7 @@ template <unsigned Width> void fletcher(benchmark::State &state) {
     seed ^= seed << 5U;
     byte = static_cast<std::byte>(seed);
   }
-  std::span<std::byte const> message = data;
+  auto message = std::span<std::byte const>(data).subspan(static_cast<std::size_t>(state.range(1)));
   for(auto _ : state) {
     benchmark::DoNotOptimize(message);
     benchmark::DoNotOptimize(checksum::fletcher_compute<Width>(message));
@@ -28,10 +28,13 @@ template <unsigned Width> void fletcher(benchmark::State &state) {
   state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
 }
 
-// IPv4 and UDP headers, a full Ethernet payload, a page and a large buffer.
-BENCHMARK_TEMPLATE(fletcher, 16)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
-BENCHMARK_TEMPLATE(fletcher, 32)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
-BENCHMARK_TEMPLATE(fletcher, 64)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
+// Sizes from IPv4 and UDP headers to a large buffer, including the kernel thresholds; the second argument starts the message 1
+// byte after an aligned address.
+void sizes(benchmark::Benchmark *benchmark) { benchmark->ArgsProduct({{20, 64, 96, 128, 160, 192, 256, 1500, 4096, std::int64_t{1} << 20}, {0, 1}}); }
+
+BENCHMARK_TEMPLATE(fletcher, 16)->Apply(sizes);
+BENCHMARK_TEMPLATE(fletcher, 32)->Apply(sizes);
+BENCHMARK_TEMPLATE(fletcher, 64)->Apply(sizes);
 
 } // namespace
 

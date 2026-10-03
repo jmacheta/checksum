@@ -85,7 +85,7 @@ template <class Integer> Integer reduce(Integer value) noexcept {
 [[gnu::noinline, maybe_unused]] adler32_state sum_long(adler32_state state, std::span<std::byte const> data) noexcept {
   if constexpr(byte_kernel::available) {
     fletcher_detail::sum_pair sums{.sum1 = state.sum1, .sum2 = state.sum2};
-    std::size_t const size = fletcher_detail::sum_chunks<8>(sums, data, [](std::uint64_t value) { return reduce(value); });
+    std::size_t const size = fletcher_detail::sum_chunks<8, modulus>(sums, data);
     return sum_bytes({.sum1 = static_cast<std::uint16_t>(sums.sum1), .sum2 = static_cast<std::uint16_t>(sums.sum2)}, data.subspan(size));
   } else {
     return sum_bytes(state, data);
