@@ -1,12 +1,14 @@
 // Run-time loop of the fletcher4 checksum.
 
 #include <checksum/fletcher4.hpp>
+#include <checksum_private/fletcher4_arch.hpp>
 
 #include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 
 namespace checksum::fletcher4_detail {
@@ -15,32 +17,16 @@ namespace {
 
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big);
 
-// Interleaved lanes: lane j folds the words j, j + 4, j + 8, ... as a message of its own.
-inline constexpr std::size_t lane_count = 4;
+// Bytes of one word per lane.
+inline constexpr std::size_t group_size = lane_count * word_size;
+
+// Shortest input for the lanes. The portable ones overtake the word loop on a Cortex-A72 at 256 bytes with GCC, 384 with Clang; on 32-bit targets
+// their 64-bit sums run out of registers, 3 times slower there.
+inline constexpr std::size_t lanes_minimum_size =
+    lane_kernel_available ? lane_kernel_minimum_size : (sizeof(std::size_t) == 8 ? 256 : std::numeric_limits<std::size_t>::max());
 
 // The little-endian word at data.
-std::uint64_t load(std::byte const *data) noexcept {
-  std::uint32_t word = 0;
-  std::memcpy(&word, data, sizeof(word));
-  if constexpr(std::endian::native == std::endian::big) {
-    word = std::byteswap(word);
-  }
-  return word;
-}
-
-// n(n+1)/2 and n(n+1)(n+2)/6 modulo 2^64: the factor divisible by 2, and the one divisible by 3, are divided before the product wraps.
-std::uint64_t triangular(std::uint64_t count) noexcept {
-  std::array<std::uint64_t, 2> factors{count, count + 1};
-  factors[count % 2] /= 2;
-  return factors[0] * factors[1];
-}
-
-std::uint64_t tetrahedral(std::uint64_t count) noexcept {
-  std::array<std::uint64_t, 3> factors{count, count + 1, count + 2};
-  factors[(3 - (count % 3)) % 3] /= 3;
-  factors[count % 2] /= 2; // Dividing by 3 keeps the parity.
-  return factors[0] * factors[1] * factors[2];
-}
+std::uint64_t load(std::byte const *data) noexcept;
 
 // weights[sum][source][lane]: the weight of the lane's source sum in that sum of the words in message order. Word i of n has the weights 1,
 // n-i, C(n-i+1, 2) and C(n-i+2, 3) in sum1 to sum4, which these weights express through the lane sums.
@@ -51,11 +37,31 @@ constexpr std::array<std::array<std::array<std::int64_t, lane_count>, 4>, 4> wei
     {{{0, 0, 0, -1}, {4, 10, 20, 34}, {-48, -64, -80, -96}, {64, 64, 64, 64}}},
 }};
 
-// The state after words more words at data, a multiple of lane_count; the earlier sums add to the later ones once per word.
-fletcher4_state sum_lanes(fletcher4_state state, std::byte const *data, std::uint64_t words) noexcept {
-  // lanes[source][lane], so that one sum of all lanes is contiguous for vector instructions.
-  std::array<std::array<std::uint64_t, lane_count>, 4> lanes{};
-  for(std::uint64_t remaining = words; remaining != 0; remaining -= lane_count, data += lane_count * word_size) {
+// The portable lanes over groups groups of words at data.
+[[gnu::always_inline, maybe_unused]] inline lane_sums sum_lanes(std::byte const *data, std::size_t groups) noexcept;
+
+// The state after the words that lanes summed, a multiple of lane_count; the earlier sums add to the later ones once per word.
+fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint64_t words) noexcept;
+
+// One word at a time, then the bytes of an unfinished word.
+[[gnu::always_inline]] inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept;
+
+// The lanes of the CPU kernel, else the portable ones, then sum_words() over what they left. Not inlined, so that short inputs
+// run sum_loop() without a call.
+[[gnu::noinline]] fletcher4_state sum_long(fletcher4_state state, std::span<std::byte const> data) noexcept;
+
+std::uint64_t load(std::byte const *data) noexcept {
+  std::uint32_t word = 0;
+  std::memcpy(&word, data, sizeof(word));
+  if constexpr(std::endian::native == std::endian::big) {
+    word = std::byteswap(word);
+  }
+  return word;
+}
+
+[[gnu::always_inline, maybe_unused]] inline lane_sums sum_lanes(std::byte const *data, std::size_t groups) noexcept {
+  lane_sums lanes{};
+  for(; groups != 0; --groups, data += group_size) {
     for(std::size_t lane = 0; lane < lane_count; ++lane) {
       lanes[0][lane] += load(data + (lane * word_size));
       lanes[1][lane] += lanes[0][lane];
@@ -63,9 +69,15 @@ fletcher4_state sum_lanes(fletcher4_state state, std::byte const *data, std::uin
       lanes[3][lane] += lanes[2][lane];
     }
   }
-  std::array<std::uint64_t, 4> sums{state.sum1, state.sum2 + (words * state.sum1),
-                                    state.sum3 + (words * state.sum2) + (triangular(words) * state.sum1),
-                                    state.sum4 + (words * state.sum3) + (triangular(words) * state.sum2) + (tetrahedral(words) * state.sum1)};
+  return lanes;
+}
+
+fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint64_t words) noexcept {
+  // C(n+1, 2) and C(n+2, 3) modulo 2^64 for an even n; the second divides exactly by 3, a product with its inverse modulo 2^64.
+  std::uint64_t const triangular = (words / 2) * (words + 1);
+  std::uint64_t const tetrahedral = triangular * (words + 2) * 0xAAAA'AAAA'AAAA'AAABU;
+  std::array<std::uint64_t, 4> sums{state.sum1, state.sum2 + (words * state.sum1), state.sum3 + (words * state.sum2) + (triangular * state.sum1),
+                                    state.sum4 + (words * state.sum3) + (triangular * state.sum2) + (tetrahedral * state.sum1)};
   for(std::size_t sum = 0; sum < sums.size(); ++sum) {
     for(std::size_t source = 0; source <= sum; ++source) {
       for(std::size_t lane = 0; lane < lane_count; ++lane) {
@@ -76,19 +88,9 @@ fletcher4_state sum_lanes(fletcher4_state state, std::byte const *data, std::uin
   return {.sum1 = sums[0], .sum2 = sums[1], .sum3 = sums[2], .sum4 = sums[3]};
 }
 
-} // namespace
-
-fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data) noexcept {
+[[gnu::always_inline]] inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept {
   std::byte const *position = data.data();
-  std::size_t words = data.size() / word_size;
-  // Independent lanes overlap their dependency chains; the combination costs a few dozen operations.
-  std::size_t const grouped = words - (words % lane_count);
-  if(grouped >= 32) {
-    state = sum_lanes(state, position, grouped);
-    position += grouped * word_size;
-    words -= grouped;
-  }
-  for(; words != 0; --words, position += word_size) {
+  for(std::size_t words = data.size() / word_size; words != 0; --words, position += word_size) {
     state.sum1 += load(position);
     finish_word(state);
   }
@@ -99,6 +101,22 @@ fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data)
   }
   state.word_offset = static_cast<std::uint8_t>(tail);
   return state;
+}
+
+[[gnu::noinline]] fletcher4_state sum_long(fletcher4_state state, std::span<std::byte const> data) noexcept {
+  std::size_t const groups = data.size() / group_size;
+  if constexpr(lane_kernel_available) {
+    state = combine(state, lane_kernel(data.data(), groups), groups * lane_count);
+  } else {
+    state = combine(state, sum_lanes(data.data(), groups), groups * lane_count);
+  }
+  return sum_words(state, data.subspan(groups * group_size));
+}
+
+} // namespace
+
+fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data) noexcept {
+  return data.size() >= lanes_minimum_size ? sum_long(state, data) : sum_words(state, data);
 }
 
 } // namespace checksum::fletcher4_detail

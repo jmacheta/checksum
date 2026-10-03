@@ -128,6 +128,29 @@ TEST(fletcher4, split_before_long_chunks) {
   }
 }
 
+// Sizes around the lane thresholds of every target (128 to 384 bytes) and around the 16-byte groups, at every alignment, continuing a
+// state whose sums wrap: the combination of the lanes with the earlier sums.
+TEST(fletcher4, lanes_continue_state) {
+  auto const data = random_bytes(600 + 16, 7);
+  constexpr fletcher4_state start{
+      .sum1 = 0xFFFF'FFFF'FFFF'FFF0, .sum2 = 0x8765'4321'0FED'CBA9, .sum3 = ~std::uint64_t{0}, .sum4 = 0x0123'4567'89AB'CDEF};
+  for(std::size_t offset = 0; offset < 16; ++offset) {
+    for(std::size_t size = 100; size <= 600; ++size) {
+      auto const message = std::span<std::byte const>(data).subspan(offset, size);
+      fletcher4_state expected = start;
+      for(std::size_t start_byte = 0; start_byte + 4 <= size; start_byte += 4) {
+        expected.sum1 += reference(message.subspan(start_byte, 4))[0];
+        expected.sum2 += expected.sum1;
+        expected.sum3 += expected.sum2;
+        expected.sum4 += expected.sum3;
+      }
+      expected.sum1 += reference(message.subspan(size - (size % 4)))[0];
+      expected.word_offset = static_cast<std::uint8_t>(size % 4);
+      ASSERT_EQ(fletcher4_update(start, message), expected) << "offset " << offset << ", size " << size;
+    }
+  }
+}
+
 // Every prefix computed at compile time, plus splits inside a word.
 TEST(fletcher4, constant_evaluation_matches_run_time) {
   static constexpr auto prefixes = [] {

@@ -63,6 +63,7 @@ words:
 - cstdint
 - ctest
 - cvref
+- cvtepu
 - cvtsi
 - cxxflags
 - darc
