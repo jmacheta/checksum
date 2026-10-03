@@ -7,6 +7,8 @@ A C++23 library for checksums, built for everything from microcontrollers to ser
 - **CRCs:** any width from 1 to 64 bits, 112 named parameter sets;
 - **the Internet checksum** (RFC 1071) of IPv4, ICMP, UDP and TCP;
 - **Fletcher-16, Fletcher-32, Fletcher-64 and Adler-32** (RFC 1950);
+- **fletcher4**, the checksum of ZFS;
+- **XXH32, XXH64, XXH3-64 and XXH3-128** with a seed;
 - **MurmurHash3** x86_32 and x64_128 with a seed.
 
 All compute at compile time or at run time, most with CPU acceleration where the compiler flags allow it.
@@ -59,6 +61,10 @@ CPU acceleration follows your compiler flags (for example `-march=native` or `-m
 - [Internet checksum user guide](doc/internet.md): the API, splitting messages, CPU acceleration, measured performance
   and limitations.
 - [Fletcher user guide](doc/fletcher.md) and [Adler-32 user guide](doc/adler32.md): the API, CPU acceleration,
+  measured performance and limitations.
+- [fletcher4 user guide](doc/fletcher4.md): the definition and its relation to ZFS, the API, CPU acceleration,
+  measured performance and limitations.
+- [xxHash user guide](doc/xxhash.md): XXH32, XXH64, XXH3-64 and XXH3-128, seeds, streaming cost, CPU acceleration,
   measured performance and limitations.
 - [MurmurHash3 user guide](doc/murmur3.md): the API, seeds, byte order, measured performance and limitations.
 - [examples/crc](examples/crc): compile-time CRC, a file checksum, a custom CRC, run-time parameters, a MODBUS frame

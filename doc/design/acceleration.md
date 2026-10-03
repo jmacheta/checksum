@@ -3,13 +3,14 @@
 How algorithms use CPU instructions and which architectures are worth it, per algorithm. Measured figures are in the
 user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#5-performance),
 [Fletcher](../fletcher.md#6-performance), [Adler-32](../adler32.md#6-performance),
-[MurmurHash3](../murmur3.md#5-performance)).
+[MurmurHash3](../murmur3.md#5-performance), [xxHash](../xxhash.md#5-performance),
+[fletcher4](../fletcher4.md#6-performance)).
 
 ## Rules
 
 - **Compile time only.** `checksum_private/arch.hpp` selects one directory per architecture (`x86_64/`, `arm/`,
-  `riscv64/`, `generic/`), and each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`, `fletcher_arch.hpp`) includes its
-  header from there. That header checks the macros the compiler predefines for the flags of each translation unit
+  `riscv64/`, `generic/`), and each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`, `fletcher_arch.hpp`, `xxh3_arch.hpp`,
+  `fletcher4_arch.hpp`) includes its header from there. That header checks the macros the compiler predefines for the flags of each translation unit
   (`__PCLMUL__`, `__ARM_FEATURE_CRC32`, `__riscv_vector`, ...); without them it uses no kernel, mostly by including the
   generic one. The generic directory also covers `CHECKSUM_ACCELERATION=OFF`. No run-time CPU detection, no target attributes, no static state; the build never
   adds instruction-set flags.
@@ -183,3 +184,79 @@ The block loop is compiled once per width in `src/murmur3/block_loop.cpp` and ta
 the array out of the stack arguments and the return slot. On 32-bit targets x64_128 builds its 64-bit multiplications
 from 32-bit ones: on the A72 in AArch32 it runs 552 MB/s at 4 KiB against 1 681 in AArch64, and on a Cortex-M4 it
 takes 4.42 cycles per byte against 3.02 for x86_32.
+
+## XXH32 and XXH64
+
+| Target | Verdict | Why |
+| --- | --- | --- |
+| Any | No kernel | Each of the four lanes is a serial multiply-rotate chain, and the scalar loop already runs the four side by side. XXH32: a NEON prototype ran 1 685 MB/s at 4 KiB on the A72 against 2 333 for the scalar loop, and Clang vectorizing the lanes under LTO lost 38 % on x86-64. XXH64: SSE2, AVX2 and NEON have no 64-bit lane multiplication. |
+
+The stripe loop is compiled once per width in `src/xxhash/stripe_loop.cpp` and is not inlined: behind the call the
+lanes may alias the data, which keeps compilers from packing them into one vector register. The four lanes converge
+in spelled-out code; as a loop, GCC reloaded the lanes it had just stored as one vector, which stalls.
+
+## XXH3
+
+Inputs up to 240 bytes run straight-line code (0-16, 17-128 and 129-240 bytes, each separately) and never reach a
+kernel. Longer inputs fold 64-byte stripes into eight 64-bit accumulators: per lane a 32 × 32 → 64-bit product of the
+halves of data XOR secret, plus the neighbor lane's data, and a scramble after each block of 16 stripes.
+`fold_stripes<Kernel>` implements the loop once over `portable_kernel` and each architecture's `stripe_kernel`
+(load, store, accumulate, scramble).
+
+| Target | Verdict | Why |
+| --- | --- | --- |
+| x86-64 SSE2 (baseline) | Yes, every stripe loop | GCC 16: 21 992 MB/s at 1 MiB against 13 809 for the portable loop (1.6×), 1.5× at 256 B; Clang 21: 32 658 against 20 107. The reference `xxhash.h` 0.8.4 runs 23 179 with SSE2 and 9 175 scalar. |
+| x86-64 AVX2 | Yes, every stripe loop | GCC 16: 48 994 MB/s at 1 MiB (3.5× the portable loop), 2.6× at 256 B; Clang 21: 46 907. The reference runs 47 996. |
+| x86-64 AVX-512 | Not measured | No AVX-512 hardware available. |
+| AArch64 NEON, all eight lanes | No | Cortex-A72: slower than the portable loop from 256 B on, 2.21 against 2.57 GiB/s at 256 B and 3.64 against 3.93 at 4 KiB. |
+| AArch64 NEON, four lanes in NEON and four scalar | Yes, from 448 B of whole stripes | A72: 3.89 against 3.67 GiB/s at 1500 B, 4.24 against 3.93 at 4 KiB, 3.74 against 3.44 at 1 MiB; 2.52 against 2.57 at 256 B. Six NEON lanes and two scalar ones reached 3.74 and 4.04 at 1500 B and 4 KiB. |
+| 32-bit Arm NEON, little-endian | Yes, every stripe loop | A72 in AArch32: 1.53 against 1.10 GiB/s at 256 B, 2.64 against 1.70 at 4 KiB (1.55×), where the portable loop builds 64-bit additions from 32-bit ones. |
+| Big-endian NEON | No | The kernels read vector lanes as little-endian values; big-endian targets run the portable loop. |
+| RISC-V V extension, VLEN ≥ 128 | Implemented, unproven | The eight accumulators in one register group (`vuint64m4_t`); about ten vector instructions per stripe instead of about fifty scalar ones. Tested in QEMU only. |
+| Cortex-M | No kernel | No vector unit; the portable loop runs. |
+
+Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cortex-A72):
+
+- Kernel thresholds: x86-64 and AArch32 NEON from the first stripe, since both kernels beat the portable loop at
+  256 B, the shortest input that reaches them. AArch64 from 448 bytes of whole stripes, messages from 512 bytes, where
+  the four-plus-four kernel overtakes the portable loop (3.31 against 3.25 GiB/s at 512 B).
+- AArch32 keeps all eight lanes in NEON: an empty scalar array kept GCC from holding the lanes in registers.
+- The RVV kernel requires `__riscv_v_min_vlen >= 128` and 64-bit elements: at VLEN 64 the register group holds only
+  four lanes.
+- Seed 0 uses the default secret in read-only data; another seed derives the 192-byte secret on the stack in each call
+  that folds stripes. In streaming that is each update that folds the buffer: 25 % slower than seed 0 in 256-byte
+  pieces, 6 % in 4 KiB pieces.
+- The streaming update works in place; `xxh3_update` copies the 336-byte state in and out once per call. In 64-byte
+  pieces that gives 2.4 GiB/s against 9.3 for an in-place update with the SSE2 kernel, about 4×; from 4 KiB pieces the
+  copy is negligible. The `byte_range` overload folds all its chunks into one state without copying it.
+- The accumulate step is spelled out per lane: as a loop, GCC kept the accumulators in memory. The last stripe of the
+  message runs in the same loop as the others.
+
+## fletcher4
+
+The word loop adds one word per step through a chain of four dependent additions. Four interleaved lanes break the
+chain: lane j sums the words j, j + 4, j + 8, ..., and `combine()` turns the lane sums into the message sums with
+fixed integer weights. Word i of n weighs 1, n − i, C(n − i + 1, 2) and C(n − i + 2, 3) in `sum1` to `sum4`; for an
+even n the binomial coefficients have closed forms modulo 2^64 (the division by 3 is a product with its inverse), so a
+long input pays a fixed cost of a few multiplications. All sums wrap modulo 2^64, so no chunking is needed.
+
+| Target | Verdict | Why |
+| --- | --- | --- |
+| x86-64 AVX2 | Yes, from 192 B | One 256-bit vector per sum. 29 164 MB/s at 4 KiB with GCC against 19 781 for the SSE2 kernel (1.5×); 30 027 with Clang. |
+| x86-64 SSE2 (baseline) | Yes, from 256 B | Two 128-bit vectors per sum. With GCC as fast as the portable lanes from 512 B; with Clang 19 755 MB/s at 4 KiB against 7 156 for the portable lanes. |
+| AArch64 NEON, little-endian | Yes, from 192 B | A72 at 256 B: 1 747 against 1 539 MB/s with GCC, 1 842 against 1 547 with Clang; at 4 KiB 2 % (GCC) and 21 % (Clang) faster. |
+| 32-bit Arm NEON, little-endian | Yes, from 384 B | A72 in AArch32 at 4 KiB: 2 179 MB/s with GCC against 1 059 for the word loop (2.1×), 2 809 with Clang. The combination of the lanes costs more than on AArch64. |
+| Portable lanes, 64-bit targets | Yes, from 256 B | They overtake the word loop on the A72 at 256 B with GCC and 384 with Clang. |
+| Portable lanes, 32-bit targets | No | The 64-bit sums of four lanes do not fit the registers: 3× slower than the word loop. Without a kernel the lane code is not even linked. |
+| Big-endian NEON | No | The kernel reads vector lanes as little-endian words; big-endian AArch64 runs the portable lanes. |
+| RISC-V V extension | Not done | No hardware to measure; RV64 runs the portable lanes. |
+| x86-64 AVX-512 | Not measured | No AVX-512 hardware available. |
+
+Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cortex-A72):
+
+- Thresholds are where the lanes overtake the word loop of the same build: AVX2 at 192 B with GCC and Clang; SSE2 at
+  192 B with GCC and 384 with Clang, which is 10 % slower at 256, so 256; NEON at 192 B on AArch64 and 384 on AArch32.
+- Words are assembled from four byte loads, which compilers merge into one load where unaligned loads are allowed;
+  elsewhere this avoids a call to `memcpy`.
+- The lane loop and the word loop after it sit in a separate non-inlined function, as for the Internet checksum, so
+  inputs below the threshold run without a call.

@@ -43,6 +43,7 @@ words:
 - broadcastsi
 - bugprone
 - buypass
+- byteswap
 - cassert
 - castagnoli
 - castsi
@@ -191,6 +192,7 @@ words:
 - vbslq
 - vcgeq
 - vdupq
+- vectorizing
 - veor
 - veorq
 - verifone
@@ -216,6 +218,7 @@ words:
 - vsetvlmax
 - vshrq
 - vsrl
+- vuint
 - vuzpq
 - vwaddu
 - wassert
