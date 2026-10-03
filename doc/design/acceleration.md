@@ -209,8 +209,8 @@ halves of data XOR secret, plus the neighbor lane's data, and a scramble after e
 | x86-64 AVX2 | Yes, every stripe loop | GCC 16: 48 994 MB/s at 1 MiB (3.5× the portable loop), 2.6× at 256 B; Clang 21: 46 907. The reference runs 47 996. |
 | x86-64 AVX-512 | Not measured | No AVX-512 hardware available. |
 | AArch64 NEON, all eight lanes | No | Cortex-A72: slower than the portable loop from 256 B on, 2.21 against 2.57 GiB/s at 256 B and 3.64 against 3.93 at 4 KiB. |
-| AArch64 NEON, four lanes in NEON and four scalar | Yes, from 448 B of whole stripes | A72: 3.89 against 3.67 GiB/s at 1500 B, 4.24 against 3.93 at 4 KiB, 3.74 against 3.44 at 1 MiB; 2.52 against 2.57 at 256 B. Six NEON lanes and two scalar ones reached 3.74 and 4.04 at 1500 B and 4 KiB. |
-| 32-bit Arm NEON, little-endian | Yes, every stripe loop | A72 in AArch32: 1.53 against 1.10 GiB/s at 256 B, 2.64 against 1.70 at 4 KiB (1.55×), where the portable loop builds 64-bit additions from 32-bit ones. |
+| AArch64 NEON, four lanes in NEON and four scalar | Yes, from 448 B of whole stripes | A72: 4 315 against 4 239 MB/s at 1500 B, 4 698 against 4 602 at 4 KiB, a tie at 512 B, 2 % slower at 256 B. Six NEON lanes and two scalar ones, and all eight in NEON, were slower than four and four. |
+| 32-bit Arm NEON, little-endian | Yes, every stripe loop | A72 in AArch32: 1 596 against 1 144 MB/s at 256 B, 2 826 against 1 827 at 4 KiB (1.55×), where the portable loop builds 64-bit additions from 32-bit ones. |
 | Big-endian NEON | No | The kernels read vector lanes as little-endian values; big-endian targets run the portable loop. |
 | RISC-V V extension, VLEN ≥ 128 | Implemented, unproven | The eight accumulators in one register group (`vuint64m4_t`); about ten vector instructions per stripe instead of about fifty scalar ones. Tested in QEMU only. |
 | Cortex-M | No kernel | No vector unit; the portable loop runs. |

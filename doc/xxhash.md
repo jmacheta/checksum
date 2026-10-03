@@ -144,34 +144,29 @@ portable loop and SSE2 1.6×. XXH32, XXH64 and XXH3-128 have not been measured o
 
 ### 5.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
-GCC 14.3, `-O2`, one core. XXH32 and XXH64, MB/s:
-
-| Hash, mode | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
-| --- | --- | --- | --- | --- | --- | --- |
-| XXH32, AArch64 | 873 | 1 622 | 2 128 | 2 280 | 2 345 | 2 170 |
-| XXH64, AArch64 | 862 | 933 | 1 547 | 1 870 | 1 947 | 1 885 |
-| XXH32, AArch32 | 762 | 1 431 | 2 030 | 2 271 | 2 339 | 2 186 |
-| XXH64, AArch32 | 330 | 367 | 592 | 700 | 730 | 725 |
-
-XXH3, GiB/s:
+GCC 14.3, `-O2`, one core, MB/s:
 
 | Hash, build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| XXH3-64, AArch64 portable | 1.15 | 2.27 | 2.57 | 3.67 | 3.93 | 3.44 |
-| XXH3-64, AArch64 NEON | 1.15 | 2.27 | 2.57 | 3.89 | 4.24 | 3.74 |
-| XXH3-128, AArch64 portable | 0.75 | 1.67 | 1.86 | 3.35 | 3.79 | 3.45 |
-| XXH3-64, AArch32 portable | 0.70 | 1.32 | 1.10 | 1.57 | 1.70 | 1.66 |
-| XXH3-64, AArch32 NEON | 0.70 | 1.32 | 1.53 | 2.39 | 2.64 | 2.51 |
-| XXH3-128, AArch32 portable | 0.40 | 0.82 | 0.90 | 1.49 | 1.67 | 1.65 |
-| XXH3-128, AArch32 NEON | 0.40 | 0.82 | 1.15 | 2.20 | 2.58 | 2.50 |
+| XXH32, AArch64 | 857 | 1 730 | 2 521 | 2 808 | 2 916 | 2 656 |
+| XXH64, AArch64 | 862 | 942 | 1 553 | 1 874 | 1 949 | 1 891 |
+| XXH3-64, AArch64 portable | 1 239 | 2 440 | 2 799 | 4 239 | 4 602 | 4 134 |
+| XXH3-64, AArch64 NEON | 1 239 | 2 440 | 2 799 | 4 315 | 4 698 | 4 148 |
+| XXH3-128, AArch64 portable | 804 | 1 795 | 2 035 | 3 865 | 4 431 | 4 129 |
+| XXH3-128, AArch64 NEON | 804 | 1 796 | 2 014 | 3 867 | 4 452 | 4 156 |
+| XXH32, AArch32 | 646 | 1 419 | 2 161 | 2 491 | 2 589 | 2 326 |
+| XXH64, AArch32 | 323 | 370 | 594 | 699 | 730 | 724 |
+| XXH3-64, AArch32 portable | 712 | 1 275 | 1 144 | 1 687 | 1 827 | 1 772 |
+| XXH3-64, AArch32 NEON | 712 | 1 275 | 1 596 | 2 561 | 2 826 | 2 640 |
+| XXH3-128, AArch32 portable | 448 | 883 | 928 | 1 588 | 1 783 | 1 778 |
+| XXH3-128, AArch32 NEON | 450 | 877 | 1 214 | 2 355 | 2 703 | 2 642 |
 
-On AArch64 the NEON kernel is 8 % faster at 4 KiB and the portable loop runs below 512 bytes; on AArch32 NEON is
-1.55× faster at 4 KiB. XXH64 needs 64-bit multiplications, which AArch32 builds from 32-bit ones; there XXH32 is as
-fast as XXH3-64 up to 64 bytes and faster at 256. XXH3-128 with the AArch64 NEON kernel has not been measured.
+On AArch64 the NEON kernel runs from 512 bytes and gains 2 % at 4 KiB over a portable loop that the compiler already
+schedules well; on AArch32 NEON is 1.5× faster from 1500 bytes. XXH64 needs 64-bit multiplications, which AArch32
+builds from 32-bit ones; there XXH32 is the fastest of the four up to 64 bytes and from 256 bytes on a par with
+XXH3-64 NEON.
 
 ### 5.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
-
-<!-- cortex-m4-xxhash:begin -->
 
 GCC 14.3, `-O2`, code in flash and data in RAM, measured with the cycle counter. The Cortex-M4 runs the portable code
 of every hash. Both chips run the same cycles per byte, so the figures scale with the clock. STM32L4A6, MB/s, and
@@ -179,14 +174,13 @@ cycles per byte at 4 KiB:
 
 | Hash | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB | Cycles per byte |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| XXH32 | 8.3 | 19.9 | 27.8 | 31.9 | 34.5 | 43.1 | 44.8 | 1.79 |
+| XXH32 | 9.9 | 23.6 | 32.3 | 36.8 | 39.6 | 48.4 | 50.3 | 1.59 |
 | XXH64 | 8.4 | 9.3 | 13.4 | 15.8 | 17.3 | 21.6 | 23.6 | 3.40 |
-| XXH3-64 | 6.9 | 13.3 | 14.9 | 24.0 | 14.6 | 21.2 | 23.1 | 3.46 |
-| XXH3-128 | 5.7 | 10.8 | 11.9 | 10.6 | 11.1 | 19.6 | 22.4 | 3.56 |
+| XXH3-64 | 10.0 | 19.5 | 22.1 | 19.5 | 13.8 | 23.6 | 26.7 | 3.00 |
+| XXH3-128 | 8.5 | 16.7 | 19.2 | 11.2 | 10.7 | 21.7 | 25.7 | 3.11 |
 
-On this core XXH32 is the fastest from 64 bytes, about twice as fast as the others from 256 bytes.
-
-<!-- cortex-m4-xxhash:end -->
+On this core XXH32 is the fastest at every size, about twice as fast as the others from 256 bytes. Speed at short
+sizes moves by up to 25 % with where the code lands in flash.
 
 ## 6. Limitations
 

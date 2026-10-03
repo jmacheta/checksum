@@ -22,8 +22,8 @@ inline constexpr bool stripe_kernel_available = true;
 // On a Cortex-A72 four lanes in NEON and four scalar ones beat both all eight in NEON and the portable loop.
 inline constexpr std::size_t vector_count = 2;
 
-// With GCC on a Cortex-A72 the kernel beats the portable loop from 512-byte messages, 448 bytes of whole stripes (3.31 against
-// 3.25 GiB/s; 3.89 against 3.67 at 1500 bytes, 4.24 against 3.93 at 4096, 3.74 against 3.44 at 1 MiB), but not at 256 (2.52 against 2.57).
+// With GCC on a Cortex-A72 the kernel ties the portable loop at 512-byte messages, 448 bytes of whole stripes, and is 2 % faster
+// from 1500 bytes (4698 against 4602 MB/s at 4096); at 256 bytes it was 2 % slower.
 inline constexpr std::size_t stripe_kernel_minimum_size = 448;
 
 #else
