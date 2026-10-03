@@ -32,13 +32,14 @@ jobs:
           # Acceleration: the x86_64 kernels (-mpclmul -msse4.2 -mavx2: PCLMULQDQ folding, SSE4.2 crc32, AVX2 Internet checksum) and the portable code (CHECKSUM_ACCELERATION=OFF).
           - { preset: x86_64-gcc-pclmul, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
           - { preset: native-gcc-portable, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
-          # Arm and RISC-V targets, tests in QEMU user mode: the Arm kernels (PMULL, CRC32), the RISC-V Zbc kernel and the generic header.
+          # Arm and RISC-V targets, tests in QEMU user mode: the Arm kernels (PMULL, CRC32, NEON, ldm + adcs), the RISC-V Zbc and vector kernels and the generic header.
           - { preset: cross-aarch64-pmull, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu }
           - { preset: cross-aarch64-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu }
           - { preset: cross-aarch64-portable, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu }
           - { preset: cross-arm-portable, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf }
           - { preset: cross-arm-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf }
           - { preset: cross-riscv64-zbc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu }
+          - { preset: cross-riscv64-rvv, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu }
           - { preset: cross-riscv64-portable, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu }
           # Big-endian AArch64: Ubuntu has no cross compiler for it, the Arm GNU Toolchain is downloaded.
           - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", arm_toolchain: aarch64_be-none-linux-gnu }

@@ -1,5 +1,5 @@
-#ifndef CHECKSUM_PRIVATE_CRC_ARCH_GENERIC_HPP
-#define CHECKSUM_PRIVATE_CRC_ARCH_GENERIC_HPP
+#ifndef CHECKSUM_PRIVATE_GENERIC_CRC_HPP
+#define CHECKSUM_PRIVATE_GENERIC_CRC_HPP
 
 // No kernel: the table strategies run their portable loops. Included only by crc_arch.hpp.
 
@@ -19,4 +19,4 @@ inline constexpr std::size_t crc32_folding_minimum_size = std::numeric_limits<st
 
 } // namespace checksum::crc_detail
 
-#endif // CHECKSUM_PRIVATE_CRC_ARCH_GENERIC_HPP
+#endif // CHECKSUM_PRIVATE_GENERIC_CRC_HPP

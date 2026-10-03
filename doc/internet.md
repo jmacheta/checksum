@@ -63,14 +63,19 @@ The portable loop adds the widest native word (`std::size_t`) with two independe
 optimization level, and its result does not depend on the target's byte order. The order in which bytes are added
 does not change a one's complement sum, so the loop adds native-order words and swaps the bytes of the result once.
 
-| Compiler flags | Kernel | Used from |
+| Target and flags | Kernel | Used from |
 | --- | --- | --- |
-| x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | 64-byte blocks: 32-bit halves summed into 64-bit vector lanes | 256 bytes |
-| everything else, or `CHECKSUM_ACCELERATION=OFF` | portable loop | always |
+| x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | 64-byte blocks: 32-bit halves summed into 64-bit vector lanes | 512 B |
+| AArch64, little-endian (NEON is always there) | NEON pairwise add-accumulate (`uadalp`) of 32-bit words into 64-bit lanes | 512 B |
+| 32-bit Arm with NEON, little-endian | the same NEON kernel | 192 B |
+| 32-bit Arm without NEON, Thumb-2 or Arm state, e.g. Cortex-M3/M4/M7/M33 or ARMv7-A without NEON | `ldm` + `adcs` carry chain in inline assembly, 32 bytes per iteration, any start address | 192 B |
+| RISC-V RV64 with the V extension (`-march=rv64gcv`), any vector length | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
+| everything else (Thumb-1 code such as Cortex-M0/M0+/M23, big-endian NEON, RV64 without V), or `CHECKSUM_ACCELERATION=OFF` | portable loop | always |
 
-The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. Constant
-evaluation always runs a byte-by-byte loop with the same result. Which other architectures are worth a kernel is
-discussed in [design/acceleration.md](design/acceleration.md).
+The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. AArch64 and
+Cortex-M3/M4/M7/M33 builds get their kernel from their usual `-march` or `-mcpu` alone. Constant evaluation always runs a
+byte-by-byte loop with the same result. Which other architectures are worth a kernel is discussed in
+[design/acceleration.md](design/acceleration.md).
 
 ## 5. Performance
 
@@ -82,29 +87,68 @@ AVX2 is with `-march=native`; portable is with `CHECKSUM_ACCELERATION=OFF` and d
 
 | Input | GCC 16 portable | GCC 16 AVX2 | Clang 21 portable | Clang 21 AVX2 |
 | --- | --- | --- | --- | --- |
-| 20 B (IPv4 header) | 6 247 | 5 877 | 6 554 | 6 042 |
-| 64 B | 16 245 | 14 949 | 19 185 | 16 963 |
-| 256 B | 32 555 | 29 282 | 35 606 | 35 587 |
-| 1500 B (Ethernet payload) | 38 431 | 61 740 | 36 038 | 69 702 |
-| 4 KiB | 47 651 | 71 706 | 46 800 | 82 518 |
-| 1 MiB | 52 230 | 62 414 | 50 919 | 75 445 |
+| 20 B (IPv4 header) | 8 788 | 8 325 | 7 822 | 7 383 |
+| 64 B | 19 619 | 19 412 | 22 743 | 19 761 |
+| 256 B | 36 378 | 38 476 | 38 666 | 39 792 |
+| 1500 B (Ethernet payload) | 39 273 | 64 339 | 37 892 | 69 386 |
+| 4 KiB | 49 066 | 78 821 | 48 414 | 83 060 |
+| 1 MiB | 54 418 | 68 182 | 53 725 | 77 821 |
 
-Below 256 bytes both builds run the same portable loop, and the differences are within run-to-run noise. From
-1500 bytes the AVX2 kernel is 1.5-1.9× faster. At 1 MiB the gain is smaller, because the data comes from the L2
-cache.
+Below 512 bytes both builds run the portable loop; the differences come from `-march=native` and code layout. From
+1500 bytes the AVX2 kernel is 1.6-1.8× faster. At 1 MiB the gain is smaller, because the data comes from the L2 cache.
 
-### 5.2 Code size
+### 5.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
-`sum_loop`, the whole run-time code:
+GCC 14.3, `-O2`, static binaries on one core. Portable is with `CHECKSUM_ACCELERATION=OFF`. In 32-bit mode, NEON is
+`-march=armv8-a+crc -mfpu=neon-fp-armv8`, and `ldm` is `-mfpu=vfpv3-d16` (no NEON).
 
-| Target | Size |
-| --- | --- |
-| Cortex-M4, `-Os` | 254 B |
-| Cortex-M4, `-O2` | 340 B |
-| x86-64, `-O2` | 467 B |
-| x86-64, `-O2 -mavx2` | 832 B |
+| Input | AArch64 portable | AArch64 NEON | AArch32 portable | AArch32 NEON | AArch32 `ldm` |
+| --- | --- | --- | --- | --- | --- |
+| 20 B | 1 314 | 1 075 | 665 | 842 | 782 |
+| 64 B | 2 719 | 3 339 | 1 475 | 2 058 | 1 941 |
+| 256 B | 5 360 | 6 042 | 2 293 | 3 339 | 3 049 |
+| 1500 B | 6 636 | 10 312 | 2 630 | 8 289 | 4 561 |
+| 4 KiB | 7 214 | 13 182 | 2 737 | 11 149 | 5 359 |
+| 1 MiB | 5 386 | 6 679 | 2 580 | 6 253 | 4 561 |
 
-The Cortex-M4 and Arm application cores have not been measured on hardware yet.
+The 64-bit portable loop is already fast, so the NEON kernel starts at 512 bytes and is 1.5-1.8× faster from 1500
+bytes. In 32-bit mode the kernels start at 192 bytes: NEON is 4.1× and `ldm` 2.0× faster at 4 KiB. Below the
+thresholds every build runs the portable loop, and the differences there come from code layout.
+
+### 5.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
+
+GCC 14.3, `-O2`, code in flash and data in RAM; the cycle counter gives the best of 5 calls. Offset is the start
+address modulo 4: 2 is typical for an IP header behind a 14-byte Ethernet header.
+
+| Input | nRF52840 portable | nRF52840 `ldm` | STM32L4A6 portable | STM32L4A6 `ldm` |
+| --- | --- | --- | --- | --- |
+| 20 B | 10.3 | 10.0 | 12.9 | 12.5 |
+| 64 B | 24.4 | 23.4 | 30.5 | 29.3 |
+| 256 B | 40.2 | 49.5 | 50.2 | 61.9 |
+| 1500 B | 48.5 | 80.1 | 60.6 | 100.2 |
+| 4 KiB | 50.3 | 91.9 | 62.9 | 114.9 |
+| 1500 B, offset 2 | 40.8 | 80.4 | 51.0 | 100.5 |
+| 4 KiB, offset 1 | 36.1 | 88.7 | 45.2 | 110.9 |
+
+Per byte at 4 KiB, the kernel takes 0.70 cycles against 1.27 for the portable loop: 1.8× faster, 1.2× at 256 bytes,
+and up to 2.5× from odd or 2-modulo-4 addresses, where the portable loop's unaligned loads cost more. Both chips run the
+same cycles per byte, so the figures scale with the clock. Below 192 bytes the build with the kernel is up to 5 %
+slower.
+
+### 5.4 Code size
+
+`sum_loop` and its helpers, the whole run-time code, GCC with `-ffunction-sections`. A kernel build holds the portable
+loop twice: once for short inputs, once after the kernel.
+
+| Target | Portable | With kernel |
+| --- | --- | --- |
+| Cortex-M4, `-Os` | 210 B | 778 B |
+| Cortex-M4, `-O2` | 248 B | 944 B |
+| x86-64, `-O2` (AVX2 with `-mavx2`) | 419 B | 1 229 B |
+| AArch64, `-O2` | 364 B | 992 B |
+| RISC-V RV64, `-O2` (V with `-march=rv64gcv`) | 848 B | 1 136 B |
+
+RISC-V has not been measured on hardware; the vector kernel is tested in QEMU with vector lengths of 128-1024 bits.
 
 ## 6. Limitations
 
@@ -113,3 +157,4 @@ The Cortex-M4 and Arm application cores have not been measured on hardware yet.
   complement of the old field, then the new field, and finalize.
 - **UDP zero:** the UDP rule of sending 0xFFFF instead of a computed 0 is protocol logic and stays in the caller.
 - **No verification helper:** to verify a packet, compute over it, checksum included, and compare the result with 0.
+- **Code size:** a build with a kernel adds 290-810 bytes; `CHECKSUM_ACCELERATION=OFF` keeps the portable loop alone.

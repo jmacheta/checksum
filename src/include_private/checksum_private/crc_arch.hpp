@@ -1,14 +1,15 @@
 #ifndef CHECKSUM_PRIVATE_CRC_ARCH_HPP
 #define CHECKSUM_PRIVATE_CRC_ARCH_HPP
 
-// CPU kernels of crc_lut_sliced and crc_lut_braided, chosen by the compiler's predefined instruction-set macros; with
-// none of them, or CHECKSUM_ACCELERATION defined to 0, no kernel is used. Each architecture header defines:
+// CPU kernels of crc_lut_sliced and crc_lut_braided, from the directory arch.hpp selects; without the instruction-set
+// extensions, or with CHECKSUM_ACCELERATION defined to 0, no kernel is used. Each architecture header defines:
 // - folding_available; if true, fold_blocks() via fold_blocks_with() and its fold kernel
 // - crc32_instructions_available<Polynomial>; where true, crc32_word<Polynomial>() and crc32_instructions<Polynomial>()
 // - crc32_folding_minimum_size: shortest CRC-32/CRC-32C input folded before the CRC32 reduction (max: never)
 // - wide_folding_minimum_size: shortest input for a loop wider than four 128-bit accumulators (max: none)
 
 #include <checksum/crc.hpp>
+#include <checksum_private/arch.hpp>
 
 #include <array>
 #include <bit>
@@ -172,17 +173,14 @@ template <std::uint32_t Polynomial, class Kernel>
 
 } // namespace checksum::crc_detail
 
-#if defined(CHECKSUM_ACCELERATION) && !CHECKSUM_ACCELERATION
-#include <checksum_private/crc_arch_generic.hpp>
-#elif defined(__x86_64__) && ((defined(__PCLMUL__) && defined(__SSE4_1__)) || defined(__SSE4_2__))
-#include <checksum_private/crc_arch_x86_64.hpp>
-#elif (defined(__aarch64__) || defined(__arm__)) &&                                                                                                  \
-    (defined(__ARM_FEATURE_CRC32) || (defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_AES) && !defined(__AARCH64EB__)))
-#include <checksum_private/crc_arch_arm.hpp>
-#elif defined(__riscv) && __riscv_xlen == 64 && defined(__riscv_zbc) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#include <checksum_private/crc_arch_riscv64.hpp>
+#if defined(CHECKSUM_ARCH_X86_64)
+#include <checksum_private/x86_64/crc.hpp>
+#elif defined(CHECKSUM_ARCH_ARM)
+#include <checksum_private/arm/crc.hpp>
+#elif defined(CHECKSUM_ARCH_RISCV64)
+#include <checksum_private/riscv64/crc.hpp>
 #else
-#include <checksum_private/crc_arch_generic.hpp>
+#include <checksum_private/generic/crc.hpp>
 #endif
 
 #pragma GCC diagnostic pop

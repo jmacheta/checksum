@@ -4,8 +4,10 @@
 #include <checksum/byte_range.hpp>
 
 #include <bit>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <utility>
 
@@ -49,7 +51,7 @@ template <byte_range Range> [[nodiscard]] constexpr std::uint16_t internet_compu
 namespace checksum::internet_detail {
 
 // Folds sum to 16 bits with end-around carries, keeping it modulo 0xFFFF; the result is 0 only if sum is 0.
-constexpr std::uint16_t fold(std::uint64_t sum) noexcept;
+template <std::unsigned_integral Value> constexpr std::uint16_t fold(Value sum) noexcept;
 
 // Sum of data as 16-bit big-endian words, a last odd byte padded with zero; the constant-evaluation loop.
 constexpr std::uint16_t sum_bytes(std::span<std::byte const> data) noexcept;
@@ -64,11 +66,15 @@ std::uint16_t sum_loop(std::span<std::byte const> data) noexcept;
 
 namespace checksum::internet_detail {
 
-constexpr std::uint16_t fold(std::uint64_t sum) noexcept {
-  sum = (sum & 0xFFFFFFFFU) + (sum >> 32U); // < 2^33
-  sum = (sum & 0xFFFFU) + (sum >> 16U);     // < 2^17 + 2^16
-  sum = (sum & 0xFFFFU) + (sum >> 16U);     // <= 0x10001
-  sum = (sum & 0xFFFFU) + (sum >> 16U);
+template <std::unsigned_integral Value> constexpr std::uint16_t fold(Value sum) noexcept {
+  static_assert(std::numeric_limits<Value>::digits <= 64);
+  if constexpr(std::numeric_limits<Value>::digits > 32) {
+    sum = (sum & 0xFFFFFFFFU) + (sum >> 32U); // < 2^33
+  }
+  // < 2^17 + 2^16, then <= 0x10001, then <= 0xFFFF
+  for(int step = 0; step < 3; ++step) {
+    sum = (sum & 0xFFFFU) + (sum >> 16U);
+  }
   return static_cast<std::uint16_t>(sum);
 }
 
@@ -95,7 +101,7 @@ constexpr internet_state internet_update(internet_state state, std::span<std::by
   if(state.odd) {
     sum = std::byteswap(sum);
   }
-  return {.sum = internet_detail::fold(std::uint64_t{state.sum} + sum), .odd = state.odd != (data.size() % 2 == 1)};
+  return {.sum = internet_detail::fold(std::uint32_t{state.sum} + sum), .odd = state.odd != (data.size() % 2 == 1)};
 }
 
 template <byte_range Range> constexpr internet_state internet_update(internet_state state, Range &&data) noexcept {

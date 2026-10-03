@@ -5,11 +5,11 @@ user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#
 
 ## Rules
 
-- **Compile time only.** A private dispatch header per algorithm (`checksum_private/crc_arch.hpp`,
-  `internet_arch.hpp`) includes one architecture
-  header, chosen by the macros the compiler predefines for the flags of each translation unit (`__PCLMUL__`,
-  `__ARM_FEATURE_CRC32`, `__riscv_zbc`, ...). A generic header covers every other target and the option
-  `CHECKSUM_ACCELERATION=OFF`. No run-time CPU detection, no target attributes, no static state; the build never
+- **Compile time only.** `checksum_private/arch.hpp` selects one directory per architecture (`x86_64/`, `arm/`,
+  `riscv64/`, `generic/`), and each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`) includes its
+  header from there. That header checks the macros the compiler predefines for the flags of each translation unit
+  (`__PCLMUL__`, `__ARM_FEATURE_CRC32`, `__riscv_vector`, ...); without them it uses no kernel, mostly by including the
+  generic one. The generic directory also covers `CHECKSUM_ACCELERATION=OFF`. No run-time CPU detection, no target attributes, no static state; the build never
   adds instruction-set flags.
 - **One interface per algorithm.** Every architecture header defines the same constants (`*_available`, size
   thresholds) and, where they are true, the same functions; callers use them only in `if constexpr` branches.
@@ -71,24 +71,56 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
 
 A one's complement sum needs only additions, and the order of the bytes does not matter, so the portable loop is
 already fast. It adds native `std::size_t` words in two add-with-carry chains and swaps the bytes of the result once:
-on x86-64 that is 6 000 MB/s at 20 B and about 50 000 MB/s from 4 KiB, without any instruction-set flags. A kernel has
+on x86-64 that is about 8 000 MB/s at 20 B and 49 000 MB/s at 4 KiB, without any instruction-set flags. A kernel has
 to beat that, not a byte loop.
 
 | Target | Verdict | Why |
 | --- | --- | --- |
-| x86-64 AVX2 | Yes, from 256 B | 64-byte blocks, 32-bit halves summed into 64-bit lanes: 1.5-1.9× the portable loop at 1500 B-4 KiB, equal at 256 B, slower below. |
+| x86-64 AVX2 | Yes, from 512 B | 64-byte blocks, 32-bit halves summed into 64-bit lanes: 1.6-1.8× the portable loop at 1500 B-4 KiB. The call and the reduction make it slower below about 450 B. |
 | x86-64 SSE2 (baseline) | No | The same scheme with 16-byte vectors matched the scalar carry loop and was never faster. |
 | x86-64 AVX-512 | Not measured | No AVX-512 hardware available; the AVX2 kernel is near the L1 bandwidth, so the gain is likely small. |
 | Compiler auto-vectorization | No | GCC `-O3 -march=native` vectorizes a 32-bit-word loop to about 47 000 MB/s, below the scalar carry loop; Clang does not vectorize it. |
-| AArch64 NEON (`uadalp`) | Candidate | NEON is part of the AArch64 baseline, and pairwise add-accumulate takes 16 bytes per instruction. Needs a measurement on hardware against the portable loop, which compiles to `adds`/`adc`. |
-| Cortex-M4 / ARMv7E-M | Candidate, assembly only | The portable loop compiles to about 21 instructions per 16 bytes; an `ldm` + `adcs` chain needs about 9. Neither compiler builtins (`__builtin_addc`) nor 64-bit accumulators reach that from C++, so it would be the library's first inline assembly. Measure before adding. |
-| RISC-V | Not done | No carry flag: the portable loop costs three instructions per word. RVV could help; untested. |
+| AArch64 NEON (`uadalp`) | Yes, from 512 B | Cortex-A72: 1.5× at 1500 B, 1.8× at 4 KiB. The 64-bit portable loop is fast (5 400 MB/s at 256 B), so the kernel loses below about 450 B. Eight accumulators (128 B per iteration) were slower than four. |
+| AArch64 `ldp` + `adcs` assembly | No, for now | 1.3-1.5× the portable loop at 256 B-4 KiB on the A72, better than NEON at 256 B but worse from 1500 B. A second kernel for 256-511 B is not worth the assembly. |
+| 32-bit Arm NEON | Yes, from 192 B | A72 in AArch32: 4.1× at 4 KiB, where the portable loop runs 32-bit words. |
+| 32-bit Arm without NEON (Cortex-M) | Yes, from 192 B, inline assembly | `ldm` + `adcs` chain: 0.70 cycles per byte against 1.27 on a Cortex-M4 (nRF52840 and STM32L4A6): 1.8× at 4 KiB, 1.2× at 256 B, up to 2.5× from an odd address. |
+| Cortex-M0/M0+/M23 (Thumb-1) | Not done | `adcs` and `ldm` exist for low registers, but there is no `teq`: the loop test must not clobber the carry. No hardware to measure. |
+| Big-endian NEON | No | `vreinterpret` lane order differs between GCC and Clang, as for PMULL; big-endian AArch64 runs the portable loop. |
+| RISC-V V extension | Implemented, unproven | Widening add `vwaddu.wv` into 64-bit lanes, vector-length agnostic; tested in QEMU with VLEN 128-1024. No hardware measured, so the 64 B threshold is a guess. |
+| RISC-V scalar (Zba, Zbb) | No | No carry flag: a 64-bit word costs a load and three instructions with or without `add.uw`, the same as the portable loop. |
 
-Decisions, with the measurement behind each (Core Ultra 7 155H):
+Cortex-M methods, measured on the nRF52840 and STM32L4A6 (cycles per byte at 4 KiB):
+
+| Method | Cycles per byte | Notes |
+| --- | --- | --- |
+| Portable loop (two 32-bit carry chains) | 1.27 | GCC materializes each carry with `it`/`mov` instead of `adc`. |
+| 64-bit accumulators of 32-bit words | 1.46 | `adds` + `adc #0` per word: no better than the portable loop of the same build (1.46). |
+| `__builtin_addc` chain | - | GCC 14 still materializes every carry; the generated loop is longer than the portable one. |
+| `ldm` of 4 + `adcs` | 0.78 | One `ldm` per 16 bytes. |
+| 2 × `ldm` of 4 + `adcs` (library) | 0.70 | 32 bytes per iteration; clobbers only r2-r5, so it builds at `-O0` with a frame pointer. An odd start sums from the next byte and swaps the bytes of the result. |
+| `ldm` of 8 + `adcs` | 0.66 | Needs eight registers besides the frame pointer (r7 or r11) and r9; Thumb code with a frame pointer runs out of registers. |
+| 2 × `ldm` of 8 + `adcs` | 0.61 | 64 bytes per iteration: 7 % more at 4 KiB, with twice the loop and the register problem of `ldm` of 8. |
+| DSP (`uxtah`, `uadd16`, `usada8`) | - | At least two instructions per word, against one `adcs`. |
+| MCU CRC unit | - | It computes CRCs only. |
+
+What is left on Cortex-M: inputs below 192 bytes run the portable loop, dominated by the call and the final fold (about
+100 cycles for 20 bytes).
+
+Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Cortex-M4: nRF52840):
 
 - Two carry chains of 64-bit words: 1.3× one chain at 64 B, 2.6× at 4 KiB. A four-chain prototype was up to 1.3×
   faster again with Clang but 4× slower with GCC, which kept its array in memory; untried with separate variables.
 - The tail is loaded in fixed 4-, 2- and 1-byte steps: a `memcpy` of variable size called the library function and
   made a 20-byte input 3.5× slower.
 - One final fold after the carry chains are merged: three separate folds cost 8-20 % at 20-64 B.
-- The AVX2 kernel works in passes of 2^26 blocks (4 GiB), so its 64-bit lanes never overflow.
+- The AVX2 and NEON kernels work in passes of 2^26 blocks (4 GiB), the vector kernel in passes of 2^18 iterations, so
+  their 64-bit lanes never overflow.
+- The final fold works in the width of the native word: on a Cortex-M4 a 64-bit fold cost 30 cycles of the 150 that
+  a 20-byte input took.
+- `sum_loop()` holds no call for short inputs: the kernel and the loop after it sit in a separate non-inlined function.
+  A call inside `sum_loop()` saved registers on every input and cost 13-23 % below 256 bytes on x86-64; one shared,
+  non-inlined copy of the portable loop saved 100 bytes on a Cortex-M4 but cost 25 % at 20 bytes on x86-64.
+- Thresholds are where the kernel overtakes the portable loop of the same build: x86-64 at about 450 bytes, AArch64 at
+  450, AArch32 NEON at 150-190, the Cortex-M4 `ldm` kernel at 130-190 depending on the start address.
+- The `ldm` kernel returns its last carry separately: added back into the 32-bit sum, it would be lost when the sum is
+  0xFFFFFFFF.

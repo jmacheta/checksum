@@ -1,5 +1,5 @@
-#ifndef CHECKSUM_PRIVATE_CRC_ARCH_X86_64_HPP
-#define CHECKSUM_PRIVATE_CRC_ARCH_X86_64_HPP
+#ifndef CHECKSUM_PRIVATE_X86_64_CRC_HPP
+#define CHECKSUM_PRIVATE_X86_64_CRC_HPP
 
 // x86-64 kernels: PCLMULQDQ folding (needs SSE4.1; VPCLMULQDQ + AVX2 add a 256-bit loop from 256 bytes) and the SSE4.2
 // crc32 instruction for CRC-32C. Included only by crc_arch.hpp.
@@ -276,4 +276,4 @@ template <>
 
 } // namespace checksum::crc_detail
 
-#endif // CHECKSUM_PRIVATE_CRC_ARCH_X86_64_HPP
+#endif // CHECKSUM_PRIVATE_X86_64_CRC_HPP

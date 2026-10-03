@@ -100,11 +100,11 @@ TEST(internet, odd_length) {
   EXPECT_TRUE(internet_update({}, bytes<3>({0x12, 0x34, 0x56})).odd);
 }
 
-// All lengths past the unrolled loop and its tail, at every alignment of a word.
+// All lengths past the unrolled loop, its tail and the thresholds of every CPU kernel, at every alignment of a word.
 TEST(internet, matches_model) {
-  auto const data = random_bytes(512 + 16, 1);
+  auto const data = random_bytes(1100 + 16, 1);
   for(std::size_t offset = 0; offset < 16; ++offset) {
-    for(std::size_t size = 0; size <= 512; ++size) {
+    for(std::size_t size = 0; size <= 1100; ++size) {
       auto const message = std::span(data).subspan(offset, size);
       ASSERT_EQ(internet_compute(message), reference(message)) << "offset " << offset << ", size " << size;
     }
@@ -118,7 +118,12 @@ TEST(internet, matches_model_with_carries) {
     data[index] = std::byte{0xFF};
   }
   EXPECT_EQ(internet_compute(data), reference(data));
-  EXPECT_EQ(internet_compute(std::vector<std::byte>((1 << 20) + 1, std::byte{0xFF})), 0x00FF);
+  // Every start address modulo 4, and more than one pass of the vector kernels.
+  std::vector<std::byte> const ones((5 << 20) + 4, std::byte{0xFF});
+  for(std::size_t offset = 0; offset < 4; ++offset) {
+    EXPECT_EQ(internet_compute(std::span(ones).subspan(offset, (1 << 20) + 1)), 0x00FF) << "offset " << offset;
+  }
+  EXPECT_EQ(internet_compute(std::span(ones).first((5 << 20) + 1)), 0x00FF);
 }
 
 TEST(internet, split_anywhere) {

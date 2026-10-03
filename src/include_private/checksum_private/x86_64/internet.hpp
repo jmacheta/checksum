@@ -1,7 +1,11 @@
-#ifndef CHECKSUM_PRIVATE_INTERNET_ARCH_X86_64_HPP
-#define CHECKSUM_PRIVATE_INTERNET_ARCH_X86_64_HPP
+#ifndef CHECKSUM_PRIVATE_X86_64_INTERNET_HPP
+#define CHECKSUM_PRIVATE_X86_64_INTERNET_HPP
 
 // AVX2 kernel of the Internet checksum. Included only by internet_arch.hpp.
+
+#if !defined(__AVX2__)
+#include <checksum_private/generic/internet.hpp>
+#else
 
 #include <immintrin.h>
 
@@ -12,10 +16,10 @@
 
 namespace checksum::internet_detail {
 
-inline constexpr bool vector_sum_available = true;
+inline constexpr bool block_sum_available = true;
 
-// Below 256 bytes the kernel is no faster than the portable loop.
-inline constexpr std::size_t vector_sum_minimum_size = 256;
+// Below about 450 bytes the portable loop is faster on a Core Ultra 7 155H: the kernel pays for the call and the reduction.
+inline constexpr std::size_t block_sum_minimum_size = 512;
 
 inline constexpr std::size_t vector_block_size = 64;
 
@@ -23,7 +27,8 @@ inline constexpr std::size_t vector_block_size = 64;
 inline constexpr std::size_t vector_pass_blocks = std::size_t{1} << 26U;
 
 // 64-byte blocks of 32-bit words, each split into the halves of a 64-bit lane.
-inline std::uint64_t vector_sum(std::span<std::byte const> &data) noexcept {
+inline block_total block_sum(std::span<std::byte const> data) noexcept {
+  std::size_t const message_size = data.size();
   __m256i const low_halves = _mm256_set1_epi64x(0xFFFFFFFF);
   std::uint64_t total = 0;
   while(data.size() >= vector_block_size) {
@@ -47,9 +52,11 @@ inline std::uint64_t vector_sum(std::span<std::byte const> &data) noexcept {
     total += fold(static_cast<std::uint64_t>(_mm_cvtsi128_si64(half)));
     total += fold(static_cast<std::uint64_t>(_mm_extract_epi64(half, 1)));
   }
-  return total;
+  return {.sum = total, .size = message_size - data.size()};
 }
 
 } // namespace checksum::internet_detail
 
-#endif // CHECKSUM_PRIVATE_INTERNET_ARCH_X86_64_HPP
+#endif
+
+#endif // CHECKSUM_PRIVATE_X86_64_INTERNET_HPP
