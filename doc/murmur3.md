@@ -90,7 +90,8 @@ GCC 14.3, `-O2`, code in flash and data in RAM, measured with the cycle counter.
 3.03 cycles per byte (26 MB/s at 80 MHz) and MurmurHash3_x64_128 4.43 (18 MB/s); at 20 bytes they reach 9.6 and
 6.8 MB/s. Both chips run the same cycles per byte, so the figures scale with the clock.
 
-x86-64 has not been measured.
+On x86-64 (Core Ultra 7 155H, GCC, `-O2 -march=native`) MurmurHash3_x86_32 runs 5 388 MB/s at 20 bytes and 4 233 at
+1 MiB, MurmurHash3_x64_128 6 140 and 10 006.
 
 ## 6. Limitations
 

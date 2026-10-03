@@ -140,7 +140,8 @@ default x86-64 flags, AVX2 a build with AVX2 enabled.
 
 With Clang 21 at 1 MiB: 20 107 MB/s portable, 32 658 SSE2, 46 907 AVX2. Up to 240 bytes the three builds run the
 same code, and 64 bytes are faster than 256 because they need no stripe loop. At 1 MiB AVX2 is 3.5× the
-portable loop and SSE2 1.6×. XXH32, XXH64 and XXH3-128 have not been measured on x86-64.
+portable loop and SSE2 1.6×. With `-march=native` (AVX2), MB/s at 20 B and 1 MiB: XXH32 6 831 and 8 743, XXH64 7 371 and 17 689, XXH3-128 7 827 and
+50 172.
 
 ### 5.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
