@@ -47,6 +47,9 @@ constexpr std::array<std::array<std::array<std::int64_t, lane_count>, 4>, 4> wei
 // run sum_loop() without a call.
 [[gnu::noinline, maybe_unused]] fletcher4_state sum_long(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
+// sum_long() from lanes_minimum_size bytes, else sum_words().
+[[gnu::always_inline]] inline fletcher4_state sum_any(fletcher4_state state, std::span<std::byte const> data) noexcept;
+
 std::uint64_t load(std::byte const *data) noexcept {
   return std::to_integer<std::uint32_t>(data[0]) | (std::to_integer<std::uint32_t>(data[1]) << 8) | (std::to_integer<std::uint32_t>(data[2]) << 16) |
          (std::to_integer<std::uint32_t>(data[3]) << 24);
@@ -106,9 +109,7 @@ fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint
   return sum_words(state, data.subspan(groups * group_size));
 }
 
-} // namespace
-
-fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data) noexcept {
+[[gnu::always_inline]] inline fletcher4_state sum_any(fletcher4_state state, std::span<std::byte const> data) noexcept {
   // Without lanes, sum_long() is not even linked.
   if constexpr(lanes_minimum_size == std::numeric_limits<std::size_t>::max()) {
     return sum_words(state, data);
@@ -116,5 +117,11 @@ fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data)
     return data.size() >= lanes_minimum_size ? sum_long(state, data) : sum_words(state, data);
   }
 }
+
+} // namespace
+
+fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data) noexcept { return sum_any(state, data); }
+
+fletcher4_value compute_loop(std::span<std::byte const> data) noexcept { return fletcher4_finalize(sum_any(fletcher4_state{}, data)); }
 
 } // namespace checksum::fletcher4_detail

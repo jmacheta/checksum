@@ -71,6 +71,10 @@ constexpr fletcher4_state update_bytes(fletcher4_state state, std::span<std::byt
 // The same fold at run time for a state at a word boundary, defined in src/fletcher4/sum_loop.cpp.
 fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
+// fletcher4_compute() at run time, defined in src/fletcher4/sum_loop.cpp. Built there, the empty state stays in registers; GCC zeroes
+// one built by the caller with memset calls.
+fletcher4_value compute_loop(std::span<std::byte const> data) noexcept;
+
 } // namespace checksum::fletcher4_detail
 
 ///@}
@@ -130,7 +134,11 @@ constexpr fletcher4_value fletcher4_finalize(fletcher4_state state) noexcept {
 }
 
 constexpr fletcher4_value fletcher4_compute(std::span<std::byte const> data) noexcept {
-  return fletcher4_finalize(fletcher4_update(fletcher4_state{}, data));
+  if consteval {
+    return fletcher4_finalize(fletcher4_update(fletcher4_state{}, data));
+  } else {
+    return fletcher4_detail::compute_loop(data);
+  }
 }
 
 template <byte_range Range> constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept {
