@@ -24,3 +24,8 @@ add_executable(checksum_bench_xxhash bench_xxhash.cpp)
 target_compile_features(checksum_bench_xxhash PRIVATE cxx_std_23)
 target_link_libraries(checksum_bench_xxhash PRIVATE checksum::checksum benchmark::benchmark)
 add_test(NAME benchmark_xxhash_smoke COMMAND checksum_bench_xxhash --benchmark_filter=^xxhash64/20$ --benchmark_min_time=0.001s)
+
+add_executable(checksum_bench_murmur3 bench_murmur3.cpp)
+target_compile_features(checksum_bench_murmur3 PRIVATE cxx_std_23)
+target_link_libraries(checksum_bench_murmur3 PRIVATE checksum::checksum benchmark::benchmark)
+add_test(NAME benchmark_murmur3_smoke COMMAND checksum_bench_murmur3 --benchmark_filter=^murmur3_128/20$ --benchmark_min_time=0.001s)

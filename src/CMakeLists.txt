@@ -14,6 +14,7 @@ target_sources(
           crc/lut_sliced.cpp
           fletcher/sum_loop.cpp
           internet/sum_loop.cpp
+          murmur3/block_loop.cpp
           xxhash/stripe_loop.cpp
   PUBLIC FILE_SET
          HEADERS
@@ -26,6 +27,7 @@ target_sources(
          include/checksum/crc_catalog.hpp
          include/checksum/fletcher.hpp
          include/checksum/internet.hpp
+         include/checksum/murmur3.hpp
          include/checksum/xxhash.hpp
 )
 
