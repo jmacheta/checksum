@@ -1,12 +1,14 @@
 # CPU acceleration
 
 How algorithms use CPU instructions and which architectures are worth it, per algorithm. Measured figures are in the
-user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#5-performance)).
+user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#5-performance),
+[Fletcher](../fletcher.md#6-performance), [Adler-32](../adler32.md#6-performance),
+[MurmurHash3](../murmur3.md#5-performance)).
 
 ## Rules
 
 - **Compile time only.** `checksum_private/arch.hpp` selects one directory per architecture (`x86_64/`, `arm/`,
-  `riscv64/`, `generic/`), and each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`) includes its
+  `riscv64/`, `generic/`), and each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`, `fletcher_arch.hpp`) includes its
   header from there. That header checks the macros the compiler predefines for the flags of each translation unit
   (`__PCLMUL__`, `__ARM_FEATURE_CRC32`, `__riscv_vector`, ...); without them it uses no kernel, mostly by including the
   generic one. The generic directory also covers `CHECKSUM_ACCELERATION=OFF`. No run-time CPU detection, no target attributes, no static state; the build never
@@ -124,3 +126,60 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Cortex-M
   450, AArch32 NEON at 150-190, the Cortex-M4 `ldm` kernel at 130-190 depending on the start address.
 - The `ldm` kernel returns its last carry separately: added back into the 32-bit sum, it would be lost when the sum is
   0xFFFFFFFF.
+
+## Fletcher and Adler-32
+
+Fletcher-16, Fletcher-32, Fletcher-64 and Adler-32 share one kernel interface in `fletcher_arch.hpp`: `kernel<Bits>`
+sums little-endian values of 8, 16 or 32 bits and returns, for a chunk of n values v_i, their sum and the weighted sum
+of (n − i) · v_i. The caller adds n · `sum1` plus the weighted sum to `sum2` and reduces both sums after every chunk.
+Fletcher-16 and Adler-32 run the same byte kernel with moduli 255 and 65521.
+
+The portable loops are the baseline. They reduce only when an overflow could otherwise happen (every 380 million bytes
+on 64-bit targets for Fletcher-16 and Adler-32) and add four blocks per step, so a byte loop still runs 7 300 MB/s on
+x86-64 at 4 KiB with GCC, but only 0.84 GiB/s on a Cortex-A72 and 5.3 cycles per byte on a Cortex-M4.
+
+| Target | Verdict | Why |
+| --- | --- | --- |
+| x86-64 AVX2 | Yes: bytes from 64 B, 16-bit values from 128 B, 32-bit values from 384 B | At 4 KiB with GCC, 7.4× the portable loop for Fletcher-16 and Adler-32, 3.3× for Fletcher-32, 2.0× for Fletcher-64. |
+| x86-64 SSE2 (baseline), SSSE3 | Yes, bytes and 16-bit values | Fletcher-16 3.1× and Fletcher-32 1.5× the portable loop at 4 KiB with GCC. SSSE3 `pmaddubsw` weights 16 bytes in two instructions; plain SSE2 widens the bytes first. |
+| x86-64 SSE2, 32-bit values | Not done | The 64-bit portable loop of Fletcher-64 already runs 26 900 MB/s at 4 KiB. |
+| x86-64 AVX-512 | Not measured | No AVX-512 hardware available. |
+| AArch64 NEON | Yes: bytes from 64 B, 16-bit from 128 B, 32-bit from 256 B | Cortex-A72 at 4 KiB: about 5× for Fletcher-16 and Adler-32, 2.8× for Fletcher-32, 1.45× for Fletcher-64, whose 64-bit portable loop is already fast. |
+| 32-bit Arm NEON, little-endian | Yes, the same kernels and thresholds | A72 in AArch32 at 4 KiB: 5.0× for Fletcher-16 and Adler-32, 2.9× for Fletcher-32, 3.0× for Fletcher-64. |
+| M-profile Arm DSP (Cortex-M4/M7/M33), bytes | Yes, from 64 B | `usada8` sums 4 bytes, `uxtb16` + `smlad` weight them: 2.69 cycles per byte against 5.30 on a Cortex-M4 (nRF52840 and STM32L4A6), 2.0× at 4 KiB, 1.6× at 256 B. |
+| M-profile Arm DSP, 16-bit and 32-bit values | No | The portable loop sums 32-bit words on 32-bit targets: 2.11 cycles per byte for Fletcher-32 and 1.80 for Fletcher-64, within 2 % of a DSP kernel of the same scheme. |
+| A-profile 32-bit Arm without NEON | No | The DSP kernel is slower than the portable loop on the Cortex-A72 in AArch32; only M-profile cores use it. |
+| Big-endian NEON | No | The kernels read vector lanes as little-endian values; big-endian targets run the portable loop. |
+| RISC-V V extension | Not done | No hardware to measure; a candidate. |
+
+Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cortex-A72; MCU: Cortex-M4):
+
+- Thresholds are where the kernel overtakes the portable loop of the same build. x86-64 bytes at 64 B with GCC and
+  Clang, SSE2 and AVX2, except Fletcher-16 with GCC and SSE2 (7 % slower at 64 B, faster from 96); 16-bit values at
+  96 B with Clang and 128-160 with GCC; 32-bit values at 160 B with Clang and 384 with GCC. NEON bytes at 64 B, 16-bit
+  values above 64 B and 32-bit values at 256 B, in AArch64 and AArch32.
+- Chunk sizes keep the vector lanes from overflowing: 1024 blocks for x86-64 bytes, 128 for 16-bit values, 256
+  blocks of 16 bytes for NEON bytes (16-bit column sums), 700 blocks of 8 bytes for the DSP kernel (32-bit weighted
+  sum). The 32-bit-value kernels take 65536 values per chunk, so the weighted sum fits 64 bits.
+- The chunk sums are reduced in 32-bit arithmetic wherever every intermediate result fits, with the high half of a
+  64-bit value folded with the weight 2^32 modulo M, so the modulo is a 32-bit operation on every target.
+- The kernel and the portable loop after it sit in a separate non-inlined function, as for the Internet checksum, so
+  inputs below the threshold run without a call.
+- The DSP kernel sums single bytes up to a 4-byte aligned address first: word loads from other addresses made the
+  Cortex-M4 loop 15-25 % slower. From an odd address it takes 2.71 cycles per byte against 2.69.
+- The DSP kernel is not inlined into the chunk loop: there GCC reloaded two weights in every iteration.
+- On 32-bit targets the portable Fletcher-32 loop adds 32-bit words, two blocks each, and Fletcher-64 adds its blocks
+  one by one: its 64-bit sums make the multiplications of the four-block formula cost more than the dependency chain.
+- `CHECKSUM_TEST_ARM_DSP` (preset `cross-arm-portable`) enables the DSP kernel on an A-profile core, only so that QEMU
+  user mode can test it.
+
+## MurmurHash3
+
+| Target | Verdict | Why |
+| --- | --- | --- |
+| Any | No kernel | Each block updates the hash lanes through a rotation, a multiplication and an addition of their previous values, and in x64_128 the second lane takes the first lane of the same block. One serial chain per message leaves nothing for vector instructions. |
+
+The block loop is compiled once per width in `src/murmur3/block_loop.cpp` and takes the lanes by reference, which keeps
+the array out of the stack arguments and the return slot. On 32-bit targets x64_128 builds its 64-bit multiplications
+from 32-bit ones: on the A72 in AArch32 it runs 552 MB/s at 4 KiB against 1 681 in AArch64, and on a Cortex-M4 it
+takes 4.42 cycles per byte against 3.02 for x86_32.
