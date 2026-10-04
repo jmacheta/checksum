@@ -21,7 +21,6 @@
 namespace {
 
 using namespace checksum;
-using murmur3_test::hash128;
 using murmur3_test::murmur3_128_vectors;
 using murmur3_test::murmur3_32_vectors;
 
@@ -64,8 +63,8 @@ using namespace std::literals;
 static_assert(murmur3_compute<32>(""sv) == 0);
 static_assert(murmur3_compute<32>(""sv, 1) == 0x514E28B7U);
 static_assert(murmur3_compute<32>("Hello, world!"sv, 1234) == 0xFAF6CDB3U);
-static_assert(murmur3_compute<128>(""sv) == hash128{0, 0});
-static_assert(murmur3_compute<128>("Hello, world!"sv, 1234) == hash128{0x61130E64AA0AC6FEU, 0x51F9046D087E1B56U});
+static_assert(murmur3_compute<128>(""sv) == hash128{});
+static_assert(murmur3_compute<128>("Hello, world!"sv, 1234) == hash128{.low = 0x61130E64AA0AC6FEU, .high = 0x51F9046D087E1B56U});
 static_assert(murmur3_finalize(murmur3_state<32>{.seed = 1}) == 0x514E28B7U);
 static_assert(murmur3_compute<32>(std::span(message), murmur3_32_vectors[2].seed) == murmur3_32_vectors[2].prefixes[300]);
 static_assert(murmur3_compute<128>(std::span(message).first(33), murmur3_128_vectors[2].seed) == murmur3_128_vectors[2].prefixes[33]);
@@ -75,7 +74,7 @@ static_assert(chunked<32>(message, 3, murmur3_32_vectors[1].seed) == murmur3_32_
 static_assert(prefix_mismatches<32>(70) == 0);
 static_assert(prefix_mismatches<128>(70) == 0);
 static_assert(murmur3_32_compute("Hello, world!"sv, 1234) == 0xFAF6CDB3U);
-static_assert(murmur3_128_compute("Hello, world!"sv, 1234) == hash128{0x61130E64AA0AC6FEU, 0x51F9046D087E1B56U});
+static_assert(murmur3_128_compute("Hello, world!"sv, 1234) == hash128{.low = 0x61130E64AA0AC6FEU, .high = 0x51F9046D087E1B56U});
 static_assert(std::same_as<murmur3_32_state, murmur3_state<32>> && std::same_as<murmur3_128_state, murmur3_state<128>>);
 
 template <class Width> class murmur3 : public testing::Test {};

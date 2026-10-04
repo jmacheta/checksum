@@ -78,7 +78,7 @@ a cache keyed by the hash of its input.
 | `xxh3_update(state, data)` | Folds `data` into `state` and returns the new state. |
 | `xxh3_finalize(state)` | The hash of the message folded into `state`; the state is unchanged. |
 | `xxh3_compute<Width>(data, seed = 0)` | `xxh3_finalize(xxh3_update(xxh3_state<Width>{.seed = seed}, data))`. |
-| `hash128` | The XXH3-128 hash: `low` and `high`, its lower and upper 64 bits, as `XXH128_hash_t` of the reference. Compares with `==`. |
+| `hash128` | The XXH3-128 hash: `low` and `high`, its lower and upper 64 bits, as `XXH128_hash_t` of the reference. Compares with `==`. MurmurHash3_x64_128 returns the same type. |
 | `xxh3_64_state`, `xxh3_128_state` | `xxh3_state<64>` and `xxh3_state<128>`. |
 | `xxh3_64_compute(data, seed = 0)`, `xxh3_128_compute(data, seed = 0)` | `xxh3_compute<64>` and `xxh3_compute<128>`. `xxh3_update` and `xxh3_finalize` take the width from the state. |
 

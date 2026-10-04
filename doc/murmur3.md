@@ -16,13 +16,13 @@ using namespace std::literals;
 // One call, seed 0 or another seed.
 std::string_view key = "user:42";
 std::uint32_t hash = checksum::murmur3_32_compute(key);
-std::array<std::uint64_t, 2> wide = checksum::murmur3_128_compute(key, 1234);
+checksum::hash128 wide = checksum::murmur3_128_compute(key, 1234);
 
 // Incremental: a message may be split anywhere.
 checksum::murmur3_128_state state{.seed = 1234};
 state = checksum::murmur3_update(state, first_part);
 state = checksum::murmur3_update(state, second_part);
-std::array<std::uint64_t, 2> value = checksum::murmur3_finalize(state);
+checksum::hash128 value = checksum::murmur3_finalize(state);
 
 // Compile time.
 static_assert(checksum::murmur3_32_compute("Hello, world!"sv, 1234) == 0xFAF6CDB3);
@@ -44,9 +44,9 @@ deduplication of records by their 128-bit hash.
 | `murmur3_32_state`, `murmur3_128_state` | `murmur3_state<32>` and `murmur3_state<128>`. |
 | `murmur3_32_compute(data, seed = 0)`, `murmur3_128_compute(data, seed = 0)` | `murmur3_compute<32>(data, seed)` and `murmur3_compute<128>(data, seed)`. |
 
-`murmur3_state<Width>::value_type` is the hash: `std::uint32_t` for Width 32, and for Width 128 a
-`std::array<std::uint64_t, 2>` holding the two halves h1 and h2 in the order the reference implementation stores
-them. All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any range of
+`murmur3_state<Width>::value_type` is the hash: `std::uint32_t` for Width 32, and `hash128` for Width 128, the same
+type as XXH3-128 returns. Its `low` half is h1 and its `high` half h2, so it is the 128-bit number the reference
+implementation writes out least significant byte first. All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any range of
 `std::byte`, `char`, `unsigned char`, `signed char` or `char8_t`, as for the other algorithms. At run time
 `murmur3_compute` hashes contiguous ranges directly, without the state's buffer; other ranges are folded in 64-byte
 chunks. Arrays of `char` are rejected, so the `'\0'` of a string literal is never hashed: pass text as
@@ -61,8 +61,8 @@ the unused bytes of the buffer are ignored.
 - **Seed:** different seeds give unrelated hashes; the empty message with seed 0 hashes to 0 (and to {0, 0} for
   Width 128).
 - **Byte order:** blocks are read little-endian on every target, so a big-endian target gives the same hashes. The
-  result is a number or a pair of numbers; serializing the 128-bit hash as the reference does means writing h1, then
-  h2, each least significant byte first.
+  result is a number; serializing the 128-bit hash as the reference does means writing `low`, then `high`, each least
+  significant byte first.
 - **Long messages:** MurmurHash3_x86_32 mixes in the length modulo 2^32, MurmurHash3_x64_128 the 64-bit length. The
   reference implementation takes the length as an `int`, so it cannot hash messages of 2 GiB or more.
 

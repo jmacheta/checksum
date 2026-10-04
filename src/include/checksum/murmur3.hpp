@@ -2,6 +2,7 @@
 #define CHECKSUM_MURMUR3_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/hash128.hpp>
 
 #include <algorithm>
 #include <array>
@@ -29,8 +30,8 @@ namespace checksum {
 template <unsigned Width>
   requires(Width == 32 || Width == 128)
 struct murmur3_state {
-  /// The hash: std::uint32_t, or the two 64-bit halves h1 and h2 in the order the reference implementation stores them.
-  using value_type = std::conditional_t<Width == 32, std::uint32_t, std::array<std::uint64_t, 2>>;
+  /// The hash: std::uint32_t, or hash128 with low = h1 and high = h2, the 128-bit number the reference implementation stores little-endian.
+  using value_type = std::conditional_t<Width == 32, std::uint32_t, hash128>;
 
   /// Hash lanes: h1, and h2 for Width 128. Set from the seed when the first block is folded.
   std::array<std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>, Width == 32 ? 1 : 2> lanes{};
@@ -238,7 +239,7 @@ constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::
     high = avalanche<Width>(high);
     low += high;
     high += low;
-    return {low, high};
+    return {.low = low, .high = high};
   }
 }
 
