@@ -15,7 +15,7 @@ memory and there is no global state; XXH3 keeps its 192-byte default secret in r
 using namespace std::literals;
 
 // One call, seed 0 or another seed.
-std::uint32_t small = checksum::xxhash_compute<32>(std::span(key));
+std::uint32_t small = checksum::xxh32_compute(key);
 std::uint64_t hash = checksum::xxh3_compute<64>(std::span(key), 1234);
 checksum::xxh3_hash128 wide = checksum::xxh3_compute<128>(std::span(key));
 
@@ -26,8 +26,8 @@ state = checksum::xxh3_update(state, second_part);
 std::uint64_t value = checksum::xxh3_finalize(state);
 
 // Compile time.
-static_assert(checksum::xxhash_compute<32>("abc"sv) == 0x32D153FF);
-static_assert(checksum::xxhash_compute<64>("abc"sv) == 0x44BC2CF5AD770999);
+static_assert(checksum::xxh32_compute("abc"sv) == 0x32D153FF);
+static_assert(checksum::xxh64_compute("abc"sv) == 0x44BC2CF5AD770999);
 static_assert(checksum::xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950);
 static_assert(checksum::xxh3_compute<128>("abc"sv) ==
               checksum::xxh3_hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
@@ -55,10 +55,15 @@ prefix of a message several ways.
 | `xxhash_update(state, data)` | Folds `data` into `state` and returns the new state. |
 | `xxhash_finalize(state)` | The hash of the message folded into `state`; the state is unchanged. |
 | `xxhash_compute<Width>(data, seed = 0)` | `xxhash_finalize(xxhash_update(xxhash_state<Width>{.seed = seed}, data))`. |
+| `xxh32_state`, `xxh64_state` | `xxhash_state<32>` and `xxhash_state<64>`. |
+| `xxh32_compute(data, seed = 0)`, `xxh64_compute(data, seed = 0)` | `xxhash_compute<32>` and `xxhash_compute<64>`. |
 
 `xxhash_state<Width>::value_type` is the type of the hash, the seed and the lanes: `std::uint32_t` for XXH32 and
 `std::uint64_t` for XXH64. The lanes are set from the seed when the first whole stripe is folded; before that they are
 ignored.
+
+`examples/xxhash` has complete programs: message IDs hashed at compile time, the XXH64 of a file read in chunks, and
+a cache keyed by the hash of its input.
 
 ### 2.2 XXH3-64 and XXH3-128
 
@@ -104,7 +109,8 @@ XXH32 and XXH64 have no kernel, on any target. Each of the four lanes is a seria
 rotation per word; the scalar loop already keeps four of them in flight. A NEON prototype of XXH32 ran 1 685 MB/s on a
 Cortex-A72 at 4 KiB against 2 333 for the scalar loop, and Clang vectorizing the lanes on its own lost 38 % on
 x86-64. XXH64 needs 64-bit multiplications per lane, which SSE2, AVX2 and NEON do not have. The stripe loop is
-compiled once per width in `src/xxhash/stripe_loop.cpp`, out of line, so that compilers keep the lanes scalar.
+compiled once per width in `src/xxhash/stripe_loop.cpp`, out of line, so that compilers keep the lanes scalar; the
+one-shot XXH32 of a message of at least 16 bytes runs a function there that keeps them in local variables.
 
 ### 4.2 XXH3
 
