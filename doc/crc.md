@@ -22,7 +22,7 @@ target_link_libraries(app PRIVATE checksum::checksum)
 | `CHECKSUM_ACCELERATION` | `ON` | Lets `crc_lut_sliced` and `crc_lut_braided` use the CPU instructions that the compiler flags enable (section 7). `OFF` keeps only the portable loops. |
 | `CHECKSUM_TESTS` | top-level project | Unit tests and negative compile tests (downloads GoogleTest). |
 | `CHECKSUM_BENCHMARKS` | `OFF` | Benchmarks (downloads Google Benchmark and zlib); on in the `native-*-bench` presets. |
-| `CHECKSUM_EXAMPLES` | top-level project | Builds `examples/crc`. |
+| `CHECKSUM_EXAMPLES` | top-level project | Builds `examples/`. |
 
 Compile and link the application with `-ffunction-sections -fdata-sections` and `-Wl,--gc-sections`: the library
 compiles the run-time loops of every strategy and register type, and the linker then keeps only the ones the
