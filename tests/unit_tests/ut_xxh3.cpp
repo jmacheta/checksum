@@ -5,10 +5,12 @@
 #include <xxhash_reference_vectors.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -33,7 +35,7 @@ constexpr std::size_t prefix_limit = xxhash_test::prefix_count - 1;
 // The first Size bytes of the message of the reference vectors.
 template <std::size_t Size> constexpr std::array<std::byte, Size> make_message() {
   std::array<std::byte, Size> result{};
-  xxhash_test::fill_message(result);
+  fill_random(result);
   return result;
 }
 
@@ -91,7 +93,7 @@ using namespace std::literals;
 
 static_assert(xxh3_compute<64>(""sv) == 0x2D06800538D394C2U);
 static_assert(xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950U);
-static_assert(xxh3_compute<128>("abc"sv) == xxh3_hash128{.low = 0x78AF5F94892F3950U, .high = 0x06B05AB6733A6185U});
+static_assert(xxh3_compute<128>("abc"sv) == hash128{.low = 0x78AF5F94892F3950U, .high = 0x06B05AB6733A6185U});
 static_assert(xxh3_finalize(xxh3_state<128>{}) == xxh3_128_vectors[0].prefixes[0]);
 // Every length class up to the first medium one.
 static_assert(prefix_mismatches<64>(20) == 0);
@@ -104,9 +106,13 @@ static_assert(chunked<128>(std::span(message).first(prefix_limit), 7, xxh3_128_v
 static_assert(chunked<64>(std::span(message).first(block_sizes[2]), 100, xxh3_64_vectors[1].seed) == xxh3_64_vectors[1].blocks[2]);
 static_assert(edge_seed_mismatches<64>(513) == 0);
 static_assert(edge_seed_mismatches<128>(513) == 0);
-static_assert(xxh3_detail::multiply_portable(~std::uint64_t{0}, ~std::uint64_t{0}) == xxh3_hash128{.low = 1, .high = ~std::uint64_t{1}});
+static_assert(xxh3_detail::multiply_portable(~std::uint64_t{0}, ~std::uint64_t{0}) == hash128{.low = 1, .high = ~std::uint64_t{1}});
 static_assert(xxh3_detail::multiply_portable(0x9E3779B185EBCA87U, 0xC2B2AE3D27D4EB4FU) ==
-              xxh3_hash128{.low = 0xDEF35B010F796CA9U, .high = 0x7854787AA57880A8U});
+              hash128{.low = 0xDEF35B010F796CA9U, .high = 0x7854787AA57880A8U});
+static_assert(xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950U);
+static_assert(xxh3_128_compute(std::span(message).first(241), xxh3_128_vectors[1].seed) == xxh3_128_vectors[1].prefixes[241]);
+static_assert(std::same_as<xxh3_64_state, xxh3_state<64>> && std::same_as<xxh3_128_state, xxh3_state<128>>);
+static_assert(sizeof(xxh3_state<64>) == 336);
 
 template <class Width> class xxh3 : public testing::Test {};
 
@@ -298,11 +304,30 @@ TYPED_TEST(xxh3, byte_ranges) {
 TYPED_TEST(xxh3, long_message) {
   constexpr unsigned width = TypeParam::value;
   std::vector<std::byte> data(xxhash_test::long_message_size);
-  xxhash_test::fill_message(data);
+  fill_random(data);
   for(auto const &set : vectors<width>()) {
     EXPECT_EQ(xxh3_compute<width>(data, set.seed), set.long_message) << "seed " << set.seed;
     EXPECT_EQ(chunked<width>(data, 4099, set.seed), set.long_message) << "seed " << set.seed;
   }
+}
+
+// The aliases give the hashes of the generic functions, for spans, string views and other byte ranges.
+TEST(xxh3_aliases, match_generic) {
+  constexpr std::string_view text = "123456789 123456789 123456789 123456789";
+  std::span<std::byte const> const bytes = std::as_bytes(std::span(text));
+  std::list<char> const list(text.begin(), text.end());
+  for(std::uint64_t const seed : {std::uint64_t{0}, std::uint64_t{0x9E3779B97F4A7C15U}}) {
+    EXPECT_EQ(xxh3_64_compute(bytes, seed), xxh3_compute<64>(bytes, seed));
+    EXPECT_EQ(xxh3_64_compute(text, seed), xxh3_compute<64>(bytes, seed));
+    EXPECT_EQ(xxh3_64_compute(list, seed), xxh3_compute<64>(bytes, seed));
+    EXPECT_EQ(xxh3_128_compute(bytes, seed), xxh3_compute<128>(bytes, seed));
+    EXPECT_EQ(xxh3_128_compute(text, seed), xxh3_compute<128>(bytes, seed));
+    EXPECT_EQ(xxh3_128_compute(list, seed), xxh3_compute<128>(bytes, seed));
+    EXPECT_EQ(xxh3_finalize(xxh3_update(xxh3_64_state{.seed = seed}, text)), xxh3_64_compute(text, seed));
+    EXPECT_EQ(xxh3_finalize(xxh3_update(xxh3_128_state{.seed = seed}, text)), xxh3_128_compute(text, seed));
+  }
+  EXPECT_EQ(xxh3_64_compute(message), xxh3_64_vectors[0].blocks.back());
+  EXPECT_EQ(xxh3_128_compute(message), xxh3_128_vectors[0].blocks.back());
 }
 
 // The run-time multiplication, native where the compiler has one, against the portable one.

@@ -1,7 +1,7 @@
 #ifndef CHECKSUM_TESTS_XXH3_REFERENCE_VECTORS_HPP
 #define CHECKSUM_TESTS_XXH3_REFERENCE_VECTORS_HPP
 
-// XXH3-64 and XXH3-128 of the message of fill_message(): every prefix up to 300 bytes, the block_sizes prefixes, a digest of the
+// XXH3-64 and XXH3-128 of the message of fill_random(): every prefix up to 300 bytes, the block_sizes prefixes, a digest of the
 // prefixes of 301 to 1100 bytes, a split_message_size-byte message and a long_message_size-byte one for three seeds each, and the
 // edge_sizes prefixes for the edge seeds. Computed with XXH3_64bits_withSeed() and XXH3_128bits_withSeed() of the reference
 // implementation, xxhash.h 0.8.4 of github.com/Cyan4973/xxHash.
@@ -58,7 +58,7 @@ inline constexpr std::array<xxh3_edge_seed_set<std::uint64_t>, 3> xxh3_64_edge_s
               0xAA054F72CD253F11, 0xA8C1ED0FEF73898C, 0x442AB2B676166827, 0x8D1974D205576572, 0x3C12DF4D1A497E65, 0xEEE7096E77F42C05}}},
 }};
 
-inline constexpr std::array<xxh3_edge_seed_set<checksum::xxh3_hash128>, 3> xxh3_128_edge_seeds{{
+inline constexpr std::array<xxh3_edge_seed_set<checksum::hash128>, 3> xxh3_128_edge_seeds{{
     {.seed = 0xFFFFFFFFFFFFFFFF,
      .hashes{{{.low = 0x2D10110A247D19DD, .high = 0x5334EC22748B5FCD},
               {.low = 0xCFEEB3D75B3964DD, .high = 0xCA2BC6ABFBC14CC0},
@@ -301,7 +301,7 @@ inline constexpr std::array<xxh3_vector_set<std::uint64_t>, 3> xxh3_64_vectors{{
      .split_message = 0x85C10E7BDC91BC71},
 }};
 
-inline constexpr std::array<xxh3_vector_set<checksum::xxh3_hash128>, 3> xxh3_128_vectors{{
+inline constexpr std::array<xxh3_vector_set<checksum::hash128>, 3> xxh3_128_vectors{{
     {.seed = 0x0000000000000000,
      .prefixes{{
          {.low = 0x6001C324468D497F, .high = 0x99AA06D3014798D8}, {.low = 0x40F22CE7CA17BD07, .high = 0x71D3B97D97EE0755},

@@ -14,19 +14,22 @@ allocates no memory and has no global state.
 using namespace std::literals;
 
 // One call.
-std::uint32_t value = checksum::fletcher_compute<32>(std::span(buffer));
+std::uint32_t value = checksum::fletcher32_compute(std::span(buffer));
 
 // Incremental: a message may be split anywhere.
-checksum::fletcher_state<16> state;
+checksum::fletcher16_state state;
 state = checksum::fletcher_update(state, header);
 state = checksum::fletcher_update(state, payload);
 std::uint16_t frame_checksum = checksum::fletcher_finalize(state);
 
 // Compile time.
-static_assert(checksum::fletcher_compute<16>("abcde"sv) == 0xC8F0);
-static_assert(checksum::fletcher_compute<32>("abcde"sv) == 0xF04FC729);
-static_assert(checksum::fletcher_compute<64>("abcde"sv) == 0xC8C6C527646362C6);
+static_assert(checksum::fletcher16_compute("abcde"sv) == 0xC8F0);
+static_assert(checksum::fletcher32_compute("abcde"sv) == 0xF04FC729);
+static_assert(checksum::fletcher64_compute("abcde"sv) == 0xC8C6C527646362C6);
 ```
+
+`examples/fletcher` has complete programs: checksums at compile time, a file checksum computed in chunks, and a frame
+check.
 
 ## 2. Definition
 
@@ -44,14 +47,18 @@ A last incomplete block is padded with zero bytes. The values match the examples
 
 ## 3. API
 
-`Width` is 16, 32 or 64.
+`Width` is 16, 32 or 64. `fletcher_update` and `fletcher_finalize` take the width from the state or the checksum
+type, so only the state and `fletcher_compute` have aliases per width.
 
 | Name | What it does |
 | --- | --- |
 | `fletcher_state<Width>` | `sum1`, `sum2` and `block_offset`, the bytes of an unfinished block already in `sum1`. A plain value: copy it, compare it, store it. The default is the empty message. |
 | `fletcher_update(state, data)` | Folds `data` into `state` and returns the new state. |
+| `fletcher_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum` and returns the new checksum; `std::uint16_t`, `std::uint32_t` or `std::uint64_t` selects the width. That message must end on a whole block. |
 | `fletcher_finalize(state)` | The checksum, an unfinished block padded with zero bytes. |
 | `fletcher_compute<Width>(data)` | `fletcher_finalize(fletcher_update(fletcher_state<Width>{}, data))`. |
+| `fletcher16_state`, `fletcher32_state`, `fletcher64_state` | `fletcher_state<16>`, `fletcher_state<32>`, `fletcher_state<64>`. |
+| `fletcher16_compute(data)`, `fletcher32_compute(data)`, `fletcher64_compute(data)` | `fletcher_compute<16>(data)`, `fletcher_compute<32>(data)`, `fletcher_compute<64>(data)`. |
 
 `fletcher_state<Width>::value_type` is the checksum type and `sum_type` the type of one sum (`std::uint8_t`,
 `std::uint16_t`, `std::uint32_t`). All functions are `constexpr` and `noexcept`. `data` is a
@@ -71,21 +78,31 @@ modulo the block size.
 - **Byte order:** words are read little-endian on every target, and the result is a number; the protocol decides how
   it goes into a frame.
 
+**Continuing from a stored checksum.** `fletcher_update(value, data)` continues a message whose checksum is `value`
+and returns the new checksum. The type of `value` selects the width: `std::uint16_t` for Fletcher-16, `std::uint32_t`
+for Fletcher-32, `std::uint64_t` for Fletcher-64. Other integer types, `int` and `unsigned char` included, do not
+compile rather than pick a width, so write `std::uint32_t{0xF04FC729}` for a literal; `{}` does not compile either,
+name the state type (`fletcher32_state{}`). Fletcher-32 and Fletcher-64 continue correctly only after whole blocks,
+an even length or a multiple of 4: the checksum already counts an unfinished block as padded with zeros, so after such
+a length keep the state instead. Fletcher-16 continues after any length.
+
 ## 5. CPU acceleration
 
 The portable loop adds blocks into the widest native integer and reduces modulo M only when an overflow could
 otherwise happen: on 64-bit targets after 380 million bytes for Fletcher-16, on 32-bit targets after 5 802 bytes. It
 adds four blocks per step, so `sum1` has one addition per four blocks in its dependency chain. On 32-bit targets
-Fletcher-32 sums 32-bit words, two blocks at a time.
+Fletcher-32 sums 32-bit words, two blocks at a time; on AArch64 it sums its 16-bit blocks in 32-bit sums, reduced every
+360 blocks.
 
 From a minimum size, a kernel sums whole vectors of blocks. It returns the sum of the blocks and their weighted sum,
-and `sum2` gains both at the end of each chunk of a few kilobytes.
+and `sum2` gains both at the end of each chunk, 2 KiB to 256 KiB depending on the kernel.
 
 | Target and flags | Fletcher-16 | Fletcher-32 | Fletcher-64 |
 | --- | --- | --- | --- |
+| x86-64 with AVX-VNNI (`-mavxvnni`, or a `-march` that includes it) | `vpdpbusd`, 128 bytes per iteration, from 64 B | as AVX2 | as AVX2 |
 | x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | 32-byte vectors, from 64 B | from 128 B | from 384 B |
 | x86-64 without AVX2 (SSE2 is always there; SSSE3 used if enabled) | 16-byte vectors, from 64 B | from 128 B | portable loop |
-| AArch64, little-endian | NEON, from 64 B | from 128 B | from 256 B |
+| AArch64, little-endian | NEON, from 64 B; 64 bytes per iteration from 320 B | from 128 B | from 256 B |
 | 32-bit Arm with NEON, little-endian | NEON, from 64 B | from 128 B | from 256 B |
 | Little-endian M-profile Arm with the DSP extension (Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B | portable loop | portable loop |
 | everything else (Cortex-M0/M3, A-profile 32-bit Arm without NEON, big-endian, RISC-V), or `CHECKSUM_ACCELERATION=OFF` | portable loop | portable loop | portable loop |
@@ -99,30 +116,43 @@ each choice are in [design/acceleration.md](design/acceleration.md#fletcher-and-
 
 ### 6.1 x86-64: Core Ultra 7 155H
 
-MB/s (10⁶ bytes per second) at 4 KiB, GCC 16 and Clang 21, measured on a loaded host, so the figures are approximate.
+MB/s (10⁶ bytes per second) at 4 KiB, GCC 16 and Clang 21, one pinned core, the better median of two runs.
 Portable is the library without kernels, SSE2 the default x86-64 flags, AVX2 a build with AVX2 enabled.
 
 | Checksum | GCC portable | GCC SSE2 | GCC AVX2 | Clang portable | Clang AVX2 |
 | --- | --- | --- | --- | --- | --- |
-| Fletcher-16 | 7 314 | 22 778 | 54 107 | 3 205 | 58 109 |
-| Fletcher-32 | 14 167 | 21 916 | 47 221 | 6 447 | 54 311 |
-| Fletcher-64 | 26 853 | | 52 801 | 13 065 | 54 881 |
+| Fletcher-16 | 7 373 | 22 955 | 54 620 | 3 183 | 56 748 |
+| Fletcher-32 | 14 419 | 21 918 | 53 037 | 6 436 | 52 933 |
+| Fletcher-64 | 27 485 | | 51 094 | 12 977 | 53 681 |
 
-The AVX2 kernels are 7.4× (Fletcher-16), 3.3× (Fletcher-32) and 2.0× (Fletcher-64) faster than the GCC portable loop.
+The AVX2 kernels are 7.4× (Fletcher-16), 3.7× (Fletcher-32) and 1.9× (Fletcher-64) faster than the GCC portable loop.
+Clang's portable loop is 2.1-2.3× slower than GCC's. With `-march=native` (AVX-VNNI), GCC 16, MB/s:
+
+| Checksum | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| Fletcher-16 | 3 402 | 10 461 | 32 186 | 55 934 | 78 507 | 76 821 |
+| Fletcher-32 | 4 234 | 8 187 | 20 612 | 40 062 | 50 327 | 51 876 |
+| Fletcher-64 | 4 358 | 10 300 | 19 442 | 37 377 | 49 912 | 56 686 |
+
+At 20 bytes the plain deferred-modulo loop of the Wikipedia article (`-O2 -march=native`, same harness) runs 3 360 MB/s
+for Fletcher-16 and 5 700 for Fletcher-32: 1.0× and 0.74× for the library, which needs the state and its unfinished
+block on top.
 
 ### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
-GCC 14.3, `-O2`, one core. GiB/s at 64 B / 256 B / 1500 B / 4 KiB, start address aligned.
+GCC 14.3, `-O2`, AArch64 `-march=armv8-a`, one core. GiB/s at 64 B / 256 B / 1500 B / 4 KiB, start address aligned.
 
 | Checksum | AArch64 portable | AArch64 NEON | AArch32 portable | AArch32 NEON |
 | --- | --- | --- | --- | --- |
-| Fletcher-16 | 0.62 / 0.74 / 0.83 / 0.84 | 0.84 / 2.19 / 3.60 / 4.24 | 0.57 / 0.73 / 0.82 / 0.84 | 0.82 / 2.13 / 3.58 / 4.23 |
-| Fletcher-32 | 0.98 / 1.42 / 1.61 / 1.67 | 0.98 / 2.32 / 4.16 / 4.75 | 0.78 / 1.37 / 1.56 / 1.65 | 0.80 / 2.37 / 4.09 / 4.74 |
-| Fletcher-64 | 1.46 / 2.71 / 3.36 / 3.56 | 1.40 / 2.68 / 4.40 / 5.17 | 0.91 / 1.40 / 1.61 / 1.67 | 0.90 / 2.30 / 4.10 / 5.06 |
+| Fletcher-16 | 0.66 / 0.77 / 0.84 / 0.85 | 1.02 / 2.42 / 4.92 / 6.11 | 0.57 / 0.78 / 0.90 / 0.91 | 0.98 / 2.40 / 3.71 / 4.31 |
+| Fletcher-32 | 1.20 / 1.63 / 1.67 / 1.72 | 1.10 / 2.66 / 4.41 / 4.90 | 0.86 / 1.44 / 1.60 / 1.65 | 0.85 / 2.45 / 4.18 / 4.76 |
+| Fletcher-64 | 1.50 / 2.70 / 3.37 / 3.57 | 1.55 / 2.91 / 4.46 / 5.22 | 0.92 / 1.39 / 1.57 / 1.67 | 0.88 / 2.33 / 4.27 / 5.12 |
 
-At 4 KiB NEON is 5.0× faster for Fletcher-16, 2.8-2.9× for Fletcher-32, and 1.45× (AArch64) or 3.0× (AArch32) for
-Fletcher-64, whose 64-bit portable loop is already fast on AArch64. Below the thresholds both builds run the portable
-loop; the differences there come from code layout.
+At 4 KiB NEON is 4.7× (AArch32) to 7.2× (AArch64, 64 bytes per iteration) faster for Fletcher-16, 2.8-2.9× for
+Fletcher-32, and 1.47× (AArch64) or 3.1× (AArch32) for Fletcher-64, whose 64-bit portable loop is already fast on
+AArch64. Below the thresholds both builds run the portable loop; the differences there come from code layout. At 20
+bytes AArch64 Fletcher-32 runs 690 MB/s with `-mcpu=cortex-a72`, 0.85× the Wikipedia loop (813), and 654 MB/s with
+`-march=armv8-a`, 0.79× (823).
 
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 

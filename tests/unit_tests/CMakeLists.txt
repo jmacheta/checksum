@@ -14,7 +14,7 @@ target_sources(
           ut_crc_vectors.cpp
           ut_fletcher.cpp
           ut_fletcher4.cpp
-          ut_internet_checksum.cpp
+          ut_internet.cpp
           ut_murmur3.cpp
           ut_xxh3.cpp
           ut_xxhash.cpp
@@ -32,14 +32,14 @@ target_sources(
           include/xxhash_reference_vectors.hpp
 )
 
-target_link_libraries(checksum_ut PRIVATE checksum::checksum GTest::gtest_main)
+target_link_libraries(checksum_ut PRIVATE checksum::checksum checksum_test_data GTest::gtest_main)
 
 # Built with NDEBUG to test behavior with precondition checks disabled.
 add_executable(checksum_ut_unchecked)
 target_compile_features(checksum_ut_unchecked PRIVATE cxx_std_23)
 target_sources(checksum_ut_unchecked PRIVATE ut_crc_unchecked.cpp PRIVATE FILE_SET HEADERS BASE_DIRS include FILES include/crc_test_support.hpp)
 target_compile_definitions(checksum_ut_unchecked PRIVATE NDEBUG)
-target_link_libraries(checksum_ut_unchecked PRIVATE checksum::checksum GTest::gtest_main)
+target_link_libraries(checksum_ut_unchecked PRIVATE checksum::checksum checksum_test_data GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(checksum_ut)

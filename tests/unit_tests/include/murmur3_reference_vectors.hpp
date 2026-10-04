@@ -2,7 +2,9 @@
 #define CHECKSUM_TESTS_MURMUR3_REFERENCE_VECTORS_HPP
 
 // MurmurHash3_x86_32 and MurmurHash3_x64_128 of every prefix of a 300-byte message and of a long_message_size-byte one, both from
-// fill_message(), for three seeds each. Computed with the reference implementation, src/MurmurHash3.cpp of github.com/aappleby/smhasher.
+// fill_random(), for three seeds each. Computed with the reference implementation, src/MurmurHash3.cpp of github.com/aappleby/smhasher.
+
+#include <checksum/hash128.hpp>
 
 #include <array>
 #include <cstddef>
@@ -15,24 +17,11 @@ inline constexpr std::size_t prefix_count = 301;
 
 inline constexpr std::size_t long_message_size = (std::size_t{1} << 20U) + 7U;
 
-// Fills data with the message: the low byte of each xorshift32 step from 0x12345678.
-constexpr void fill_message(std::span<std::byte> data) {
-  std::uint32_t state = 0x12345678U;
-  for(auto &byte : data) {
-    state ^= state << 13U;
-    state ^= state >> 17U;
-    state ^= state << 5U;
-    byte = static_cast<std::byte>(state);
-  }
-}
-
 template <class Value> struct vector_set {
   std::uint32_t seed;
   std::array<Value, prefix_count> prefixes; // prefixes[size]: the hash of the first size bytes.
   Value long_message;
 };
-
-using hash128 = std::array<std::uint64_t, 2>;
 
 inline constexpr std::array<vector_set<std::uint32_t>, 3> murmur3_32_vectors{{
     {.seed = 0x00000000,
@@ -133,7 +122,7 @@ inline constexpr std::array<vector_set<std::uint32_t>, 3> murmur3_32_vectors{{
      .long_message = 0x7D7507E9},
 }};
 
-inline constexpr std::array<vector_set<hash128>, 3> murmur3_128_vectors{{
+inline constexpr std::array<vector_set<checksum::hash128>, 3> murmur3_128_vectors{{
     {.seed = 0x00000000,
      .prefixes{{
          {0x0000000000000000, 0x0000000000000000}, {0x423F7F073F326663, 0x3052809291243D6D}, {0x1AF1B4A8CA015AE9, 0x23568FC2EC89F92A},

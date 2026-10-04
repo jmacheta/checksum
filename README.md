@@ -69,6 +69,14 @@ CPU acceleration follows your compiler flags (for example `-march=native` or `-m
 - [MurmurHash3 user guide](doc/murmur3.md): the API, seeds, byte order, measured performance and limitations.
 - [examples/crc](examples/crc): compile-time CRC, a file checksum, a custom CRC, run-time parameters, a MODBUS frame
   and a strategy driving an MCU CRC peripheral.
+- [examples/internet](examples/internet): a header checksum computed at compile time, an IPv4 header, a UDP
+  datagram with its pseudo-header and an incremental update after a TTL decrement.
+- [examples/fletcher](examples/fletcher) and [examples/adler32](examples/adler32): compile-time checksums, a file
+  checksum, a frame check, a zlib trailer and extending a stored Adler-32.
+- [examples/fletcher4](examples/fletcher4): a compile-time checksum, a file checksum and verifying a ZFS block.
+- [examples/xxhash](examples/xxhash) and [examples/xxh3](examples/xxh3): compile-time message and asset IDs, file
+  hashes, a cache key, block deduplication and a seeded hash table.
+- [examples/murmur3](examples/murmur3): command dispatch, a Bloom filter and record deduplication.
 
 ## Contributing
 

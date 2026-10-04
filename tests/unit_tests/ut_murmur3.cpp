@@ -4,9 +4,11 @@
 #include <murmur3_reference_vectors.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -19,13 +21,12 @@
 namespace {
 
 using namespace checksum;
-using murmur3_test::hash128;
 using murmur3_test::murmur3_128_vectors;
 using murmur3_test::murmur3_32_vectors;
 
 constexpr std::array<std::byte, murmur3_test::prefix_count - 1> message = [] {
   std::array<std::byte, murmur3_test::prefix_count - 1> result{};
-  murmur3_test::fill_message(result);
+  fill_random(result);
   return result;
 }();
 
@@ -62,8 +63,8 @@ using namespace std::literals;
 static_assert(murmur3_compute<32>(""sv) == 0);
 static_assert(murmur3_compute<32>(""sv, 1) == 0x514E28B7U);
 static_assert(murmur3_compute<32>("Hello, world!"sv, 1234) == 0xFAF6CDB3U);
-static_assert(murmur3_compute<128>(""sv) == hash128{0, 0});
-static_assert(murmur3_compute<128>("Hello, world!"sv, 1234) == hash128{0x61130E64AA0AC6FEU, 0x51F9046D087E1B56U});
+static_assert(murmur3_compute<128>(""sv) == hash128{});
+static_assert(murmur3_compute<128>("Hello, world!"sv, 1234) == hash128{.low = 0x61130E64AA0AC6FEU, .high = 0x51F9046D087E1B56U});
 static_assert(murmur3_finalize(murmur3_state<32>{.seed = 1}) == 0x514E28B7U);
 static_assert(murmur3_compute<32>(std::span(message), murmur3_32_vectors[2].seed) == murmur3_32_vectors[2].prefixes[300]);
 static_assert(murmur3_compute<128>(std::span(message).first(33), murmur3_128_vectors[2].seed) == murmur3_128_vectors[2].prefixes[33]);
@@ -72,6 +73,9 @@ static_assert(chunked<32>(message, 3, murmur3_32_vectors[1].seed) == murmur3_32_
 // Every tail length around a few blocks; longer prefixes exceed the constant-evaluation step limit of Clang.
 static_assert(prefix_mismatches<32>(70) == 0);
 static_assert(prefix_mismatches<128>(70) == 0);
+static_assert(murmur3_32_compute("Hello, world!"sv, 1234) == 0xFAF6CDB3U);
+static_assert(murmur3_128_compute("Hello, world!"sv, 1234) == hash128{.low = 0x61130E64AA0AC6FEU, .high = 0x51F9046D087E1B56U});
+static_assert(std::same_as<murmur3_32_state, murmur3_state<32>> && std::same_as<murmur3_128_state, murmur3_state<128>>);
 
 template <class Width> class murmur3 : public testing::Test {};
 
@@ -171,10 +175,27 @@ TEST(murmur3_x86_32, length_wraps) {
   EXPECT_EQ(murmur3_finalize(state), murmur3_finalize(wrapped));
 }
 
+// The aliases take the same inputs as the generic form: spans of std::byte, text and other byte ranges.
+TEST(murmur3_aliases, match_generic_form) {
+  auto const bytes = std::span<std::byte const>(message);
+  constexpr std::string_view text = "123456789";
+  std::list<unsigned char> const list(text.begin(), text.end());
+  for(std::uint32_t const seed : {0U, 1U, 0x9747B28CU}) {
+    EXPECT_EQ(murmur3_32_compute(bytes, seed), murmur3_compute<32>(bytes, seed));
+    EXPECT_EQ(murmur3_32_compute(text, seed), murmur3_compute<32>(text, seed));
+    EXPECT_EQ(murmur3_32_compute(list, seed), murmur3_compute<32>(list, seed));
+    EXPECT_EQ(murmur3_128_compute(bytes, seed), murmur3_compute<128>(bytes, seed));
+    EXPECT_EQ(murmur3_128_compute(text, seed), murmur3_compute<128>(text, seed));
+    EXPECT_EQ(murmur3_128_compute(list, seed), murmur3_compute<128>(list, seed));
+  }
+  EXPECT_EQ(murmur3_32_compute(bytes), murmur3_compute<32>(bytes));
+  EXPECT_EQ(murmur3_128_compute(bytes), murmur3_compute<128>(bytes));
+}
+
 TYPED_TEST(murmur3, long_message) {
   constexpr unsigned width = TypeParam::value;
   std::vector<std::byte> data(murmur3_test::long_message_size);
-  murmur3_test::fill_message(data);
+  fill_random(data);
   for(auto const &set : vectors<width>()) {
     EXPECT_EQ(murmur3_compute<width>(data, set.seed), set.long_message) << "seed " << set.seed;
     EXPECT_EQ(chunked<width>(data, 4099, set.seed), set.long_message) << "seed " << set.seed;

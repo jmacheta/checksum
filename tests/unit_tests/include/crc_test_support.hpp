@@ -7,11 +7,11 @@
 #include <checksum/crc.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <random>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -184,9 +184,6 @@ inline std::uint64_t reference_crc(crc_model const &model, std::span<std::byte c
 // CRCs of every prefix data[0, n), n = 0..data.size().
 inline std::vector<std::uint64_t> reference_prefixes(crc_model const &model, std::span<std::byte const> data);
 
-// Reproducible for a given seed.
-inline std::vector<std::byte> random_bytes(std::size_t size, std::uint64_t seed);
-
 // Packs message bits [first, first + count) of data into bytes in message bit order, for bit-split tests.
 inline std::vector<std::byte> extract_bits(std::span<std::byte const> data, bool reflect_input, std::size_t first, std::size_t count);
 
@@ -261,15 +258,6 @@ inline std::vector<std::uint64_t> reference_prefixes(crc_model const &model, std
   for(std::byte const byte : data) {
     reference.feed(byte);
     result.push_back(reference.value());
-  }
-  return result;
-}
-
-inline std::vector<std::byte> random_bytes(std::size_t size, std::uint64_t seed) {
-  std::mt19937_64 generator(seed);
-  std::vector<std::byte> result(size);
-  for(auto &byte : result) {
-    byte = static_cast<std::byte>(generator() & 0xFFU);
   }
   return result;
 }

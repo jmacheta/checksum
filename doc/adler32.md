@@ -21,10 +21,16 @@ state = checksum::adler32_update(state, first_part);
 state = checksum::adler32_update(state, second_part);
 std::uint32_t stream_checksum = checksum::adler32_finalize(state);
 
+// Continue from a stored checksum.
+std::uint32_t extended = checksum::adler32_update(stream_checksum, third_part);
+
 // Compile time.
 static_assert(checksum::adler32_compute("123456789"sv) == 0x091E01DE);
 static_assert(checksum::adler32_compute("Wikipedia"sv) == 0x11E60398);
 ```
+
+`examples/adler32` has complete programs: the checksum of default settings computed at compile time, checking the
+Adler-32 trailer of a zlib stream, and extending a stored checksum when data is appended.
 
 ## 2. Definition
 
@@ -38,6 +44,7 @@ starts at 0 and adds `sum1` after each byte. The checksum is `(sum2 << 16) | sum
 | --- | --- |
 | `adler32_state` | The two sums, `sum1` and `sum2`. A plain value: copy it, compare it, store it. The default (`sum1 = 1`, `sum2 = 0`) is the empty message. |
 | `adler32_update(state, data)` | Folds `data` into `state` and returns the new state. |
+| `adler32_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum`, a `std::uint32_t`, and returns the new checksum. |
 | `adler32_finalize(state)` | The checksum. |
 | `adler32_compute(data)` | `adler32_finalize(adler32_update({}, data))`. |
 
@@ -52,9 +59,12 @@ Every state value is valid, so nothing has preconditions: sums from 65521 up cou
 
 - **Splits:** a message may be split anywhere; the result is the same as for one call.
 - **Empty message:** gives 1.
-- **Resuming from a checksum:** `adler32_state{.sum1 = value & 0xFFFF, .sum2 = value >> 16}` continues a message whose
-  checksum is `value`, for example one computed by zlib.
 - **Byte order:** the result is a number; zlib stores it most significant byte first.
+
+**Continuing from a stored checksum.** The checksum holds both sums, so `adler32_update(value, data)` continues a
+message whose checksum is `value`, for example one computed by zlib, after any number of bytes, and returns the new
+checksum, as zlib's `adler32(adler, buf, len)` does. `value` must be a `std::uint32_t`: another integer type does not
+compile, so that `adler32_update({}, data)` still starts from the empty state, not from checksum 0.
 
 ## 5. CPU acceleration
 
@@ -67,9 +77,11 @@ From 64 bytes, Adler-32 runs the byte kernel of Fletcher-16 with modulus 65521:
 
 | Target and flags | Kernel |
 | --- | --- |
+| x86-64 with AVX-VNNI (`-mavxvnni`, or a `-march` that includes it, e.g. Alder Lake, Meteor Lake) | `vpdpbusd`, 128 bytes per iteration |
 | x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | 32-byte vectors |
 | x86-64 without AVX2 (SSE2 is always there; SSSE3 used if enabled) | 16-byte vectors |
-| AArch64 and 32-bit Arm with NEON, little-endian | NEON, 16-byte vectors |
+| AArch64 with NEON, little-endian | NEON, 16-byte vectors; from 320 bytes 64 bytes per iteration |
+| 32-bit Arm with NEON, little-endian | NEON, 16-byte vectors |
 | Little-endian M-profile Arm with the DSP extension (Cortex-M4/M7/M33) | `usada8` + `smlad`, 8 bytes per iteration |
 | everything else, or `CHECKSUM_ACCELERATION=OFF` | portable loop |
 
@@ -81,21 +93,32 @@ evaluation always runs a byte-by-byte loop with the same result. The measurement
 
 ### 6.1 x86-64: Core Ultra 7 155H
 
-GCC 16, 4 KiB, measured on a loaded host: 7 365 MB/s (10⁶ bytes per second) for the portable loop, 54 211 MB/s with
-the AVX2 kernel, 7.4× faster.
+GCC 16, 4 KiB, one pinned core, the better median of two runs: 7 309 MB/s (10⁶ bytes per second) for the portable
+loop, 22 964 MB/s with SSE2 and 58 088 MB/s with the AVX2 kernel, 7.9× faster. With `-march=native` the AVX-VNNI
+kernel runs (MB/s, GCC 16 and Clang 21):
+
+| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| GCC | 3 781 | 11 570 | 35 225 | 56 789 | 84 504 | 88 630 |
+| Clang | 3 746 | 11 655 | 36 649 | 57 952 | 85 027 | 89 914 |
+
+In a separate comparison harness, against zlib-ng (develop, its AVX-VNNI kernel, same flags) the library runs 0.98×
+at 20 B, 0.78× at 64 B, 0.91× at 256 B and 1.13-1.17× from 4 KiB; the AVX2 kernel reached 0.71-0.83× there.
 
 ### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
-GCC 14.3, `-O2`, one core, start address aligned. GiB/s:
+GCC 14.3, `-O2`, AArch64 `-march=armv8-a`, one core, start address aligned. GiB/s:
 
 | Build | 64 B | 256 B | 1500 B | 4 KiB |
 | --- | --- | --- | --- | --- |
-| AArch64 portable | 0.68 | 0.77 | 0.83 | 0.84 |
-| AArch64 NEON | 1.15 | 2.59 | 3.79 | 4.39 |
-| AArch32 portable | 0.52 | 0.71 | 0.85 | 0.86 |
-| AArch32 NEON | 0.98 | 2.44 | 3.75 | 4.32 |
+| AArch64 portable | 0.69 | 0.77 | 0.83 | 0.84 |
+| AArch64 NEON | 1.15 | 2.60 | 5.01 | 6.16 |
+| AArch32 portable | 0.66 | 0.77 | 0.85 | 0.87 |
+| AArch32 NEON | 0.95 | 2.42 | 3.75 | 4.30 |
 
-NEON is about 5× faster at 4 KiB and 1.7-1.9× at 64 bytes.
+NEON is 5.0-7.3× faster at 4 KiB and 1.4-1.7× at 64 bytes. On AArch64, from 320 bytes the kernel sums 64 bytes per
+iteration: 0.96-0.99× zlib-ng and ISA-L from 1500 B in the comparison harness, where 16 bytes per iteration reached
+0.72-0.79×.
 
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 

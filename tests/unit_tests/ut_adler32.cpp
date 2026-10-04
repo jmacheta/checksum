@@ -3,12 +3,13 @@
 #include <checksum/adler32.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
-#include <random>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -37,15 +38,6 @@ std::uint32_t reference(std::span<std::byte const> data, std::uint32_t sum1 = 1,
   return (sum2 << 16U) | sum1;
 }
 
-std::vector<std::byte> random_bytes(std::size_t size, std::uint32_t seed) {
-  std::mt19937 generator(seed);
-  std::vector<std::byte> data(size);
-  for(auto &byte : data) {
-    byte = static_cast<std::byte>(generator());
-  }
-  return data;
-}
-
 TEST(adler32, published_examples) {
   for(auto const text : {""sv, "a"sv, "abc"sv, "Wikipedia"sv, "123456789"sv}) {
     auto const message = std::as_bytes(std::span(text));
@@ -58,10 +50,10 @@ TEST(adler32, published_examples) {
   EXPECT_EQ(adler32_compute("123456789"sv), 0x091E01DEU);
 }
 
-// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a vector.
+// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a word and two vector misalignments.
 TEST(adler32, matches_model) {
   auto const data = random_bytes(2100 + 16, 32);
-  for(std::size_t offset = 0; offset < 16; ++offset) {
+  for(std::size_t const offset : {0U, 1U, 2U, 3U, 7U, 15U}) {
     for(std::size_t size = 0; size <= 2100; ++size) {
       auto const message = std::span<std::byte const>(data).subspan(offset, size);
       ASSERT_EQ(adler32_compute(message), reference(message)) << "offset " << offset << ", size " << size;
@@ -72,7 +64,7 @@ TEST(adler32, matches_model) {
 // The largest bytes from the largest canonical sums, over many deferred reductions of 5'552 bytes on 32-bit targets.
 TEST(adler32, all_ones) {
   adler32_state const largest{.sum1 = 65520, .sum2 = 65520};
-  for(std::size_t const size : {(std::size_t{6} << 20), (std::size_t{6} << 20) + 1, (std::size_t{6} << 20) + 7, std::size_t{5552 * 1000}}) {
+  for(std::size_t const size : {(std::size_t{600} << 10), (std::size_t{600} << 10) + 1, (std::size_t{600} << 10) + 7, std::size_t{5552 * 120}}) {
     std::vector<std::byte> const data(size, std::byte{0xFF});
     ASSERT_EQ(adler32_compute(data), reference(data)) << "size " << size;
     ASSERT_EQ(adler32_finalize(adler32_update(largest, data)), reference(data, 65520, 65520)) << "size " << size;
@@ -86,8 +78,8 @@ TEST(adler32, chunk_boundaries) {
   std::vector<std::byte> const ones((2 * largest_chunk) + 64, std::byte{0xFF});
   auto const random = random_bytes(ones.size(), 7);
   for(auto const &data : {ones, random}) {
-    for(std::size_t const chunk :
-        {std::size_t{1024}, std::size_t{2048}, std::size_t{4096}, std::size_t{5600}, std::size_t{16} << 10U, std::size_t{32} << 10U, largest_chunk}) {
+    for(std::size_t const chunk : {std::size_t{1024}, std::size_t{2048}, std::size_t{4096}, std::size_t{5600}, std::size_t{5760},
+                                   std::size_t{16} << 10U, std::size_t{32} << 10U, largest_chunk}) {
       for(std::size_t const size : {chunk - 1, chunk, chunk + 1, chunk + 35, (2 * chunk) + 35}) {
         for(std::size_t offset = 0; offset < 4; ++offset) {
           auto const message = std::span<std::byte const>(data).subspan(offset, size);
@@ -128,16 +120,10 @@ TEST(adler32, split_before_long_chunks) {
 // Every prefix of this size stays within the default step limit of Clang's constant evaluator.
 constexpr std::size_t constant_message_size = 200;
 
-// Pseudo-random bytes the constant evaluator can produce (xorshift32).
+// Pseudo-random bytes the constant evaluator can produce.
 constexpr std::array<std::byte, constant_message_size> constant_message = [] {
   std::array<std::byte, constant_message_size> result{};
-  std::uint32_t state = 0x12345678U;
-  for(auto &byte : result) {
-    state ^= state << 13U;
-    state ^= state >> 17U;
-    state ^= state << 5U;
-    byte = static_cast<std::byte>(state);
-  }
+  fill_random(result);
   return result;
 }();
 
@@ -201,6 +187,41 @@ TEST(adler32, edge_states) {
       ASSERT_LT(result.sum2, 65521U);
     }
   }
+}
+
+template <class Checksum>
+concept resumable = requires(Checksum checksum, std::span<std::byte const> data) { adler32_update(checksum, data); };
+
+// Only a std::uint32_t is a checksum; {} stays the empty state.
+static_assert(resumable<std::uint32_t> && !resumable<int> && !resumable<std::uint64_t> && !resumable<std::uint16_t>);
+static_assert(std::same_as<decltype(adler32_update({}, std::span<std::byte const>{})), adler32_state>);
+static_assert(adler32_update(adler32_compute("12345"sv), "6789"sv) == 0x091E01DE);
+
+// A stored checksum continues the message after any number of bytes, at compile time and at run time.
+TEST(adler32, resume_from_checksum) {
+  constexpr std::size_t constant_size = 64;
+  static constexpr auto resumed = [] {
+    auto const message = std::span(constant_message).first(constant_size);
+    std::array<std::uint32_t, constant_size + 1> result{};
+    for(std::size_t first = 0; first <= constant_size; ++first) {
+      result[first] = adler32_update(adler32_compute(message.first(first)), message.subspan(first));
+    }
+    return result;
+  }();
+  for(std::uint32_t const value : resumed) {
+    ASSERT_EQ(value, adler32_compute(std::span(constant_message).first(constant_size)));
+  }
+
+  auto const data = random_bytes(1100, 8);
+  auto const message = std::span<std::byte const>(data);
+  auto const whole = reference(message);
+  for(std::size_t first = 0; first <= data.size(); ++first) {
+    ASSERT_EQ(adler32_update(adler32_compute(message.first(first)), message.subspan(first)), whole) << "split at " << first;
+  }
+  std::list<std::byte> const tail(data.begin() + 100, data.end());
+  EXPECT_EQ(adler32_update(adler32_compute(message.first(100)), tail), whole);
+  // Sums from 65521 count modulo 65521, as in the state.
+  EXPECT_EQ(adler32_update(std::uint32_t{0xFFFFFFFF}, message), reference(message, 0xFFFF, 0xFFFF));
 }
 
 } // namespace

@@ -18,7 +18,7 @@ namespace checksum::internet_detail {
 
 inline constexpr bool block_sum_available = true;
 
-// Below about 450 bytes the portable loop is faster on a Core Ultra 7 155H: the kernel pays for the call and the reduction.
+// Below about 350 bytes the portable loop is faster on a Core Ultra 7 155H: the kernel pays for the call and the reduction.
 inline constexpr std::size_t block_sum_minimum_size = 512;
 
 inline constexpr std::size_t vector_block_size = 64;

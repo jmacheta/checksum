@@ -27,6 +27,9 @@ static_assert(checksum::fletcher4_compute("abcdefgh"sv) ==
               checksum::fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
 ```
 
+`examples/fletcher4` has complete programs: the checksum of a constant block computed at compile time, the checksum of
+a file read in chunks, and verifying a 4 KiB block against its stored checksum as ZFS does.
+
 ## 2. Definition
 
 fletcher4 reads the message as 32-bit little-endian words and keeps four 64-bit sums, all starting at 0. For each word
@@ -76,10 +79,10 @@ run in vector registers where a kernel exists, else in portable code:
 
 | Target and flags | Lanes |
 | --- | --- |
-| x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | One 256-bit vector per sum, from 192 B |
-| x86-64 without AVX2 (SSE2 is always there) | Two 128-bit vectors per sum, from 256 B |
+| x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | One 256-bit vector per sum, from 128 B |
+| x86-64 without AVX2 (SSE2 is always there) | Two 128-bit vectors per sum, from 192 B |
 | AArch64, little-endian | NEON, two 128-bit vectors per sum, from 192 B |
-| 32-bit Arm with NEON, little-endian | NEON, from 384 B |
+| 32-bit Arm with NEON, little-endian | NEON, from 192 B |
 | other 64-bit targets (RISC-V, big-endian AArch64), or `CHECKSUM_ACCELERATION=OFF` on a 64-bit target | Portable lanes, from 256 B |
 | other 32-bit targets (Cortex-M, 32-bit Arm without NEON, big-endian), or `CHECKSUM_ACCELERATION=OFF` on a 32-bit target | Word loop only |
 
@@ -92,37 +95,43 @@ behind each choice are in [design/acceleration.md](design/acceleration.md#fletch
 
 ### 6.1 x86-64: Core Ultra 7 155H
 
-MB/s (10⁶ bytes per second). Portable is the library with `CHECKSUM_ACCELERATION=OFF` (portable lanes from 256 B),
-SSE2 the default x86-64 flags, AVX2 a build with AVX2 enabled.
+MB/s (10⁶ bytes per second), `-O2`, one core, each call timed in a loop over the same buffer. Portable is the library with
+`CHECKSUM_ACCELERATION=OFF` (portable lanes from 256 B), SSE2 the default x86-64 flags, AVX2 `-march=native`.
 
 | Build | 20 B | 64 B | 128 B | 256 B | 512 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GCC portable | 4 724 | 8 081 | 10 258 | 12 082 | 16 265 | 18 201 | 19 804 | 20 712 |
-| GCC SSE2 | 4 206 | 7 556 | 10 179 | 13 079 | 15 665 | 17 593 | 19 781 | 20 518 |
-| GCC AVX2 | 4 195 | 8 127 | 9 840 | 15 354 | 20 756 | 26 230 | 29 164 | 30 678 |
-| Clang portable | 3 995 | 8 342 | 10 879 | 5 052 | 6 137 | 6 916 | 7 156 | 7 233 |
-| Clang SSE2 | 3 975 | 8 323 | 10 972 | 12 732 | 15 618 | 18 341 | 19 755 | 20 600 |
-| Clang AVX2 | 3 996 | 8 993 | 11 004 | 16 393 | 21 805 | 26 679 | 30 027 | 31 376 |
+| GCC portable | 4 269 | 8 114 | 9 378 | 9 725 | 13 357 | 15 640 | 16 917 | 17 497 |
+| GCC SSE2 | 4 402 | 8 233 | 9 756 | 13 545 | 16 092 | 17 811 | 19 318 | 19 703 |
+| GCC AVX2 | 4 715 | 9 440 | 12 863 | 18 875 | 21 258 | 26 384 | 29 258 | 30 817 |
+| Clang portable | 3 665 | 8 977 | 10 443 | 5 591 | 6 096 | 7 818 | 8 424 | 8 757 |
+| Clang SSE2 | 4 293 | 8 886 | 10 437 | 13 512 | 16 259 | 17 679 | 19 246 | 19 416 |
+| Clang AVX2 | 3 716 | 9 120 | 11 612 | 16 941 | 22 186 | 26 171 | 28 620 | 29 653 |
 
-Below the thresholds every build runs the word loop; the differences there come from code layout. AVX2 is 1.5× the
-SSE2 kernel at 4 KiB. With GCC the portable lanes are as fast as the SSE2 kernel from 512 bytes; with Clang they reach
-about a third of its speed, which matters only for a build with `CHECKSUM_ACCELERATION=OFF`.
+Below the thresholds every build runs the word loop; differences of up to 10 % there come from code placement, which
+moves with the link order. AVX2 is 1.5× the SSE2 kernel at 4 KiB. With GCC the portable lanes are within 15 % of the
+SSE2 kernel from 1500 bytes; with Clang they reach about 45 % of it, which matters only for a build with `CHECKSUM_ACCELERATION=OFF`.
+
+Against the OpenZFS kernels (`fletcher_4_native` of OpenZFS f79c81d with its superscalar4, sse2, ssse3 and avx2 kernels,
+all built with GCC `-O2 -march=native`), the AVX2 build runs at 0.93× the fastest at 20 bytes, 1.09× at 256 bytes and
+1.0× from 1500 bytes.
 
 ### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
-GCC 14.3 and Clang, `-O2`, one core. MB/s:
+GCC 14.3 and Clang 21, `-O2 -mcpu=cortex-a72`, one core. MB/s:
 
 | Build | 20 B | 64 B | 128 B | 256 B | 512 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| AArch64 GCC portable | 571 | 1 114 | 1 255 | 1 539 | 1 947 | 2 580 | 2 889 | 2 774 |
-| AArch64 GCC NEON | 570 | 1 116 | 1 252 | 1 747 | 2 135 | 2 678 | 2 933 | 2 768 |
-| AArch64 Clang portable | 825 | 1 363 | 1 613 | 1 547 | 1 912 | 2 232 | 2 398 | 2 264 |
-| AArch64 Clang NEON | 822 | 1 373 | 1 529 | 1 842 | 2 292 | 2 675 | 2 900 | 2 703 |
-| AArch32 GCC word loop | 229 | 504 | 688 | 811 | 927 | 1 021 | 1 059 | 1 041 |
-| AArch32 GCC NEON | 309 | 603 | 775 | 860 | 1 041 | 1 663 | 2 179 | 2 334 |
-| AArch32 Clang NEON | 389 | 689 | 826 | 976 | 1 719 | 2 367 | 2 809 | 2 773 |
+| AArch64 GCC portable | 803 | 1 343 | 1 526 | 2 228 | 2 432 | 2 797 | 3 026 | 2 766 |
+| AArch64 GCC NEON | 803 | 1 337 | 1 531 | 2 209 | 2 450 | 2 827 | 3 024 | 2 757 |
+| AArch64 Clang portable | 756 | 1 462 | 1 813 | 1 500 | 1 494 | 1 619 | 1 672 | 1 617 |
+| AArch64 Clang NEON | 761 | 1 465 | 1 809 | 2 101 | 2 443 | 2 740 | 2 889 | 2 638 |
+| AArch32 GCC word loop | 484 | 778 | 839 | 931 | 1 001 | 1 053 | 1 069 | 1 027 |
+| AArch32 GCC NEON | 375 | 678 | 769 | 1 126 | 1 504 | 2 046 | 2 384 | 2 408 |
+| AArch32 Clang NEON | 325 | 622 | 785 | 1 354 | 1 788 | 2 460 | 2 862 | 2 815 |
 
-On AArch64 NEON gains 14 % (GCC) and 19 % (Clang) at 256 bytes, and 2 % (GCC) and 21 % (Clang) at 4 KiB. On AArch32 NEON is 2.1× the word loop at 4 KiB with GCC.
+On AArch64 with GCC the portable lanes are as fast as NEON; with Clang NEON is 1.4× them at 256 bytes and 1.7× at
+4 KiB. On AArch32 NEON is 2.2× the word loop at 4 KiB with GCC. Against OpenZFS (GCC, its superscalar4 and aarch64_neon
+kernels) the AArch64 GCC build runs at 0.92× at 20 bytes, 1.18× at 256 bytes and 1.0× from 4 KiB.
 
 ### 6.3 Cortex-M4
 
@@ -141,6 +150,8 @@ The figures scale with the clock: the STM32L4A6 at 80 MHz runs the same cycles p
   message stay small. Use a CRC where errors must be detected reliably.
 - **Little-endian words only:** the equivalent of `fletcher_4_native` on a big-endian host needs its words swapped
   first.
+- **No continuation from a stored checksum:** unlike Adler-32 and Fletcher, continuing needs the state, since a
+  checksum does not record an unfinished word.
 - **No verification helper:** compute the checksum and compare it with the stored one.
 - **No RISC-V or big-endian kernels.**
 - Code size has not been measured.

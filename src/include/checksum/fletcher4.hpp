@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <ranges>
 #include <span>
 #include <utility>
 
@@ -51,7 +52,7 @@ template <byte_range Range> [[nodiscard]] constexpr fletcher4_state fletcher4_up
 /// fletcher4_finalize(fletcher4_update(fletcher4_state{}, data)).
 [[nodiscard]] constexpr fletcher4_value fletcher4_compute(std::span<std::byte const> data) noexcept;
 
-/// fletcher4_finalize(fletcher4_update(fletcher4_state{}, data)) for a byte range.
+/// fletcher4_finalize(fletcher4_update(fletcher4_state{}, data)) for a byte range. A std::span<std::byte const> takes the overload above.
 template <byte_range Range> [[nodiscard]] constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept;
 
 } // namespace checksum
@@ -142,6 +143,12 @@ constexpr fletcher4_value fletcher4_compute(std::span<std::byte const> data) noe
 }
 
 template <byte_range Range> constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept {
+  // Contiguous ranges take compute_loop() too.
+  if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
+    if !consteval {
+      return fletcher4_compute(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
+    }
+  }
   return fletcher4_finalize(fletcher4_update(fletcher4_state{}, std::forward<Range>(data)));
 }
 

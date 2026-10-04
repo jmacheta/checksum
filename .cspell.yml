@@ -33,6 +33,7 @@ words:
 - adccp
 - adcs
 - addc
+- addcll
 - addtogroup
 - aixm
 - alderlake
@@ -40,6 +41,7 @@ words:
 - armv
 - asan
 - autosar
+- avxvnni
 - broadcastsi
 - bugprone
 - buypass
@@ -49,6 +51,7 @@ words:
 - castsi
 - ccitt
 - cdma
+- cinc
 - cksum
 - clmul
 - clmulepi
@@ -62,13 +65,17 @@ words:
 - crcs
 - crosscompiling
 - cstdint
+- csum
 - ctest
 - cvref
 - cvtepu
 - cvtsi
 - cxxflags
 - darc
+- datagram
 - dect
+- dpbusd
+- DPDK
 - dtcm
 - eabi
 - endforeach
@@ -113,6 +120,7 @@ words:
 - maddubs
 - madler
 - mavx
+- mavxvnni
 - mcpu
 - mcrf
 - memcpy
@@ -143,6 +151,7 @@ words:
 - pclmul
 - pclmulqdq
 - pmaddubsw
+- pmaddwd
 - pmull
 - polys
 - predefines
@@ -174,6 +183,7 @@ words:
 - stdint
 - storeu
 - strequal
+- superscalar
 - taskset
 - teledisk
 - templatize
@@ -207,9 +217,11 @@ words:
 - vmul
 - vmull
 - vmulq
+- VNNI
 - vpadalq
-- VPCLMULQDQ
 - vpaddlq
+- VPCLMULQDQ
+- vpdpbusd
 - vqtbl
 - vreinterpret
 - vreinterpretq

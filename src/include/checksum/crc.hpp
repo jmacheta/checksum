@@ -257,11 +257,17 @@ using folding_pair = std::array<std::uint64_t, 2>;
 // Carry-less multiplication constants of a parameter set (see make_folding_constants()). Aligned so that each pair is one aligned vector
 // load.
 struct alignas(16) folding_constants {
-  folding_pair by_sixteen;  // fold over 16 blocks (2048 bits)
-  folding_pair by_eight;    // fold over 8 blocks
-  folding_pair by_four;     // fold over 4 blocks
+  folding_pair by_sixteen; // fold over 16 blocks (2048 bits)
+  folding_pair by_eight;   // fold over 8 blocks
+  // Over 7 down to 2 blocks, in descending order: two adjacent pairs fold two adjacent blocks onto the same block.
+  folding_pair by_seven;
+  folding_pair by_six;
+  folding_pair by_five;
+  folding_pair by_four;
+  folding_pair by_three;
+  folding_pair by_two;
   folding_pair by_one;      // fold over 1 block (128 bits)
-  std::uint64_t quotient;   // Barrett constant floor(x^128 / Q) without its x^64 term
+  std::uint64_t quotient;   // Barrett constant floor(x^128 / Q) without its x^64 term; with polynomial, one aligned pair
   std::uint64_t polynomial; // Q without its x^64 term
 };
 
@@ -546,7 +552,12 @@ constexpr folding_constants make_folding_constants(crc_parameters const &paramet
   };
   return {.by_sixteen = fold_pair(16 * block_bits),
           .by_eight = fold_pair(8 * block_bits),
+          .by_seven = fold_pair(7 * block_bits),
+          .by_six = fold_pair(6 * block_bits),
+          .by_five = fold_pair(5 * block_bits),
           .by_four = fold_pair(4 * block_bits),
+          .by_three = fold_pair(3 * block_bits),
+          .by_two = fold_pair(2 * block_bits),
           .by_one = fold_pair(block_bits),
           .quotient = parameters.reflect_input ? reflect(quotient, register_width) : quotient,
           .polynomial = parameters.reflect_input ? reflect(polynomial, register_width) : polynomial};

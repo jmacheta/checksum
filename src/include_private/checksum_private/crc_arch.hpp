@@ -1,7 +1,7 @@
 #ifndef CHECKSUM_PRIVATE_CRC_ARCH_HPP
 #define CHECKSUM_PRIVATE_CRC_ARCH_HPP
 
-// CPU kernels of crc_lut_sliced and crc_lut_braided, from the directory arch.hpp selects; without the instruction-set
+// CPU kernels of crc_lut_sliced and crc_lut_braided, from the directory of the target architecture; without the instruction-set
 // extensions, or with CHECKSUM_ACCELERATION defined to 0, no kernel is used. Each architecture header defines:
 // - folding_available; if true, fold_blocks() via fold_blocks_with() and its fold kernel
 // - crc32_instructions_available<Polynomial>; where true, crc32_word<Polynomial>() and crc32_instructions<Polynomial>()
@@ -9,7 +9,6 @@
 // - wide_folding_minimum_size: shortest input for a loop wider than four 128-bit accumulators (max: none)
 
 #include <checksum/crc.hpp>
-#include <checksum_private/arch.hpp>
 
 #include <array>
 #include <bit>
@@ -81,7 +80,8 @@ std::uint32_t fold_crc32(folding_constants const &constants, std::uint32_t remai
 // - partial<R>(accumulator, by_one, last, size): accumulator plus the last size (1..15) bytes; last = final 16 bytes
 // - reduce<R>(accumulator, constants): the 64-bit register
 // - lane<L>(accumulator): low (0) or high (1) 64 bits; fold_crc32_with() only
-// - wide; if true, wide_minimum_size and fold_wide<R>(), a wider loop that finishes with fold_four_with()
+// - wide; if true, wide_minimum_size and fold_wide<R>(), a wider loop that folds its 8 last blocks in parallel and ends
+//   with fold_tail_with()
 template <bool Reflected, class Kernel>
 typename Kernel::vector fold_blocks_with(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
 
@@ -173,11 +173,13 @@ template <std::uint32_t Polynomial, class Kernel>
 
 } // namespace checksum::crc_detail
 
-#if defined(CHECKSUM_ARCH_X86_64)
+#if defined(CHECKSUM_ACCELERATION) && !CHECKSUM_ACCELERATION
+#include <checksum_private/generic/crc.hpp>
+#elif defined(__x86_64__)
 #include <checksum_private/x86_64/crc.hpp>
-#elif defined(CHECKSUM_ARCH_ARM)
+#elif defined(__aarch64__) || defined(__arm__)
 #include <checksum_private/arm/crc.hpp>
-#elif defined(CHECKSUM_ARCH_RISCV64)
+#elif defined(__riscv) && __riscv_xlen == 64 && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #include <checksum_private/riscv64/crc.hpp>
 #else
 #include <checksum_private/generic/crc.hpp>

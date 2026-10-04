@@ -63,10 +63,10 @@ static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_none>>(0));
 static_assert(engine_size_is<crc_engine<std::uint32_t, crc_lut_nibble>>(16 * sizeof(std::uint32_t)));
 static_assert(engine_size_is<crc_engine<std::uint32_t, crc_lut_byte>>(1024));
 static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_byte>>(2048));
-// The slicing-by-8 and braided tables also hold 10 x 8 bytes of folding constants. The braided table is the 8
+// The slicing-by-8 and braided tables also hold 20 x 8 bytes of folding constants. The braided table is the 8
 // slicing-by-8 slices plus 8 braid slices.
-static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_sliced>>(16384 + 80));
-static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_braided>>(32768 + 80));
+static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_sliced>>(16384 + 160));
+static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_braided>>(32768 + 160));
 static_assert(!std::is_default_constructible_v<crc_engine<std::uint32_t>>);
 static_assert(std::is_trivially_copyable_v<crc_engine<std::uint32_t, crc_lut_byte>> && std::is_copy_assignable_v<crc_engine<std::uint32_t>>);
 
@@ -150,7 +150,7 @@ TEST(CrcEngine, InitialAndFinalize) {
 
 // Every range kind gives the same result, including non-contiguous ranges, which are copied in 64-byte chunks.
 TEST(CrcEngine, ByteRangeAdapters) {
-  auto const bytes = crc_test::random_bytes(200, 7);
+  auto const bytes = random_bytes(200, 7);
   std::vector<unsigned char> uchars;
   std::vector<signed char> schars;
   std::list<char> chars;
@@ -181,7 +181,7 @@ TEST(CrcEngine, EquivalenceLengthsAndOffsets) {
   constexpr std::size_t max_length = 1024;
   constexpr std::size_t every_length = 320;
   constexpr std::size_t length_step = 37;
-  auto const message = crc_test::random_bytes(max_length, 42);
+  auto const message = random_bytes(max_length, 42);
   alignas(64) std::array<std::byte, max_length + 64> buffer{};
   for(crc_model const &model : models) {
     auto const expected = crc_test::reference_prefixes(model, message);
@@ -201,7 +201,7 @@ TEST(CrcEngine, EquivalenceLengthsAndOffsets) {
 
 // Every byte split of a 64-byte message, every bit split of its first 64 bits, and bit-by-bit updates.
 TEST(CrcEngine, ChunkingInvariance) {
-  auto const message = crc_test::random_bytes(64, 99);
+  auto const message = random_bytes(64, 99);
   std::span<std::byte const> const data(message);
   for(crc_model const &model : models) {
     auto const expected = crc_test::reference_crc(model, data);
@@ -228,7 +228,7 @@ TEST(CrcEngine, ChunkingInvariance) {
 
 // Bit lengths 0..320 against the reference; multiples of 8 equal the byte overloads.
 TEST(CrcEngine, BitLengths) {
-  auto const message = crc_test::random_bytes(40, 5);
+  auto const message = random_bytes(40, 5);
   std::span<std::byte const> const data(message);
   for(crc_model const &model : models) {
     for_each_engine(model, [&](auto const &engine) {
@@ -266,7 +266,7 @@ TEST(CrcEngine, TailBitsUseOnlyMessageBits) {
 // variants use an all-ones initial value and final XOR.
 TEST(CrcEngine, AllWidthsAgainstReference) {
   std::mt19937_64 generator(2024);
-  auto const message = crc_test::random_bytes(40, 11);
+  auto const message = random_bytes(40, 11);
   std::span<std::byte const> const data(message);
   for(unsigned width = 1; width <= 64; ++width) {
     auto const mask = crc_test::mask_of(width);
@@ -297,7 +297,7 @@ TEST(CrcEngine, AllWidthsAgainstReference) {
 }
 
 TEST(CrcEngine, WiderRegisterSameResult) {
-  auto const message = crc_test::random_bytes(100, 3);
+  auto const message = random_bytes(100, 3);
   auto const narrow = *crc_engine<std::uint16_t>::create(crc12_umts);
   auto const wide = *crc_engine<std::uint64_t, crc_lut_sliced>::create(crc12_umts);
   EXPECT_EQ(narrow.compute(message), wide.compute(message));
@@ -372,7 +372,7 @@ TEST(CrcEngine, UserStrategy) {
   EXPECT_FALSE((crc_engine<std::uint32_t, crc32_only>::create(crc15_can)));
   EXPECT_EQ(iso_hdlc->compute("123456789"sv), 0xCBF43926U);
   EXPECT_EQ(mpeg2->compute("123456789"sv), 0x0376E6E7U);
-  auto const message = crc_test::random_bytes(300, 8);
+  auto const message = random_bytes(300, 8);
   for(std::size_t bits = 0; bits <= message.size() * 8; bits += 7) {
     EXPECT_EQ(iso_hdlc->compute(message, bits), crc_test::reference_crc(models[9], message, bits));
     EXPECT_EQ(mpeg2->compute(message, bits), crc_test::reference_crc(models[10], message, bits));

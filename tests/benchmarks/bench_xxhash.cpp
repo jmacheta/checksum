@@ -4,6 +4,7 @@
 #include <checksum/xxhash.hpp>
 
 #include <benchmark/benchmark.h>
+#include <test_data.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -13,14 +14,7 @@
 namespace {
 
 template <class Hash> void run(benchmark::State &state, Hash hash) {
-  std::vector<std::byte> data(static_cast<std::size_t>(state.range(0)));
-  std::uint32_t seed = 0x12345678U; // xorshift32
-  for(auto &byte : data) {
-    seed ^= seed << 13U;
-    seed ^= seed >> 17U;
-    seed ^= seed << 5U;
-    byte = static_cast<std::byte>(seed);
-  }
+  std::vector<std::byte> const data = random_bytes(static_cast<std::size_t>(state.range(0)));
   std::span<std::byte const> message = data;
   for(auto _ : state) {
     benchmark::DoNotOptimize(message);
@@ -30,11 +24,11 @@ template <class Hash> void run(benchmark::State &state, Hash hash) {
 }
 
 void xxhash32(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxhash_compute<32>(data); });
+  run(state, [](std::span<std::byte const> data) { return checksum::xxh32_compute(data); });
 }
 
 void xxhash64(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxhash_compute<64>(data); });
+  run(state, [](std::span<std::byte const> data) { return checksum::xxh64_compute(data); });
 }
 
 void xxh3_64(benchmark::State &state) {

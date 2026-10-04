@@ -2,6 +2,7 @@
 #define CHECKSUM_MURMUR3_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/hash128.hpp>
 
 #include <algorithm>
 #include <array>
@@ -9,7 +10,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <ranges>
 #include <span>
 #include <type_traits>
@@ -30,8 +30,8 @@ namespace checksum {
 template <unsigned Width>
   requires(Width == 32 || Width == 128)
 struct murmur3_state {
-  /// The hash: std::uint32_t, or the two 64-bit halves h1 and h2 in the order the reference implementation stores them.
-  using value_type = std::conditional_t<Width == 32, std::uint32_t, std::array<std::uint64_t, 2>>;
+  /// The hash: std::uint32_t, or hash128 with low = h1 and high = h2, the 128-bit number the reference implementation stores little-endian.
+  using value_type = std::conditional_t<Width == 32, std::uint32_t, hash128>;
 
   /// Hash lanes: h1, and h2 for Width 128. Set from the seed when the first block is folded.
   std::array<std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>, Width == 32 ? 1 : 2> lanes{};
@@ -59,6 +59,18 @@ template <unsigned Width>
 template <unsigned Width, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 [[nodiscard]] constexpr murmur3_state<Width>::value_type murmur3_compute(Range &&data, std::uint32_t seed = 0) noexcept;
+
+/// Running MurmurHash3_x86_32 hash.
+using murmur3_32_state = murmur3_state<32>;
+
+/// Running MurmurHash3_x64_128 hash.
+using murmur3_128_state = murmur3_state<128>;
+
+/// The MurmurHash3_x86_32 hash of data: murmur3_compute<32>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr murmur3_32_state::value_type murmur3_32_compute(Range &&data, std::uint32_t seed = 0) noexcept;
+
+/// The MurmurHash3_x64_128 hash of data: murmur3_compute<128>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed = 0) noexcept;
 
 } // namespace checksum
 
@@ -96,8 +108,7 @@ template <> struct algorithm_constants<128> {
   static constexpr std::array<int, 3> avalanche_shifts{33, 33, 33};
 };
 
-// Reads a little-endian integer from the first sizeof(Integer) bytes at data.
-template <class Integer> constexpr Integer load(std::byte const *data) noexcept;
+using detail::load;
 
 // Reads a little-endian integer from the first size bytes at data, size < sizeof(Integer), with fixed-size loads.
 template <class Integer> constexpr Integer load_partial(std::byte const *data, std::size_t size) noexcept;
@@ -128,27 +139,16 @@ template <unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::spa
 template <unsigned Width>
 constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::uint64_t length, std::span<std::byte const> tail) noexcept;
 
+// The x86_32 hash of data of at least one block, defined in src/murmur3/block_loop.cpp. Its lane is a local, which stays in a register:
+// through block_loop() it goes through memory.
+std::uint32_t run_time_hash_32(std::span<std::byte const> data, std::uint32_t seed) noexcept;
+
 } // namespace checksum::murmur3_detail
 
 ///@}
 ///@}
 
 namespace checksum::murmur3_detail {
-
-template <class Integer> constexpr Integer load(std::byte const *data) noexcept {
-  Integer value = 0;
-  if consteval {
-    for(std::size_t index = 0; index < sizeof(Integer); ++index) {
-      value |= std::to_integer<Integer>(data[index]) << (8 * index);
-    }
-  } else {
-    std::memcpy(&value, data, sizeof(Integer));
-    if constexpr(std::endian::native == std::endian::big) {
-      value = std::byteswap(value);
-    }
-  }
-  return value;
-}
 
 template <class Integer> constexpr Integer load_partial(std::byte const *data, std::size_t size) noexcept {
   Integer value = 0;
@@ -160,7 +160,7 @@ template <class Integer> constexpr Integer load_partial(std::byte const *data, s
     }
   }
   if((size & 2U) != 0) {
-    value |= (std::to_integer<Integer>(data[offset]) | (std::to_integer<Integer>(data[offset + 1]) << 8)) << (8 * offset);
+    value |= Integer{load<std::uint16_t>(data + offset)} << (8 * offset);
     offset += 2;
   }
   if((size & 1U) != 0) {
@@ -243,7 +243,7 @@ constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::
     high = avalanche<Width>(high);
     low += high;
     high += low;
-    return {low, high};
+    return {.low = low, .high = high};
   }
 }
 
@@ -289,6 +289,13 @@ template <unsigned Width> constexpr murmur3_state<Width>::value_type murmur3_fin
 
 template <unsigned Width> constexpr murmur3_state<Width>::value_type murmur3_compute(std::span<std::byte const> data, std::uint32_t seed) noexcept {
   std::size_t const whole = data.size() - (data.size() % murmur3_detail::block_size<Width>);
+  if constexpr(Width == 32) {
+    if !consteval {
+      if(whole != 0) {
+        return murmur3_detail::run_time_hash_32(data, seed);
+      }
+    }
+  }
   murmur3_detail::lane_array<Width> lanes = murmur3_detail::initial_lanes<Width>(seed);
   if(whole != 0) {
     murmur3_detail::fold<Width>(lanes, data.first(whole));
@@ -306,6 +313,14 @@ constexpr murmur3_state<Width>::value_type murmur3_compute(Range &&data, std::ui
     }
   }
   return murmur3_finalize(murmur3_update(murmur3_state<Width>{.seed = seed}, std::forward<Range>(data)));
+}
+
+template <byte_range Range> constexpr murmur3_32_state::value_type murmur3_32_compute(Range &&data, std::uint32_t seed) noexcept {
+  return murmur3_compute<32>(std::forward<Range>(data), seed);
+}
+
+template <byte_range Range> constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed) noexcept {
+  return murmur3_compute<128>(std::forward<Range>(data), seed);
 }
 
 } // namespace checksum

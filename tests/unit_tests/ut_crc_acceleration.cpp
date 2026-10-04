@@ -116,7 +116,7 @@ using folding_strategies = ::testing::Types<crc_lut_sliced, crc_lut_braided>;
 TYPED_TEST_SUITE(crc_acceleration_typed, folding_strategies);
 
 TYPED_TEST(crc_acceleration_typed, MatchesByteTableForEveryCatalogSet) {
-  auto const message = crc_test::random_bytes(longest + offsets.back(), 0x5EED);
+  auto const message = random_bytes(longest + offsets.back(), 0x5EED);
   auto const all = every_length();
   auto const thresholds = threshold_lengths();
   std::vector<code_path> tested;

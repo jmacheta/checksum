@@ -2,6 +2,7 @@
 #define CHECKSUM_XXH3_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/hash128.hpp>
 #include <checksum/xxhash.hpp>
 
 #include <algorithm>
@@ -25,22 +26,13 @@
 
 namespace checksum {
 
-/// A 128-bit XXH3 hash.
-struct xxh3_hash128 {
-  std::uint64_t low = 0;  ///< The lower 64 bits.
-  std::uint64_t high = 0; ///< The upper 64 bits.
-
-  /// Equal if both halves are.
-  [[nodiscard]] constexpr bool operator==(xxh3_hash128 const &) const noexcept = default;
-};
-
 /// Running XXH3-64 (Width 64) or XXH3-128 (Width 128) hash, 336 bytes. Every value is valid; the default is the empty message with seed 0, and
 /// xxh3_state<Width>{.seed = seed} starts one with another seed.
 template <unsigned Width>
   requires(Width == 64 || Width == 128)
 struct xxh3_state {
-  /// The hash type: std::uint64_t or xxh3_hash128.
-  using value_type = std::conditional_t<Width == 64, std::uint64_t, xxh3_hash128>;
+  /// The hash type: std::uint64_t or hash128.
+  using value_type = std::conditional_t<Width == 64, std::uint64_t, hash128>;
 
   /// Lane accumulators of the folded input: all but the last 1 to 256 bytes, rounded down to a multiple of 256.
   std::array<std::uint64_t, 8> accumulators{0xC2B2AE3DU,         0x9E3779B185EBCA87U, 0xC2B2AE3D27D4EB4FU, 0x165667B19E3779F9U,
@@ -69,6 +61,18 @@ template <unsigned Width>
 template <unsigned Width, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 [[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+
+/// Running XXH3-64 hash.
+using xxh3_64_state = xxh3_state<64>;
+
+/// Running XXH3-128 hash.
+using xxh3_128_state = xxh3_state<128>;
+
+/// The XXH3-64 hash of data: xxh3_compute<64>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+
+/// The XXH3-128 hash of data: xxh3_compute<128>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
 } // namespace checksum
 
@@ -124,10 +128,10 @@ inline constexpr std::array<std::uint64_t, secret_size / 8> default_secret_words
     0x49DAF0B751DD0D17U, 0x9E68D429265516D3U, 0xFCA1477D58BE162BU, 0xCE31D07AD1B8F88FU, 0x280416958F3ACB45U, 0x7E404BBBCAFBD7AFU};
 
 // The full product of two 64-bit values, from four 32-bit products.
-constexpr xxh3_hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept;
+constexpr hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept;
 
 // multiply_portable(), or a native 128-bit multiplication at run time where the compiler has one.
-constexpr xxh3_hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept;
+constexpr hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept;
 
 // The exclusive or of the two Integer words at secret.
 template <class Integer> constexpr Integer secret_xor(std::byte const *secret) noexcept;
@@ -141,8 +145,6 @@ std::uint64_t run_time_multiply_fold(std::uint64_t left, std::uint64_t right) no
 
 constexpr std::uint64_t avalanche(std::uint64_t hash) noexcept;
 
-constexpr std::uint64_t avalanche_xxh64(std::uint64_t hash) noexcept;
-
 // The default secret with the seed added to its even words and subtracted from its odd ones.
 constexpr secret_array make_secret(std::uint64_t seed) noexcept;
 
@@ -153,14 +155,14 @@ template <class Function> constexpr auto with_secret(std::uint64_t seed, Functio
 constexpr std::uint64_t mix_step(std::byte const *data, std::byte const *secret, std::uint64_t seed) noexcept;
 
 // Mixes two 16-byte chunks into both halves of a 128-bit accumulator.
-constexpr void mix_two_chunks(xxh3_hash128 &accumulator, std::byte const *first, std::byte const *second, std::byte const *secret,
+constexpr void mix_two_chunks(hash128 &accumulator, std::byte const *first, std::byte const *second, std::byte const *secret,
                               std::uint64_t seed) noexcept;
 
 // The hash of 0 to 16 bytes.
 template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte const> data, std::uint64_t seed) noexcept;
 
 // The 128-bit hash of 17 to 240 bytes from its accumulator.
-constexpr xxh3_hash128 finish_medium(xxh3_hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept;
+constexpr hash128 finish_medium(hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept;
 
 // The hash of 17 to 128 bytes.
 template <unsigned Width> constexpr value<Width> hash_medium(std::span<std::byte const> data, std::uint64_t seed) noexcept;
@@ -172,19 +174,15 @@ template <unsigned Width> constexpr value<Width> hash_midsize(std::span<std::byt
 template <std::size_t Lane>
 constexpr void accumulate_lane(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept;
 
-// Mixes one stripe into the accumulators. Spelled out per lane: as a loop, GCC keeps the accumulators in memory; GCC for Cortex-M4
-// outlines the unforced lanes and calls them per stripe.
-constexpr void accumulate(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept;
-
-// Scrambles the accumulators with the last 64 bytes of the secret, at secret.
-constexpr void scramble(accumulator_array &accumulators, std::byte const *secret) noexcept;
-
 // The portable stripe kernel. A kernel keeps the accumulators in its lanes type and defines the same four functions.
 struct portable_kernel {
   using lanes = accumulator_array;
   static constexpr lanes load(accumulator_array const &accumulators) noexcept;
   static constexpr void store(accumulator_array &accumulators, lanes const &values) noexcept;
+  // Mixes one stripe into the accumulators. Spelled out per lane: as a loop, GCC keeps the accumulators in memory; GCC for
+  // Cortex-M4 outlines the unforced lanes and calls them per stripe.
   static constexpr void accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept;
+  // Scrambles the accumulators with the last 64 bytes of the secret, at secret.
   static constexpr void scramble(lanes &values, std::byte const *secret) noexcept;
 };
 
@@ -228,7 +226,7 @@ template <unsigned Width> constexpr void update(xxh3_state<Width> &state, std::s
 
 namespace checksum::xxh3_detail {
 
-constexpr xxh3_hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept {
+constexpr hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept {
   std::uint64_t const low_low = (left & low_half_mask) * (right & low_half_mask);
   std::uint64_t const high_low = (left >> 32U) * (right & low_half_mask);
   std::uint64_t const low_high = (left & low_half_mask) * (right >> 32U);
@@ -237,7 +235,7 @@ constexpr xxh3_hash128 multiply_portable(std::uint64_t left, std::uint64_t right
   return {.low = (cross << 32U) | (low_low & low_half_mask), .high = (high_low >> 32U) + (cross >> 32U) + high_high};
 }
 
-constexpr xxh3_hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept {
+constexpr hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept {
 #ifdef __SIZEOF_INT128__
   if !consteval {
     __extension__ typedef unsigned __int128 wide_type; // NOLINT(modernize-use-using): __extension__ silences -Wpedantic only on a typedef.
@@ -258,7 +256,7 @@ constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) n
     return run_time_multiply_fold(left, right);
   }
 #endif
-  xxh3_hash128 const product = multiply(left, right);
+  hash128 const product = multiply(left, right);
   return product.low ^ product.high;
 }
 
@@ -266,14 +264,6 @@ constexpr std::uint64_t avalanche(std::uint64_t hash) noexcept {
   hash ^= hash >> avalanche_shift;
   hash *= prime_mx1;
   return hash ^ (hash >> 32U);
-}
-
-constexpr std::uint64_t avalanche_xxh64(std::uint64_t hash) noexcept {
-  hash ^= hash >> static_cast<unsigned>(primes_64::avalanche_shifts[0]);
-  hash *= primes_64::prime_2;
-  hash ^= hash >> static_cast<unsigned>(primes_64::avalanche_shifts[1]);
-  hash *= primes_64::prime_3;
-  return hash ^ (hash >> static_cast<unsigned>(primes_64::avalanche_shifts[2]));
 }
 
 constexpr secret_array make_secret(std::uint64_t seed) noexcept {
@@ -302,7 +292,7 @@ constexpr std::uint64_t mix_step(std::byte const *data, std::byte const *secret,
                        load<std::uint64_t>(data + 8) ^ (load<std::uint64_t>(secret + 8) - seed));
 }
 
-constexpr void mix_two_chunks(xxh3_hash128 &accumulator, std::byte const *first, std::byte const *second, std::byte const *secret,
+constexpr void mix_two_chunks(hash128 &accumulator, std::byte const *first, std::byte const *second, std::byte const *secret,
                               std::uint64_t seed) noexcept {
   accumulator.low += mix_step(first, secret, seed);
   accumulator.low ^= load<std::uint64_t>(second) + load<std::uint64_t>(second + 8);
@@ -326,11 +316,11 @@ template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte 
       constexpr std::size_t offset = 32;
       std::uint64_t const mixed_first = (secret_xor<std::uint64_t>(secret + offset) - seed) ^ first ^ last;
       std::uint64_t const mixed_last = (secret_xor<std::uint64_t>(secret + offset + 16) + seed) ^ last;
-      xxh3_hash128 product = multiply(mixed_first, primes_64::prime_1);
+      hash128 product = multiply(mixed_first, primes_64::prime_1);
       product.low += (length - 1) << length_shift;
       product.high += mixed_last + ((mixed_last & low_half_mask) * (primes_32::prime_2 - 1));
       product.low ^= std::byteswap(product.high);
-      xxh3_hash128 const result = multiply(product.low, primes_64::prime_2);
+      hash128 const result = multiply(product.low, primes_64::prime_2);
       return {.low = avalanche(result.low), .high = avalanche(result.high + (product.high * primes_64::prime_2))};
     }
   }
@@ -347,7 +337,7 @@ template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte 
       return mixed ^ (mixed >> mix_shifts[1]);
     } else {
       std::uint64_t const mixed = (secret_xor<std::uint64_t>(secret + 16) + modified_seed) ^ (first | (last << 32U));
-      xxh3_hash128 const product = multiply(mixed, primes_64::prime_1 + (length << 2U));
+      hash128 const product = multiply(mixed, primes_64::prime_1 + (length << 2U));
       std::uint64_t const high = product.high + (product.low << 1U);
       std::uint64_t low = product.low ^ (high >> 3U);
       low ^= low >> mix_shifts[0];
@@ -360,22 +350,22 @@ template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte 
                                    (std::to_integer<std::uint32_t>(input[0]) << 16U) | (std::to_integer<std::uint32_t>(input[length / 2]) << 24U);
     std::uint64_t const low = (std::uint64_t{secret_xor<std::uint32_t>(secret)} + seed) ^ combined;
     if constexpr(Width == 64) {
-      return avalanche_xxh64(low);
+      return xxhash_detail::avalanche<64>(low);
     } else {
       std::uint64_t const high = (std::uint64_t{secret_xor<std::uint32_t>(secret + 8)} - seed) ^ std::rotl(std::byteswap(combined), 13);
-      return {.low = avalanche_xxh64(low), .high = avalanche_xxh64(high)};
+      return {.low = xxhash_detail::avalanche<64>(low), .high = xxhash_detail::avalanche<64>(high)};
     }
   }
   if constexpr(Width == 64) {
     constexpr std::size_t offset = 56;
-    return avalanche_xxh64(seed ^ secret_xor<std::uint64_t>(secret + offset));
+    return xxhash_detail::avalanche<64>(seed ^ secret_xor<std::uint64_t>(secret + offset));
   } else {
-    return {.low = avalanche_xxh64(seed ^ secret_xor<std::uint64_t>(secret + 64)),
-            .high = avalanche_xxh64(seed ^ secret_xor<std::uint64_t>(secret + 64 + 16))};
+    return {.low = xxhash_detail::avalanche<64>(seed ^ secret_xor<std::uint64_t>(secret + 64)),
+            .high = xxhash_detail::avalanche<64>(seed ^ secret_xor<std::uint64_t>(secret + 64 + 16))};
   }
 }
 
-constexpr xxh3_hash128 finish_medium(xxh3_hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept {
+constexpr hash128 finish_medium(hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept {
   std::uint64_t const high =
       (accumulator.low * primes_64::prime_1) + (accumulator.high * primes_64::prime_4) + ((length - seed) * primes_64::prime_2);
   return {.low = avalanche(accumulator.low + accumulator.high), .high = 0 - avalanche(high)};
@@ -432,7 +422,7 @@ template <unsigned Width> constexpr value<Width> hash_midsize(std::span<std::byt
     accumulator += mix_step(input + length - 16, secret + secret_size_min - midsize_last_offset, seed);
     return avalanche(accumulator);
   } else {
-    xxh3_hash128 accumulator{.low = length * primes_64::prime_1, .high = 0};
+    hash128 accumulator{.low = length * primes_64::prime_1, .high = 0};
     for(std::size_t chunk = 0; chunk < 4; ++chunk) {
       mix_two_chunks(accumulator, input + (32 * chunk), input + (32 * chunk) + 16, secret + (32 * chunk), seed);
     }
@@ -453,28 +443,22 @@ constexpr void accumulate_lane(accumulator_array &accumulators, std::byte const 
   std::get<Lane>(accumulators) += (key & low_half_mask) * (key >> 32U);
 }
 
-constexpr void accumulate(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept {
-  [&]<std::size_t... Lane> [[gnu::always_inline]] (std::index_sequence<Lane...>) {
-    (accumulate_lane<Lane>(accumulators, stripe, secret), ...);
-  }(std::make_index_sequence<std::tuple_size_v<accumulator_array>>{});
-}
-
-constexpr void scramble(accumulator_array &accumulators, std::byte const *secret) noexcept {
-  for(std::size_t lane = 0; lane < accumulators.size(); ++lane) {
-    std::uint64_t const accumulator = accumulators[lane] ^ (accumulators[lane] >> scramble_shift);
-    accumulators[lane] = (accumulator ^ load<std::uint64_t>(secret + (8 * lane))) * primes_32::prime_1;
-  }
-}
-
 constexpr portable_kernel::lanes portable_kernel::load(accumulator_array const &accumulators) noexcept { return accumulators; }
 
 constexpr void portable_kernel::store(accumulator_array &accumulators, lanes const &values) noexcept { accumulators = values; }
 
 constexpr void portable_kernel::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
-  xxh3_detail::accumulate(values, stripe, secret);
+  [&]<std::size_t... Lane> [[gnu::always_inline]] (std::index_sequence<Lane...>) {
+    (accumulate_lane<Lane>(values, stripe, secret), ...);
+  }(std::make_index_sequence<std::tuple_size_v<lanes>>{});
 }
 
-constexpr void portable_kernel::scramble(lanes &values, std::byte const *secret) noexcept { xxh3_detail::scramble(values, secret); }
+constexpr void portable_kernel::scramble(lanes &values, std::byte const *secret) noexcept {
+  for(std::size_t lane = 0; lane < values.size(); ++lane) {
+    std::uint64_t const accumulator = values[lane] ^ (values[lane] >> scramble_shift);
+    values[lane] = (accumulator ^ xxh3_detail::load<std::uint64_t>(secret + (8 * lane))) * primes_32::prime_1;
+  }
+}
 
 template <class Kernel>
 constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
@@ -622,6 +606,14 @@ constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t
     }
   }
   return xxh3_finalize(xxh3_update(xxh3_state<Width>{.seed = seed}, std::forward<Range>(data)));
+}
+
+template <byte_range Range> constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed) noexcept {
+  return xxh3_compute<64>(std::forward<Range>(data), seed);
+}
+
+template <byte_range Range> constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed) noexcept {
+  return xxh3_compute<128>(std::forward<Range>(data), seed);
 }
 
 } // namespace checksum

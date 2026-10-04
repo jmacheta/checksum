@@ -1,12 +1,12 @@
 #ifndef CHECKSUM_PRIVATE_FLETCHER4_ARCH_HPP
 #define CHECKSUM_PRIVATE_FLETCHER4_ARCH_HPP
 
-// CPU kernel of the fletcher4 lane loop, from the directory arch.hpp selects; without the instruction-set extensions, or
+// CPU kernel of the fletcher4 lane loop, from the directory of the target architecture; without the instruction-set extensions, or
 // with CHECKSUM_ACCELERATION defined to 0, the portable lanes sum everything. Each architecture header defines:
 // - lane_kernel_available; if true, lane_kernel()
 // - lane_kernel_minimum_size: shortest input for lane_kernel() (max: never)
 
-#include <checksum_private/arch.hpp>
+#include <checksum/fletcher4.hpp>
 
 #include <array>
 #include <cstddef>
@@ -25,9 +25,11 @@ inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept
 
 } // namespace checksum::fletcher4_detail
 
-#if defined(CHECKSUM_ARCH_X86_64)
+#if defined(CHECKSUM_ACCELERATION) && !CHECKSUM_ACCELERATION
+#include <checksum_private/generic/fletcher4.hpp>
+#elif defined(__x86_64__)
 #include <checksum_private/x86_64/fletcher4.hpp>
-#elif defined(CHECKSUM_ARCH_ARM)
+#elif defined(__aarch64__) || defined(__arm__)
 #include <checksum_private/arm/fletcher4.hpp>
 #else
 #include <checksum_private/generic/fletcher4.hpp>

@@ -28,6 +28,7 @@
                 "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined -Wl,--gc-sections"
             },
             "environment": {
+                "CHECKSUM_GCC_WARNINGS": "",
                 "CHECKSUM_EXTRA_CFLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1",
                 "CHECKSUM_EXTRA_CXXFLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1"
             }

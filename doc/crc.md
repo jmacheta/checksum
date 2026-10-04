@@ -22,7 +22,7 @@ target_link_libraries(app PRIVATE checksum::checksum)
 | `CHECKSUM_ACCELERATION` | `ON` | Lets `crc_lut_sliced` and `crc_lut_braided` use the CPU instructions that the compiler flags enable (section 7). `OFF` keeps only the portable loops. |
 | `CHECKSUM_TESTS` | top-level project | Unit tests and negative compile tests (downloads GoogleTest). |
 | `CHECKSUM_BENCHMARKS` | `OFF` | Benchmarks (downloads Google Benchmark and zlib); on in the `native-*-bench` presets. |
-| `CHECKSUM_EXAMPLES` | top-level project | Builds `examples/crc`. |
+| `CHECKSUM_EXAMPLES` | top-level project | Builds `examples/`. |
 
 Compile and link the application with `-ffunction-sections -fdata-sections` and `-Wl,--gc-sections`: the library
 compiles the run-time loops of every strategy and register type, and the linker then keeps only the ones the
@@ -154,7 +154,7 @@ std::uint16_t crc = can.compute(bits, 83);   // bits: std::array<std::byte, 11>
 
 A state passed to `update` or `finalize` must be below 2^width, and `bit_length` must not exceed
 `8 * data.size()`. Both are checked with `assert`. With `NDEBUG` the state is masked and the bit length clamped,
-so a violation gives a wrong CRC but never undefined behavior. During constant evaluation a failed `assert` is a
+so a violation gives a wrong CRC but never undefined behavior. Without `NDEBUG`, a failed `assert` during constant evaluation is a
 compile error.
 
 ## 6. Strategies
@@ -168,10 +168,10 @@ results.
 | `crc_lut_none` (default) | 11 / 16 / 32 / 64 B | Bitwise, no table. Smallest code and data. |
 | `crc_lut_nibble` | 27 / 48 / 96 / 192 B | 16-entry table, two lookups per byte. |
 | `crc_lut_byte` | 267 / 528 / 1056 / 2112 B | 256-entry table, one lookup per byte. |
-| `crc_lut_sliced` | 2.1 / 4.1 / 8.1 / 16.1 KiB | Slicing-by-8: eight 256-entry tables, one 8-byte word per step. CPU acceleration (section 7). |
-| `crc_lut_braided` | 4.1 / 8.1 / 16.1 / 32.1 KiB | Slicing-by-8 plus 8 braid tables: five interleaved streams of 8-byte words from 128 B on. CPU acceleration (section 7). |
+| `crc_lut_sliced` | 2.2 / 4.2 / 8.2 / 16.2 KiB | Slicing-by-8: eight 256-entry tables, one 8-byte word per step. CPU acceleration (section 7). |
+| `crc_lut_braided` | 4.2 / 8.2 / 16.2 / 32.2 KiB | Slicing-by-8 plus 8 braid tables: five interleaved streams of 8-byte words from 128 B on. CPU acceleration (section 7). |
 
-Sizes are `sizeof(crc_engine)` on a 64-bit host. The sliced and braided engines include 80 B of folding constants
+Sizes are `sizeof(crc_engine)` on a 64-bit host. The sliced and braided engines include 160 B of folding constants
 for the CPU kernels. Large engines belong in static storage (`crc_engine_for`, or a `static`/global object), not on
 an MCU stack.
 
@@ -243,12 +243,14 @@ GCC 16. Accelerated = `-march=native` (PCLMULQDQ, VPCLMULQDQ, AVX2, SSE4.2). MB/
 
 | CRC | none | nibble | byte | sliced, portable | braided, portable | sliced, accelerated |
 | --- | --- | --- | --- | --- | --- | --- |
-| CRC-8/SMBUS | 180 | 252 | 797 | 3814 / 3540 / 3091 / 3019 | 3705 / 4940 / 5976 / 6045 | 8591 / 39081 / 70047 / 73570 |
-| CRC-16/XMODEM | 176 | 245 | 781 | 4099 / 3012 / 2579 / 2589 | 3664 / 4703 / 5884 / 6009 | 8525 / 39037 / 70187 / 73350 |
-| CRC-32/ISO-HDLC | 137 | 289 | 673 | 4663 / 3657 / 2923 / 2896 | 4332 / 5345 / 6685 / 6556 | 7906 / 40503 / 71581 / 74656 |
-| CRC-64/XZ | 137 | 287 | 661 | 4758 / 2761 / 2501 / 2424 | 4456 / 5192 / 6710 / 6485 | 8395 / 41592 / 71870 / 74835 |
+| CRC-8/SMBUS | 180 | 252 | 797 | 3814 / 3540 / 3091 / 3019 | 3705 / 4940 / 5976 / 6045 | 10564 / 49017 / 71769 / 74200 |
+| CRC-16/XMODEM | 176 | 245 | 781 | 4099 / 3012 / 2579 / 2589 | 3664 / 4703 / 5884 / 6009 | 10573 / 48774 / 72463 / 71670 |
+| CRC-32/ISO-HDLC | 137 | 289 | 673 | 4663 / 3657 / 2923 / 2896 | 4332 / 5345 / 6685 / 6556 | 9754 / 52967 / 74320 / 75889 |
+| CRC-64/XZ | 137 | 287 | 661 | 4758 / 2761 / 2501 / 2424 | 4456 / 5192 / 6710 / 6485 | 10291 / 53467 / 73653 / 75693 |
 
 The accelerated `crc_lut_braided` is within 6 % of the accelerated `crc_lut_sliced`. Clang gives the same picture.
+Against Intel ISA-L (hand-written AVX2 VPCLMULQDQ assembly), the accelerated CRC-32, CRC-32C and CRC-64/XZ run at
+0.89-1.45× its speed from 20 B to 1 MiB with GCC 16, and 0.95-1.01× at 256 B.
 
 ### 8.2 Cortex-A72 (Raspberry Pi 4, 1.5 GHz)
 
@@ -283,10 +285,10 @@ code added over an empty program / engine in `.rodata`, bytes.
 
 | CRC | none | nibble | byte | sliced | braided |
 | --- | --- | --- | --- | --- | --- |
-| CRC-32/ISO-HDLC | 100 / 32 | 104 / 96 | 80 / 1056 | 252 / 8320 | 1116 / 16512 |
-| CRC-16/XMODEM | 104 / 16 | 104 / 48 | 76 / 528 | 252 / 4208 | 1212 / 8304 |
-| CRC-8/SMBUS | 101 / 11 | 101 / 27 | 97 / 267 | 252 / 2160 | 1068 / 4208 |
-| CRC-64/XZ | 116 / 64 | 140 / 192 | 100 / 2112 | 380 / 16528 | 1868 / 32912 |
+| CRC-32/ISO-HDLC | 100 / 32 | 104 / 96 | 80 / 1056 | 252 / 8400 | 1116 / 16592 |
+| CRC-16/XMODEM | 104 / 16 | 104 / 48 | 76 / 528 | 252 / 4288 | 1212 / 8384 |
+| CRC-8/SMBUS | 101 / 11 | 101 / 27 | 97 / 267 | 252 / 2240 | 1068 / 4288 |
+| CRC-64/XZ | 116 / 64 | 140 / 192 | 100 / 2112 | 380 / 16608 | 1868 / 32992 |
 
 ### 8.4 Cortex-M4 with a CRC peripheral (STM32L4A6, 80 MHz)
 

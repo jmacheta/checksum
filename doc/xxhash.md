@@ -15,23 +15,26 @@ memory and there is no global state; XXH3 keeps its 192-byte default secret in r
 using namespace std::literals;
 
 // One call, seed 0 or another seed.
-std::uint32_t small = checksum::xxhash_compute<32>(std::span(key));
-std::uint64_t hash = checksum::xxh3_compute<64>(std::span(key), 1234);
-checksum::xxh3_hash128 wide = checksum::xxh3_compute<128>(std::span(key));
+std::uint32_t small = checksum::xxh32_compute(key);
+std::uint64_t hash = checksum::xxh3_64_compute(key, 1234);
+checksum::hash128 wide = checksum::xxh3_128_compute(key);
 
 // Incremental: a message may be split anywhere.
-checksum::xxh3_state<64> state{.seed = 1234};
+checksum::xxh3_64_state state{.seed = 1234};
 state = checksum::xxh3_update(state, first_part);
 state = checksum::xxh3_update(state, second_part);
 std::uint64_t value = checksum::xxh3_finalize(state);
 
 // Compile time.
-static_assert(checksum::xxhash_compute<32>("abc"sv) == 0x32D153FF);
-static_assert(checksum::xxhash_compute<64>("abc"sv) == 0x44BC2CF5AD770999);
-static_assert(checksum::xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950);
-static_assert(checksum::xxh3_compute<128>("abc"sv) ==
-              checksum::xxh3_hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
+static_assert(checksum::xxh32_compute("abc"sv) == 0x32D153FF);
+static_assert(checksum::xxh64_compute("abc"sv) == 0x44BC2CF5AD770999);
+static_assert(checksum::xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950);
+static_assert(checksum::xxh3_128_compute("abc"sv) ==
+              checksum::hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
 ```
+
+`examples/xxh3` has complete programs: asset IDs hashed at compile time, the XXH3-64 hash of a file read in chunks,
+deduplication of blocks by their XXH3-128 hash, and a hash table with seeded XXH3-64.
 
 ## 2. API
 
@@ -55,10 +58,15 @@ prefix of a message several ways.
 | `xxhash_update(state, data)` | Folds `data` into `state` and returns the new state. |
 | `xxhash_finalize(state)` | The hash of the message folded into `state`; the state is unchanged. |
 | `xxhash_compute<Width>(data, seed = 0)` | `xxhash_finalize(xxhash_update(xxhash_state<Width>{.seed = seed}, data))`. |
+| `xxh32_state`, `xxh64_state` | `xxhash_state<32>` and `xxhash_state<64>`. |
+| `xxh32_compute(data, seed = 0)`, `xxh64_compute(data, seed = 0)` | `xxhash_compute<32>` and `xxhash_compute<64>`. |
 
 `xxhash_state<Width>::value_type` is the type of the hash, the seed and the lanes: `std::uint32_t` for XXH32 and
 `std::uint64_t` for XXH64. The lanes are set from the seed when the first whole stripe is folded; before that they are
 ignored.
+
+`examples/xxhash` has complete programs: message IDs hashed at compile time, the XXH64 of a file read in chunks, and
+a cache keyed by the hash of its input.
 
 ### 2.2 XXH3-64 and XXH3-128
 
@@ -70,9 +78,11 @@ ignored.
 | `xxh3_update(state, data)` | Folds `data` into `state` and returns the new state. |
 | `xxh3_finalize(state)` | The hash of the message folded into `state`; the state is unchanged. |
 | `xxh3_compute<Width>(data, seed = 0)` | `xxh3_finalize(xxh3_update(xxh3_state<Width>{.seed = seed}, data))`. |
-| `xxh3_hash128` | The XXH3-128 hash: `low` and `high`, its lower and upper 64 bits, as `XXH128_hash_t` of the reference. Compares with `==`. |
+| `hash128` | The XXH3-128 hash: `low` and `high`, its lower and upper 64 bits, as `XXH128_hash_t` of the reference. Compares with `==`. MurmurHash3_x64_128 returns the same type. |
+| `xxh3_64_state`, `xxh3_128_state` | `xxh3_state<64>` and `xxh3_state<128>`. |
+| `xxh3_64_compute(data, seed = 0)`, `xxh3_128_compute(data, seed = 0)` | `xxh3_compute<64>` and `xxh3_compute<128>`. `xxh3_update` and `xxh3_finalize` take the width from the state. |
 
-`xxh3_state<Width>::value_type` is `std::uint64_t` for Width 64 and `xxh3_hash128` for Width 128. The seed is a
+`xxh3_state<Width>::value_type` is `std::uint64_t` for Width 64 and `hash128` for Width 128. The seed is a
 `std::uint64_t` for both. The hashes always use the default secret; a custom secret cannot be passed.
 
 The state keeps the last 1 to 256 bytes passed in its buffer and folds the rest into the accumulators, so it can
@@ -104,7 +114,9 @@ XXH32 and XXH64 have no kernel, on any target. Each of the four lanes is a seria
 rotation per word; the scalar loop already keeps four of them in flight. A NEON prototype of XXH32 ran 1 685 MB/s on a
 Cortex-A72 at 4 KiB against 2 333 for the scalar loop, and Clang vectorizing the lanes on its own lost 38 % on
 x86-64. XXH64 needs 64-bit multiplications per lane, which SSE2, AVX2 and NEON do not have. The stripe loop is
-compiled once per width in `src/xxhash/stripe_loop.cpp`, out of line, so that compilers keep the lanes scalar.
+compiled once per width in `src/xxhash/stripe_loop.cpp`, out of line, so that compilers keep the lanes scalar; the
+one-shot hash of a message of at least one stripe runs a function there that keeps them in local variables, for XXH32
+on every target and for XXH64 on 64-bit targets.
 
 ### 4.2 XXH3
 
@@ -115,14 +127,14 @@ Inputs up to 240 bytes run straight-line code with no loop and no kernel. Longer
 | --- | --- |
 | x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | Two 256-bit vectors, every stripe. |
 | x86-64 without AVX2 (SSE2 is always there) | Four 128-bit vectors, every stripe. |
-| AArch64, little-endian | Four lanes in NEON and four in scalar registers, from 448 bytes of whole stripes (messages from 512 bytes). |
+| AArch64, little-endian | Four lanes in NEON and four in scalar registers, every stripe. |
 | 32-bit Arm with NEON, little-endian | All eight lanes in NEON, every stripe. |
 | RISC-V RV64 with the V extension, VLEN ≥ 128 | One register group of eight 64-bit lanes, every stripe. Tested in QEMU, not measured on hardware. |
 | everything else (Cortex-M, 32-bit Arm without NEON, big-endian, RISC-V without V), or `CHECKSUM_ACCELERATION=OFF` | Portable loop. |
 
 The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. Constant
-evaluation always runs the portable code with the same result. On AArch64 the portable loop is faster below
-512 bytes, and four NEON lanes with four scalar ones beat all eight in NEON. The measurements behind each choice are in
+evaluation always runs the portable code with the same result. On AArch64 four NEON lanes with four scalar ones
+beat six and two, and all eight in NEON. The measurements behind each choice are in
 [design/acceleration.md](design/acceleration.md#xxh3).
 
 ## 5. Performance
@@ -140,32 +152,33 @@ default x86-64 flags, AVX2 a build with AVX2 enabled.
 
 With Clang 21 at 1 MiB: 20 107 MB/s portable, 32 658 SSE2, 46 907 AVX2. Up to 240 bytes the three builds run the
 same code, and 64 bytes are faster than 256 because they need no stripe loop. At 1 MiB AVX2 is 3.5× the
-portable loop and SSE2 1.6×. With `-march=native` (AVX2), MB/s at 20 B and 1 MiB: XXH32 6 831 and 8 743, XXH64 7 371 and 17 689, XXH3-128 7 827 and
-50 172.
+portable loop and SSE2 1.6×. With `-march=native` (AVX2), MB/s at 20 B and 1 MiB: XXH32 6 831 and 8 743, XXH64 8 186 and
+18 364, XXH3-128 7 827 and 50 172. With the same flags all four hashes match xxHash v0.8.4 from 64 bytes, except XXH3
+at 256 bytes (0.92×), and are faster at 20 bytes.
 
 ### 5.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
-GCC 14.3, `-O2`, one core, MB/s:
+GCC 14.3, `-O2` (the benchmark presets), one core, MB/s; AArch32 with `-march=armv8-a+crc -mfpu=neon-fp-armv8`:
 
 | Hash, build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| XXH32, AArch64 | 857 | 1 730 | 2 521 | 2 808 | 2 916 | 2 656 |
-| XXH64, AArch64 | 862 | 942 | 1 553 | 1 874 | 1 949 | 1 891 |
-| XXH3-64, AArch64 portable | 1 239 | 2 440 | 2 799 | 4 239 | 4 602 | 4 134 |
-| XXH3-64, AArch64 NEON | 1 239 | 2 440 | 2 799 | 4 315 | 4 698 | 4 148 |
-| XXH3-128, AArch64 portable | 804 | 1 795 | 2 035 | 3 865 | 4 431 | 4 129 |
-| XXH3-128, AArch64 NEON | 804 | 1 796 | 2 014 | 3 867 | 4 452 | 4 156 |
-| XXH32, AArch32 | 646 | 1 419 | 2 161 | 2 491 | 2 589 | 2 326 |
-| XXH64, AArch32 | 323 | 370 | 594 | 699 | 730 | 724 |
-| XXH3-64, AArch32 portable | 712 | 1 275 | 1 144 | 1 687 | 1 827 | 1 772 |
-| XXH3-64, AArch32 NEON | 712 | 1 275 | 1 596 | 2 561 | 2 826 | 2 640 |
-| XXH3-128, AArch32 portable | 448 | 883 | 928 | 1 588 | 1 783 | 1 778 |
-| XXH3-128, AArch32 NEON | 450 | 877 | 1 214 | 2 355 | 2 703 | 2 642 |
+| XXH32, AArch64 | 775 | 1 730 | 2 521 | 2 787 | 2 914 | 2 635 |
+| XXH64, AArch64 | 812 | 915 | 1 535 | 1 868 | 1 948 | 1 889 |
+| XXH3-64, AArch64 portable | 911 | 1 884 | 2 238 | 3 446 | 3 771 | 3 394 |
+| XXH3-64, AArch64 NEON | 910 | 1 885 | 2 643 | 4 280 | 4 704 | 4 113 |
+| XXH3-128, AArch64 portable | 875 | 1 866 | 1 864 | 3 275 | 3 699 | 3 415 |
+| XXH3-128, AArch64 NEON | 874 | 1 866 | 2 229 | 4 055 | 4 598 | 4 109 |
+| XXH32, AArch32 | 633 | 1 460 | 2 352 | 2 767 | 2 904 | 2 580 |
+| XXH64, AArch32 | 286 | 367 | 596 | 698 | 731 | 723 |
+| XXH3-64, AArch32 portable | 522 | 1 057 | 921 | 1 235 | 1 341 | 1 308 |
+| XXH3-64, AArch32 NEON | 522 | 1 057 | 1 544 | 2 494 | 2 807 | 2 652 |
+| XXH3-128, AArch32 portable | 442 | 881 | 794 | 1 192 | 1 321 | 1 307 |
+| XXH3-128, AArch32 NEON | 441 | 881 | 1 224 | 2 332 | 2 728 | 2 655 |
 
-On AArch64 the NEON kernel runs from 512 bytes and gains 2 % at 4 KiB over a portable loop that the compiler already
-schedules well; on AArch32 NEON is 1.5× faster from 1500 bytes. XXH64 needs 64-bit multiplications, which AArch32
-builds from 32-bit ones; there XXH32 is the fastest of the four up to 64 bytes and from 256 bytes on a par with
-XXH3-64 NEON.
+On AArch64 the NEON kernel is 1.18× the portable loop at 256 bytes and 1.25× at 4 KiB; on AArch32 NEON is 2× faster
+from 1500 bytes. XXH64 needs 64-bit multiplications, which AArch32 builds from 32-bit ones; there XXH32 is the fastest
+of the four up to 4 KiB. Against xxHash v0.8.4 built the same way, with `-O2` or `-O2 -mcpu=cortex-a72`, XXH3 is 1.0
+to 1.15× from 1500 bytes and 0.95 to 1.05× at 256 bytes; XXH32 and XXH64 match it from 256 bytes.
 
 ### 5.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 

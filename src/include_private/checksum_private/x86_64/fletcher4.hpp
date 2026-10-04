@@ -18,14 +18,9 @@ namespace checksum::fletcher4_detail {
 inline constexpr bool lane_kernel_available = true;
 
 #if defined(__AVX2__)
-// Where the kernel overtakes the word loop on a Core Ultra 7 155H, with GCC and Clang.
-inline constexpr std::size_t lane_kernel_minimum_size = 192;
-#else
-// The kernel overtakes the word loop on a Core Ultra 7 155H at 192 bytes with GCC and at 384 with Clang, which is 10 % slower at 256.
-inline constexpr std::size_t lane_kernel_minimum_size = 256;
-#endif
 
-#if defined(__AVX2__)
+// Where the kernel overtakes the word loop on a Core Ultra 7 155H, with GCC and Clang.
+inline constexpr std::size_t lane_kernel_minimum_size = 128;
 
 inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept {
   __m256i sum1 = _mm256_setzero_si256();
@@ -50,6 +45,9 @@ inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept
 }
 
 #else
+
+// Where the kernel overtakes the word loop on a Core Ultra 7 155H, with GCC and Clang; GCC's lanes are slower at 128 and 160 bytes.
+inline constexpr std::size_t lane_kernel_minimum_size = 192;
 
 // Lanes 0 and 1 in the low vectors, 2 and 3 in the high ones.
 inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept {

@@ -23,7 +23,7 @@ rules.
   `byte_range` concept, chunking of non-contiguous ranges) is in `checksum/byte_range.hpp`, with its details in
   `checksum::detail`. Headers shared only by `src/` go to `src/include_private/checksum_private/`.
 - Platform-specific code lives only in the architecture headers, one directory per architecture
-  (`checksum_private/x86_64/crc.hpp`, `arm/internet.hpp`, ...); `checksum_private/arch.hpp` selects the directory.
+  (`checksum_private/x86_64/crc.hpp`, `arm/internet.hpp`, ...); each `<algorithm>_arch.hpp` selects the directory.
 - `constexpr` first: parameter validation and table generation work at compile time, so named engines are constants
   in read-only data.
 - Bounded template bloat: no functions are instantiated per parameter set. Run-time loops are compiled once in

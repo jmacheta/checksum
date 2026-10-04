@@ -1,8 +1,8 @@
 #ifndef CHECKSUM_PRIVATE_X86_64_FLETCHER_HPP
 #define CHECKSUM_PRIVATE_X86_64_FLETCHER_HPP
 
-// x86-64 kernels of the Fletcher checksums and Adler-32 on 256-bit AVX2 vectors, else on 128-bit SSE2 vectors (the x86-64
-// baseline) for bytes and 16-bit values. Included only by fletcher_arch.hpp.
+// x86-64 kernels of the Fletcher checksums and Adler-32 on 256-bit AVX2 vectors (bytes with vpdpbusd under AVX-VNNI), else
+// on 128-bit SSE2 vectors (the x86-64 baseline) for bytes and 16-bit values. Included only by fletcher_arch.hpp.
 
 #include <checksum_private/generic/fletcher.hpp>
 
@@ -159,6 +159,57 @@ template <class Lane> std::uint64_t column_total(simd_vector low, simd_vector hi
   return total;
 }
 
+#if defined(__AVXVNNI__)
+// vpdpbusd weights four blocks by 127, 126, ..., 0 with one instruction per block, and adding the byte sums once at the end
+// makes the weights 128 .. 1; so previous gains the sums only every four blocks. Four accumulators hide the latency of
+// vpdpbusd. The last blocks weigh 31 .. 0 and count their previous per block.
+inline chunk_sums kernel<8>::sum(std::byte const *data, std::size_t blocks) noexcept {
+  simd_vector const zero = _mm256_setzero_si256();
+  simd_vector const first_weights = _mm256_setr_epi8(127, 126, 125, 124, 123, 122, 121, 120, 119, 118, 117, 116, 115, 114, 113, 112, 111, 110, 109,
+                                                     108, 107, 106, 105, 104, 103, 102, 101, 100, 99, 98, 97, 96);
+  simd_vector const second_weights = _mm256_setr_epi8(95, 94, 93, 92, 91, 90, 89, 88, 87, 86, 85, 84, 83, 82, 81, 80, 79, 78, 77, 76, 75, 74, 73, 72,
+                                                      71, 70, 69, 68, 67, 66, 65, 64);
+  simd_vector const third_weights = _mm256_setr_epi8(63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40,
+                                                     39, 38, 37, 36, 35, 34, 33, 32);
+  simd_vector const fourth_weights =
+      _mm256_setr_epi8(31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+  // The byte sums of psadbw are 64-bit lanes.
+  simd_vector sum = zero;
+  simd_vector group_previous = zero;
+  simd_vector weighted = zero;
+  simd_vector second_weighted = zero;
+  simd_vector third_weighted = zero;
+  simd_vector fourth_weighted = zero;
+  for(; blocks >= 4; blocks -= 4, data += 4 * block_size) {
+    simd_vector const first = load_vector(data);
+    simd_vector const second = load_vector(data + block_size);
+    simd_vector const third = load_vector(data + (2 * block_size));
+    simd_vector const fourth = load_vector(data + (3 * block_size));
+    group_previous = _mm256_add_epi64(group_previous, sum);
+    sum = _mm256_add_epi64(
+        sum, _mm256_add_epi64(_mm256_add_epi64(byte_sums(first), byte_sums(second)), _mm256_add_epi64(byte_sums(third), byte_sums(fourth))));
+    weighted = _mm256_dpbusd_avx_epi32(weighted, first, first_weights);
+    second_weighted = _mm256_dpbusd_avx_epi32(second_weighted, second, second_weights);
+    third_weighted = _mm256_dpbusd_avx_epi32(third_weighted, third, third_weights);
+    fourth_weighted = _mm256_dpbusd_avx_epi32(fourth_weighted, fourth, fourth_weights);
+  }
+  weighted = add_lanes32(add_lanes32(weighted, second_weighted), add_lanes32(third_weighted, fourth_weighted));
+  simd_vector previous = zero;
+  for(; blocks != 0; --blocks, data += block_size) {
+    simd_vector const value = load_vector(data);
+    previous = _mm256_add_epi64(previous, sum);
+    sum = _mm256_add_epi64(sum, byte_sums(value));
+    weighted = _mm256_dpbusd_avx_epi32(weighted, value, fourth_weights);
+  }
+  // In 64-bit lanes: 128 * group_previous + 32 * previous + both halves of weighted + sum, then both totals at once.
+  simd_vector const total =
+      _mm256_add_epi64(_mm256_add_epi64(_mm256_slli_epi64(group_previous, 7), _mm256_slli_epi64(previous, 5)),
+                       _mm256_add_epi64(_mm256_add_epi64(_mm256_srli_epi64(weighted, 32), _mm256_blend_epi32(weighted, zero, 0xAA)), sum));
+  simd_vector const pairs = _mm256_add_epi64(_mm256_unpacklo_epi64(sum, total), _mm256_unpackhi_epi64(sum, total));
+  __m128i const totals = _mm_add_epi64(_mm256_castsi256_si128(pairs), _mm256_extracti128_si256(pairs, 1));
+  return {.sum = static_cast<std::uint64_t>(_mm_cvtsi128_si64(totals)), .weighted = static_cast<std::uint64_t>(_mm_extract_epi64(totals, 1))};
+}
+#else
 // Per block: previous += sum, so that previous ends as the sum over blocks of the byte sums before each block. The byte sums
 // stay below 2^32, so their 64-bit lanes of psadbw add as 32-bit lanes.
 inline chunk_sums kernel<8>::sum(std::byte const *data, std::size_t blocks) noexcept {
@@ -174,6 +225,7 @@ inline chunk_sums kernel<8>::sum(std::byte const *data, std::size_t blocks) noex
   return {.sum = lane_total<std::uint32_t>(sum),
           .weighted = (block_size * lane_total<std::uint32_t>(previous)) + lane_total<std::uint32_t>(weighted)};
 }
+#endif
 
 // Column sums of the values, weighted at the end of the chunk; previous as for bytes.
 inline chunk_sums kernel<16>::sum(std::byte const *data, std::size_t blocks) noexcept {

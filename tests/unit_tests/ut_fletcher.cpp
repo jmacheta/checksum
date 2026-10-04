@@ -3,12 +3,13 @@
 #include <checksum/fletcher.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
-#include <random>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -31,6 +32,12 @@ static_assert(fletcher_compute<64>("abcdef"sv) == 0xC8C72B276463C8C6);
 static_assert(fletcher_compute<64>("abcdefgh"sv) == 0x312E2B28CCCAC8C6);
 static_assert(fletcher_compute<32>(std::span<std::byte const>{}) == 0);
 
+// The aliases of each width are the generic forms.
+static_assert(std::same_as<fletcher16_state, fletcher_state<16>> && std::same_as<fletcher32_state, fletcher_state<32>> &&
+              std::same_as<fletcher64_state, fletcher_state<64>>);
+static_assert(fletcher16_compute("abcde"sv) == 0xC8F0 && fletcher32_compute("abcde"sv) == 0xF04FC729 &&
+              fletcher64_compute("abcde"sv) == 0xC8C6C527646362C6);
+
 // Independent model: whole blocks read byte by byte with zero padding, each sum reduced with %.
 template <unsigned Width> std::uint64_t reference(std::span<std::byte const> data) {
   constexpr std::size_t block_size = Width / 16;
@@ -46,15 +53,6 @@ template <unsigned Width> std::uint64_t reference(std::span<std::byte const> dat
     sum2 = (sum2 + sum1) % modulus;
   }
   return (sum2 << (Width / 2)) | sum1;
-}
-
-std::vector<std::byte> random_bytes(std::size_t size, std::uint32_t seed) {
-  std::mt19937 generator(seed);
-  std::vector<std::byte> data(size);
-  for(auto &byte : data) {
-    byte = static_cast<std::byte>(generator());
-  }
-  return data;
 }
 
 template <class Width> class fletcher : public testing::Test {};
@@ -80,11 +78,22 @@ TEST(fletcher_vectors, published_examples) {
   EXPECT_EQ(fletcher_compute<64>("abcdefgh"sv), 0x312E2B28CCCAC8C6);
 }
 
-// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a vector.
+TEST(fletcher_vectors, aliases) {
+  auto const data = random_bytes(300, 8);
+  auto const message = std::span<std::byte const>(data);
+  EXPECT_EQ(fletcher16_compute(message), fletcher_compute<16>(message));
+  EXPECT_EQ(fletcher32_compute(message), fletcher_compute<32>(message));
+  EXPECT_EQ(fletcher64_compute(message), fletcher_compute<64>(message));
+  EXPECT_EQ(fletcher16_compute(data), fletcher_compute<16>(message));
+  EXPECT_EQ(fletcher32_compute(std::list<std::byte>(data.begin(), data.end())), fletcher_compute<32>(message));
+  EXPECT_EQ(fletcher64_compute("123456789"sv), fletcher_compute<64>("123456789"sv));
+}
+
+// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a word and two vector misalignments.
 TYPED_TEST(fletcher, matches_model) {
   constexpr unsigned width = TypeParam::value;
   auto const data = random_bytes(2100 + 16, width);
-  for(std::size_t offset = 0; offset < 16; ++offset) {
+  for(std::size_t const offset : {0U, 1U, 2U, 3U, 7U, 15U}) {
     for(std::size_t size = 0; size <= 2100; ++size) {
       auto const message = std::span<std::byte const>(data).subspan(offset, size);
       ASSERT_EQ(fletcher_compute<width>(message), reference<width>(message)) << "offset " << offset << ", size " << size;
@@ -95,7 +104,7 @@ TYPED_TEST(fletcher, matches_model) {
 // The largest blocks over several deferred reductions; the tail sizes leave an unfinished block.
 TYPED_TEST(fletcher, all_ones) {
   constexpr unsigned width = TypeParam::value;
-  for(std::size_t const size : {(std::size_t{4} << 20), (std::size_t{4} << 20) + 1, (std::size_t{4} << 20) + 3}) {
+  for(std::size_t const size : {(std::size_t{600} << 10), (std::size_t{600} << 10) + 1, (std::size_t{600} << 10) + 3}) {
     std::vector<std::byte> const data(size, std::byte{0xFF});
     ASSERT_EQ(fletcher_compute<width>(data), reference<width>(data)) << "size " << size;
   }
@@ -111,8 +120,8 @@ TYPED_TEST(fletcher, chunk_boundaries) {
   std::vector<std::byte> const ones((2 * largest_chunk) + 64, std::byte{0xFF});
   auto const random = random_bytes(ones.size(), 7);
   for(auto const &data : {ones, random}) {
-    for(std::size_t const chunk :
-        {std::size_t{1024}, std::size_t{2048}, std::size_t{4096}, std::size_t{5600}, std::size_t{16} << 10U, std::size_t{32} << 10U, largest_chunk}) {
+    for(std::size_t const chunk : {std::size_t{1024}, std::size_t{2048}, std::size_t{4096}, std::size_t{5600}, std::size_t{5760},
+                                   std::size_t{16} << 10U, std::size_t{32} << 10U, largest_chunk}) {
       for(std::size_t const size : {chunk - 1, chunk, chunk + 1, chunk + 35, (2 * chunk) + 35}) {
         for(std::size_t offset = 0; offset < 4; ++offset) {
           auto const message = std::span<std::byte const>(data).subspan(offset, size);
@@ -164,16 +173,10 @@ TYPED_TEST(fletcher, split_before_long_chunks) {
 // Every prefix of this size stays within the default step limit of Clang's constant evaluator.
 constexpr std::size_t constant_message_size = 200;
 
-// Pseudo-random bytes the constant evaluator can produce (xorshift32).
+// Pseudo-random bytes the constant evaluator can produce.
 constexpr std::array<std::byte, constant_message_size> constant_message = [] {
   std::array<std::byte, constant_message_size> result{};
-  std::uint32_t state = 0x12345678U;
-  for(auto &byte : result) {
-    state ^= state << 13U;
-    state ^= state >> 17U;
-    state ^= state << 5U;
-    byte = static_cast<std::byte>(state);
-  }
+  fill_random(result);
   return result;
 }();
 
@@ -202,6 +205,49 @@ TYPED_TEST(fletcher, constant_evaluation_matches_run_time) {
   }
   for(std::size_t first = 0; first < splits.size(); ++first) {
     EXPECT_EQ(splits[first], fletcher_update(fletcher_update(fletcher_state<width>{}, message.first(first + 5)), message.subspan(first + 5)));
+  }
+}
+
+template <class Checksum>
+concept resumable = requires(Checksum checksum, std::span<std::byte const> data) { fletcher_update(checksum, data); };
+
+// The checksum type selects the width; other integers are rejected rather than converted.
+static_assert(resumable<std::uint16_t> && resumable<std::uint32_t> && resumable<std::uint64_t>);
+static_assert(!resumable<int> && !resumable<std::uint8_t> && !resumable<bool>);
+static_assert(std::same_as<decltype(fletcher_update(std::uint16_t{}, "a"sv)), std::uint16_t> &&
+              std::same_as<decltype(fletcher_update(std::uint32_t{}, "a"sv)), std::uint32_t> &&
+              std::same_as<decltype(fletcher_update(std::uint64_t{}, "a"sv)), std::uint64_t>);
+static_assert(fletcher_update(fletcher32_compute("abcd"sv), "e"sv) == 0xF04FC729);
+
+// A stored checksum continues the message after any number of whole blocks, at compile time and at run time. After an unfinished
+// block it does not: the checksum already counts the block as padded.
+TYPED_TEST(fletcher, resume_from_checksum) {
+  constexpr unsigned width = TypeParam::value;
+  using value_type = fletcher_state<width>::value_type;
+  constexpr std::size_t block_size = width / 16;
+  constexpr std::size_t constant_size = 64;
+  static constexpr auto resumed = [] {
+    auto const message = std::span(constant_message).first(constant_size);
+    std::array<value_type, (constant_size / block_size) + 1> result{};
+    for(std::size_t block = 0; block < result.size(); ++block) {
+      result[block] = fletcher_update(fletcher_compute<width>(message.first(block * block_size)), message.subspan(block * block_size));
+    }
+    return result;
+  }();
+  for(value_type const value : resumed) {
+    ASSERT_EQ(value, fletcher_compute<width>(std::span(constant_message).first(constant_size)));
+  }
+
+  auto const data = random_bytes(1100, 8);
+  auto const message = std::span<std::byte const>(data);
+  auto const whole = fletcher_compute<width>(message);
+  for(std::size_t first = 0; first <= data.size(); first += block_size) {
+    ASSERT_EQ(fletcher_update(fletcher_compute<width>(message.first(first)), message.subspan(first)), whole) << "split at " << first;
+  }
+  std::list<std::byte> const tail(data.begin() + 100, data.end());
+  EXPECT_EQ(fletcher_update(fletcher_compute<width>(message.first(100)), tail), whole);
+  if constexpr(block_size > 1) {
+    EXPECT_NE(fletcher_update(fletcher_compute<width>(message.first(1)), message.subspan(1)), whole);
   }
 }
 

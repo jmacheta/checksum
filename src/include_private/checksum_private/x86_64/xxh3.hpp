@@ -4,6 +4,10 @@
 // SSE2 and AVX2 kernels of the XXH3 stripe loop: SSE2 is part of x86-64, AVX2 runs where the flags enable it. Included only by
 // xxh3_arch.hpp.
 
+#if !defined(__SSE2__)
+#include <checksum_private/generic/xxh3.hpp>
+#else
+
 #include <immintrin.h>
 
 #include <array>
@@ -118,5 +122,7 @@ inline void avx2_kernel::scramble(lanes &values, std::byte const *secret) noexce
 // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 
 } // namespace checksum::xxh3_detail
+
+#endif
 
 #endif // CHECKSUM_PRIVATE_X86_64_XXH3_HPP

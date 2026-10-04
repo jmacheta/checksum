@@ -5,13 +5,13 @@
 #include <fletcher4_reference_vectors.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <list>
-#include <random>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -26,7 +26,7 @@ constexpr std::size_t constant_message_size = 200;
 
 constexpr std::array<std::byte, constant_message_size> constant_message = [] {
   std::array<std::byte, constant_message_size> result{};
-  fletcher4_test::fill_message(result);
+  fill_random(result);
   return result;
 }();
 
@@ -55,18 +55,9 @@ fletcher4_value reference(std::span<std::byte const> data) {
   return {a, b, c, d};
 }
 
-std::vector<std::byte> random_bytes(std::size_t size, std::uint32_t seed) {
-  std::mt19937 generator(seed);
-  std::vector<std::byte> data(size);
-  for(auto &byte : data) {
-    byte = static_cast<std::byte>(generator());
-  }
-  return data;
-}
-
 TEST(fletcher4, reference_vectors) {
   std::vector<std::byte> data(fletcher4_test::long_message_size);
-  fletcher4_test::fill_message(data);
+  fill_random(data);
   auto const message = std::span<std::byte const>(data);
   for(std::size_t words = 0; words < fletcher4_test::prefix_count; ++words) {
     ASSERT_EQ(fletcher4_compute(message.first(4 * words)), fletcher4_test::prefixes[words]) << "words " << words;

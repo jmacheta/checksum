@@ -3,6 +3,7 @@
 #include <checksum/fletcher4.hpp>
 
 #include <benchmark/benchmark.h>
+#include <test_data.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -12,14 +13,7 @@
 namespace {
 
 void fletcher4(benchmark::State &state) {
-  std::vector<std::byte> data(static_cast<std::size_t>(state.range(0)));
-  std::uint32_t seed = 0x12345678U; // xorshift32
-  for(auto &byte : data) {
-    seed ^= seed << 13U;
-    seed ^= seed >> 17U;
-    seed ^= seed << 5U;
-    byte = static_cast<std::byte>(seed);
-  }
+  std::vector<std::byte> const data = random_bytes(static_cast<std::size_t>(state.range(0)));
   std::span<std::byte const> message = data;
   for(auto _ : state) {
     benchmark::DoNotOptimize(message);

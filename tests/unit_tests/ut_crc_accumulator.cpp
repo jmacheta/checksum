@@ -70,7 +70,7 @@ static_assert(value_is_non_destructive());
 
 // Every byte split of a 64-byte message, every bit split of its first 64 bits, and bit-by-bit updates equal compute().
 TEST(CrcAccumulator, EqualsComputeForEverySplit) {
-  auto const message = crc_test::random_bytes(64, 99);
+  auto const message = random_bytes(64, 99);
   std::span<std::byte const> const data(message);
   for(crc_model const &model : models) {
     for_each_engine(model, [&](auto const &engine) {

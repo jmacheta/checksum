@@ -3,12 +3,13 @@
 #include <checksum/internet.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
-#include <random>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -41,15 +42,6 @@ std::uint16_t reference(std::span<std::byte const> data) {
   }
   auto const sum = total == 0 ? 0U : static_cast<unsigned>(((total - 1) % 0xFFFFU) + 1);
   return static_cast<std::uint16_t>(~sum);
-}
-
-std::vector<std::byte> random_bytes(std::size_t size, std::uint32_t seed) {
-  std::mt19937 generator(seed);
-  std::vector<std::byte> data(size);
-  for(auto &byte : data) {
-    byte = static_cast<std::byte>(generator());
-  }
-  return data;
 }
 
 static_assert(internet_finalize(internet_update({}, rfc1071_example)) == 0x220D);
@@ -124,6 +116,13 @@ TEST(internet, matches_model_with_carries) {
     EXPECT_EQ(internet_compute(std::span(ones).subspan(offset, (1 << 20) + 1)), 0x00FF) << "offset " << offset;
   }
   EXPECT_EQ(internet_compute(std::span(ones).first((5 << 20) + 1)), 0x00FF);
+  // Every length of the portable loop and its masked tail, where every word carries out.
+  for(std::size_t offset = 0; offset < 2; ++offset) {
+    for(std::size_t size = 0; size <= 600; ++size) {
+      auto const message = std::span(ones).subspan(offset, size);
+      ASSERT_EQ(internet_compute(message), reference(message)) << "offset " << offset << ", size " << size;
+    }
+  }
 }
 
 TEST(internet, split_anywhere) {
@@ -153,16 +152,10 @@ TEST(internet, split_before_long_chunks) {
 
 constexpr std::size_t constant_message_size = 300;
 
-// Pseudo-random bytes the constant evaluator can produce (xorshift32).
+// Pseudo-random bytes the constant evaluator can produce.
 constexpr std::array<std::byte, constant_message_size> constant_message = [] {
   std::array<std::byte, constant_message_size> result{};
-  std::uint32_t state = 0x12345678U;
-  for(auto &byte : result) {
-    state ^= state << 13U;
-    state ^= state >> 17U;
-    state ^= state << 5U;
-    byte = static_cast<std::byte>(state);
-  }
+  fill_random(result);
   return result;
 }();
 
@@ -182,6 +175,47 @@ TEST(internet, constant_evaluation_matches_run_time) {
     ASSERT_EQ(prefixes[size], internet_compute(message.first(size))) << "size " << size;
   }
   EXPECT_EQ(split, internet_compute(message));
+}
+
+template <class Checksum>
+concept resumable = requires(Checksum checksum, std::span<std::byte const> data) { internet_update(checksum, data); };
+
+// Only a std::uint16_t is a checksum; {} stays the empty state.
+static_assert(resumable<std::uint16_t> && !resumable<int> && !resumable<std::uint32_t> && !resumable<bool>);
+static_assert(std::same_as<decltype(internet_update({}, rfc1071_example)), internet_state>);
+static_assert(internet_update(internet_compute(std::span(rfc1071_example).first(4)), std::span(rfc1071_example).subspan(4)) == 0x220D);
+
+// A stored checksum continues the message after any even number of bytes, at compile time and at run time. After an odd number it
+// does not: the checksum does not record that the next byte is the low byte of a word.
+TEST(internet, resume_from_checksum) {
+  constexpr std::size_t constant_size = 64;
+  static constexpr auto resumed = [] {
+    auto const message = std::span(constant_message).first(constant_size);
+    std::array<std::uint16_t, (constant_size / 2) + 1> result{};
+    for(std::size_t word = 0; word < result.size(); ++word) {
+      result[word] = internet_update(internet_compute(message.first(2 * word)), message.subspan(2 * word));
+    }
+    return result;
+  }();
+  for(std::uint16_t const value : resumed) {
+    ASSERT_EQ(value, internet_compute(std::span(constant_message).first(constant_size)));
+  }
+
+  auto const data = random_bytes(1101, 8);
+  auto const message = std::span<std::byte const>(data);
+  std::uint16_t const whole = reference(message);
+  for(std::size_t first = 0; first <= data.size(); first += 2) {
+    ASSERT_EQ(internet_update(internet_compute(message.first(first)), message.subspan(first)), whole) << "split at " << first;
+  }
+  std::list<std::byte> const tail(data.begin() + 100, data.end());
+  EXPECT_EQ(internet_update(internet_compute(message.first(100)), tail), whole);
+  EXPECT_NE(internet_update(internet_compute(message.first(1)), message.subspan(1)), whole);
+
+  // Both zeros of one's complement: 0xFFFF after only zero bytes, 0 after a message that sums to 0xFFFF.
+  std::array<std::byte, 4> const zeros{};
+  EXPECT_EQ(internet_update(internet_compute(zeros), message), whole);
+  EXPECT_EQ(internet_update(std::uint16_t{0}, zeros), 0);
+  EXPECT_EQ(internet_update(std::uint16_t{0xFFFF}, zeros), 0xFFFF);
 }
 
 TEST(internet, byte_ranges) {
