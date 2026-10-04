@@ -139,6 +139,10 @@ template <unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::spa
 template <unsigned Width>
 constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::uint64_t length, std::span<std::byte const> tail) noexcept;
 
+// The x86_32 hash of data of at least one block, defined in src/murmur3/block_loop.cpp. Its lane is a local, which stays in a register:
+// through block_loop() it goes through memory.
+std::uint32_t run_time_hash_32(std::span<std::byte const> data, std::uint32_t seed) noexcept;
+
 } // namespace checksum::murmur3_detail
 
 ///@}
@@ -285,6 +289,13 @@ template <unsigned Width> constexpr murmur3_state<Width>::value_type murmur3_fin
 
 template <unsigned Width> constexpr murmur3_state<Width>::value_type murmur3_compute(std::span<std::byte const> data, std::uint32_t seed) noexcept {
   std::size_t const whole = data.size() - (data.size() % murmur3_detail::block_size<Width>);
+  if constexpr(Width == 32) {
+    if !consteval {
+      if(whole != 0) {
+        return murmur3_detail::run_time_hash_32(data, seed);
+      }
+    }
+  }
   murmur3_detail::lane_array<Width> lanes = murmur3_detail::initial_lanes<Width>(seed);
   if(whole != 0) {
     murmur3_detail::fold<Width>(lanes, data.first(whole));
