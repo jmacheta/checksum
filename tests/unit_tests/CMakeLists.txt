@@ -14,7 +14,7 @@ target_sources(
           ut_crc_vectors.cpp
           ut_fletcher.cpp
           ut_fletcher4.cpp
-          ut_internet_checksum.cpp
+          ut_internet.cpp
           ut_murmur3.cpp
           ut_xxh3.cpp
           ut_xxhash.cpp
