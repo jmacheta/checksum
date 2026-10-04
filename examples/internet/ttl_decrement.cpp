@@ -1,5 +1,5 @@
 // A router decrements the TTL of an IPv4 header and updates its checksum without summing the header again (RFC 1624).
-// The update starts from the complemented old checksum, folds the complemented old field, then the new field.
+// It continues from the old checksum with the complemented old field, then with the new field.
 
 #include <checksum/internet.hpp>
 
@@ -17,10 +17,8 @@ void decrement_ttl(std::span<std::byte, 20> header) {
   auto const old_checksum = static_cast<std::uint16_t>((std::to_integer<unsigned>(header[10]) << 8U) | std::to_integer<unsigned>(header[11]));
   header[8] = static_cast<std::byte>(std::to_integer<unsigned>(header[8]) - 1U);
 
-  checksum::internet_state state{.sum = static_cast<std::uint16_t>(~old_checksum)};
-  state = checksum::internet_update(state, old_field);
-  state = checksum::internet_update(state, header.subspan<8, 2>());
-  std::uint16_t const value = checksum::internet_finalize(state);
+  std::uint16_t const without_old_field = checksum::internet_update(old_checksum, old_field);
+  std::uint16_t const value = checksum::internet_update(without_old_field, header.subspan<8, 2>());
   header[10] = static_cast<std::byte>(value >> 8U);
   header[11] = static_cast<std::byte>(value & 0xFFU);
 }
