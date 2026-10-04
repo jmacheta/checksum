@@ -1,7 +1,7 @@
 #ifndef CHECKSUM_TESTS_FLETCHER4_REFERENCE_VECTORS_HPP
 #define CHECKSUM_TESTS_FLETCHER4_REFERENCE_VECTORS_HPP
 
-// fletcher4 of every prefix of whole words of a 1024-byte message and of a long_message_size-byte one, both from fill_message().
+// fletcher4 of every prefix of whole words of a 1024-byte message and of a long_message_size-byte one, both from fill_random().
 // Computed with fletcher_4_scalar_native of OpenZFS module/zcommon/zfs_fletcher.c on a little-endian host.
 
 #include <checksum/fletcher4.hpp>
@@ -16,17 +16,6 @@ namespace fletcher4_test {
 inline constexpr std::size_t prefix_count = 257;
 
 inline constexpr std::size_t long_message_size = (std::size_t{1} << 20U) + 4U;
-
-// Fills data with the message: the low byte of each xorshift32 step from 0x12345678.
-constexpr void fill_message(std::span<std::byte> data) {
-  std::uint32_t state = 0x12345678U;
-  for(auto &byte : data) {
-    state ^= state << 13U;
-    state ^= state >> 17U;
-    state ^= state << 5U;
-    byte = static_cast<std::byte>(state);
-  }
-}
 
 // prefixes[words]: the checksum of the first 4 * words bytes.
 inline constexpr std::array<checksum::fletcher4_value, prefix_count> prefixes{{

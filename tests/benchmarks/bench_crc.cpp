@@ -4,6 +4,7 @@
 #include <checksum/crc_catalog.hpp>
 
 #include <benchmark/benchmark.h>
+#include <test_data.hpp>
 #include <zlib.h>
 
 #include <array>
@@ -22,17 +23,7 @@ using namespace checksum;
 constexpr std::array<std::size_t, 6> sizes{16, 32, 64, 256, 4096, std::size_t{1} << 20};
 
 std::vector<std::byte> const &input() {
-  static std::vector<std::byte> const data = [] {
-    std::vector<std::byte> bytes(sizes.back());
-    std::uint32_t state = 0x12345678U; // xorshift32: fixed, incompressible-looking content
-    for(auto &byte : bytes) {
-      state ^= state << 13U;
-      state ^= state >> 17U;
-      state ^= state << 5U;
-      byte = static_cast<std::byte>(state);
-    }
-    return bytes;
-  }();
+  static std::vector<std::byte> const data = random_bytes(sizes.back());
   return data;
 }
 

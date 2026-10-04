@@ -3,6 +3,7 @@
 #include <checksum/adler32.hpp>
 
 #include <benchmark/benchmark.h>
+#include <test_data.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -12,14 +13,7 @@
 namespace {
 
 void adler32(benchmark::State &state) {
-  std::vector<std::byte> data(static_cast<std::size_t>(state.range(0) + state.range(1)));
-  std::uint32_t seed = 0x12345678U; // xorshift32
-  for(auto &byte : data) {
-    seed ^= seed << 13U;
-    seed ^= seed >> 17U;
-    seed ^= seed << 5U;
-    byte = static_cast<std::byte>(seed);
-  }
+  std::vector<std::byte> const data = random_bytes(static_cast<std::size_t>(state.range(0) + state.range(1)));
   auto message = std::span<std::byte const>(data).subspan(static_cast<std::size_t>(state.range(1)));
   for(auto _ : state) {
     benchmark::DoNotOptimize(message);

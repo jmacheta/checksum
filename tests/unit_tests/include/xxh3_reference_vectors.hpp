@@ -1,7 +1,7 @@
 #ifndef CHECKSUM_TESTS_XXH3_REFERENCE_VECTORS_HPP
 #define CHECKSUM_TESTS_XXH3_REFERENCE_VECTORS_HPP
 
-// XXH3-64 and XXH3-128 of the message of fill_message(): every prefix up to 300 bytes, the block_sizes prefixes, a digest of the
+// XXH3-64 and XXH3-128 of the message of fill_random(): every prefix up to 300 bytes, the block_sizes prefixes, a digest of the
 // prefixes of 301 to 1100 bytes, a split_message_size-byte message and a long_message_size-byte one for three seeds each, and the
 // edge_sizes prefixes for the edge seeds. Computed with XXH3_64bits_withSeed() and XXH3_128bits_withSeed() of the reference
 // implementation, xxhash.h 0.8.4 of github.com/Cyan4973/xxHash.

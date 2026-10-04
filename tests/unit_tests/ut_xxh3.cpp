@@ -5,6 +5,7 @@
 #include <xxhash_reference_vectors.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <algorithm>
 #include <array>
@@ -34,7 +35,7 @@ constexpr std::size_t prefix_limit = xxhash_test::prefix_count - 1;
 // The first Size bytes of the message of the reference vectors.
 template <std::size_t Size> constexpr std::array<std::byte, Size> make_message() {
   std::array<std::byte, Size> result{};
-  xxhash_test::fill_message(result);
+  fill_random(result);
   return result;
 }
 
@@ -303,7 +304,7 @@ TYPED_TEST(xxh3, byte_ranges) {
 TYPED_TEST(xxh3, long_message) {
   constexpr unsigned width = TypeParam::value;
   std::vector<std::byte> data(xxhash_test::long_message_size);
-  xxhash_test::fill_message(data);
+  fill_random(data);
   for(auto const &set : vectors<width>()) {
     EXPECT_EQ(xxh3_compute<width>(data, set.seed), set.long_message) << "seed " << set.seed;
     EXPECT_EQ(chunked<width>(data, 4099, set.seed), set.long_message) << "seed " << set.seed;

@@ -3,12 +3,12 @@
 #include <checksum/adler32.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <list>
-#include <random>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -35,15 +35,6 @@ std::uint32_t reference(std::span<std::byte const> data, std::uint32_t sum1 = 1,
     sum2 = (sum2 + sum1) % modulus;
   }
   return (sum2 << 16U) | sum1;
-}
-
-std::vector<std::byte> random_bytes(std::size_t size, std::uint32_t seed) {
-  std::mt19937 generator(seed);
-  std::vector<std::byte> data(size);
-  for(auto &byte : data) {
-    byte = static_cast<std::byte>(generator());
-  }
-  return data;
 }
 
 TEST(adler32, published_examples) {
@@ -128,16 +119,10 @@ TEST(adler32, split_before_long_chunks) {
 // Every prefix of this size stays within the default step limit of Clang's constant evaluator.
 constexpr std::size_t constant_message_size = 200;
 
-// Pseudo-random bytes the constant evaluator can produce (xorshift32).
+// Pseudo-random bytes the constant evaluator can produce.
 constexpr std::array<std::byte, constant_message_size> constant_message = [] {
   std::array<std::byte, constant_message_size> result{};
-  std::uint32_t state = 0x12345678U;
-  for(auto &byte : result) {
-    state ^= state << 13U;
-    state ^= state >> 17U;
-    state ^= state << 5U;
-    byte = static_cast<std::byte>(state);
-  }
+  fill_random(result);
   return result;
 }();
 

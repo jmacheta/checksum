@@ -4,6 +4,7 @@
 #include <xxhash_reference_vectors.hpp>
 
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <algorithm>
 #include <array>
@@ -25,7 +26,7 @@ using xxhash_test::xxhash64_vectors;
 
 constexpr std::array<std::byte, xxhash_test::prefix_count - 1> message = [] {
   std::array<std::byte, xxhash_test::prefix_count - 1> result{};
-  xxhash_test::fill_message(result);
+  fill_random(result);
   return result;
 }();
 
@@ -155,7 +156,7 @@ TYPED_TEST(xxhash, byte_ranges) {
 TYPED_TEST(xxhash, long_message) {
   constexpr unsigned width = TypeParam::value;
   std::vector<std::byte> data(xxhash_test::long_message_size);
-  xxhash_test::fill_message(data);
+  fill_random(data);
   for(auto const &set : vectors<width>()) {
     EXPECT_EQ(xxhash_compute<width>(data, set.seed), set.long_message) << "seed " << set.seed;
     EXPECT_EQ(chunked<width>(data, 4099, set.seed), set.long_message) << "seed " << set.seed;
