@@ -25,7 +25,8 @@
                 "CMAKE_CXX_FLAGS_DEBUG": "-g -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern"
             },
             "environment": {
-                "CHECKSUM_WARNINGS": "-Wall -Wextra -Wpedantic -Wunused-parameter -Winit-self -Wcast-align -Wconversion -Wnull-dereference -Wduplicated-cond -Wsign-conversion -Wlogical-op -Wno-psabi",
+                "CHECKSUM_WARNINGS": "-Wall -Wextra -Wpedantic -Wunused-parameter -Winit-self -Wcast-align -Wconversion -Wnull-dereference -Wsign-conversion -Wno-psabi $env{CHECKSUM_GCC_WARNINGS}",
+                "CHECKSUM_GCC_WARNINGS": "-Wduplicated-cond -Wlogical-op",
                 "CFLAGS": "$env{CHECKSUM_WARNINGS} $env{CHECKSUM_SECTIONS} $env{CHECKSUM_EXTRA_CFLAGS}",
                 "CXXFLAGS": "$env{CHECKSUM_WARNINGS} $env{CHECKSUM_SECTIONS} $env{CHECKSUM_EXTRA_CXXFLAGS}",
                 "CHECKSUM_EXTRA_CFLAGS": "",
@@ -49,6 +50,9 @@
             "inherits": "gcc-clang-common",
             "cacheVariables": {
                 "CMAKE_CXX_COMPILER": "clang++"
+            },
+            "environment": {
+                "CHECKSUM_GCC_WARNINGS": ""
             }
         }
     ],
