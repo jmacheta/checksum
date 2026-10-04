@@ -1,7 +1,7 @@
 #ifndef CHECKSUM_PRIVATE_FLETCHER_ARCH_HPP
 #define CHECKSUM_PRIVATE_FLETCHER_ARCH_HPP
 
-// CPU kernels of the Fletcher checksums and Adler-32, from the directory arch.hpp selects; without the instruction-set
+// CPU kernels of the Fletcher checksums and Adler-32, from the directory of the target architecture; without the instruction-set
 // extensions, or with CHECKSUM_ACCELERATION defined to 0, the portable loops sum everything. kernel<Bits> sums
 // little-endian values of Bits bits (8 for Fletcher-16 and Adler-32, 16 for Fletcher-32, 32 for Fletcher-64), and each
 // architecture header specializes it with:
@@ -10,8 +10,6 @@
 // - minimum_size: shortest input for the kernel (max: never)
 // - for kernel<8> also alignment: sum_chunks() of fletcher_loops.hpp adds single bytes up to an address of that alignment
 //   before the kernel
-
-#include <checksum_private/arch.hpp>
 
 #include <cstdint>
 
@@ -25,9 +23,11 @@ struct chunk_sums {
 
 } // namespace checksum::fletcher_detail
 
-#if defined(CHECKSUM_ARCH_X86_64)
+#if defined(CHECKSUM_ACCELERATION) && !CHECKSUM_ACCELERATION
+#include <checksum_private/generic/fletcher.hpp>
+#elif defined(__x86_64__)
 #include <checksum_private/x86_64/fletcher.hpp>
-#elif defined(CHECKSUM_ARCH_ARM)
+#elif defined(__aarch64__) || defined(__arm__)
 #include <checksum_private/arm/fletcher.hpp>
 #else
 #include <checksum_private/generic/fletcher.hpp>

@@ -8,9 +8,8 @@ user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#
 
 ## Rules
 
-- **Compile time only.** `checksum_private/arch.hpp` selects one directory per architecture (`x86_64/`, `arm/`,
-  `riscv64/`, `generic/`), and each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`, `fletcher_arch.hpp`, `xxh3_arch.hpp`,
-  `fletcher4_arch.hpp`) includes its header from there. That header checks the macros the compiler predefines for the flags of each translation unit
+- **Compile time only.** Each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`, `fletcher_arch.hpp`, `xxh3_arch.hpp`,
+  `fletcher4_arch.hpp`) selects one directory per architecture (`x86_64/`, `arm/`, `riscv64/`, `generic/`) and includes its header from there. That header checks the macros the compiler predefines for the flags of each translation unit
   (`__PCLMUL__`, `__ARM_FEATURE_CRC32`, `__riscv_vector`, ...); without them it uses no kernel, mostly by including the
   generic one. The generic directory also covers `CHECKSUM_ACCELERATION=OFF`. No run-time CPU detection, no target attributes, no static state; the build never
   adds instruction-set flags.
