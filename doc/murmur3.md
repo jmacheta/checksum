@@ -70,9 +70,10 @@ the unused bytes of the buffer are ignored.
 
 MurmurHash3 has no kernel, on any target. Every block updates the hash lanes through a rotation, a multiplication and
 an addition of their previous values, and in MurmurHash3_x64_128 the second lane also takes the first lane of the same
-block. Blocks cannot be processed in parallel, so vector instructions have nothing to work on. The one run-time
-function, the block loop, is compiled once per width in `src/murmur3/block_loop.cpp`; MurmurHash3_x64_128 inputs under
-256 bytes fold inline instead, which saves the call.
+block. Blocks cannot be processed in parallel, so vector instructions have nothing to work on. The block loop is
+compiled once per width in `src/murmur3/block_loop.cpp`; MurmurHash3_x64_128 inputs under 256 bytes fold inline
+instead, which saves the call, and the one-shot MurmurHash3_x86_32 runs a function there that keeps its lane in a
+register.
 
 MurmurHash3_x64_128 needs 64-bit multiplications, which 32-bit targets build from several 32-bit ones. On 32-bit
 targets MurmurHash3_x86_32 is the faster of the two; on 64-bit targets MurmurHash3_x64_128 is at least as fast at 20
@@ -82,8 +83,8 @@ bytes and faster from 64 bytes.
 
 ### 5.1 x86-64: Core Ultra 7 155H
 
-GCC, `-O2 -march=native`: MurmurHash3_x86_32 runs 5 388 MB/s at 20 bytes and 4 233 at 1 MiB, MurmurHash3_x64_128
-6 140 and 10 006.
+GCC, `-O2 -march=native`: MurmurHash3_x86_32 runs 5 850 MB/s at 20 bytes and 4 499 at 1 MiB, MurmurHash3_x64_128
+6 140 and 10 006. Both are at least as fast as SMHasher's MurmurHash3.cpp with the same flags.
 
 ### 5.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
@@ -91,10 +92,13 @@ GCC 14.3, `-O2`, one core. MB/s (10⁶ bytes per second):
 
 | Hash, mode | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| x86_32, AArch64 | 646 | 951 | 1 078 | 1 168 | 1 181 | 1 142 |
+| x86_32, AArch64 | 720 | 981 | 1 084 | 1 169 | 1 182 | 1 143 |
 | x64_128, AArch64 | 646 | 1 081 | 1 430 | 1 634 | 1 672 | 1 619 |
-| x86_32, AArch32 | 653 | 952 | 1 063 | 1 166 | 1 180 | 1 093 |
+| x86_32, AArch32 | 618 | 902 | 1 066 | 1 167 | 1 180 | 1 098 |
 | x64_128, AArch32 | 278 | 408 | 536 | 595 | 604 | 599 |
+
+On AArch64 MurmurHash3_x86_32 runs 0.95 to 1.0× as fast as SMHasher's MurmurHash3.cpp at every size, with `-O2` or
+`-O2 -mcpu=cortex-a72`.
 
 ### 5.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 

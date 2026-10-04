@@ -195,6 +195,12 @@ The stripe loop is compiled once per width in `src/xxhash/stripe_loop.cpp` and i
 lanes may alias the data, which keeps compilers from packing them into one vector register. The four lanes converge
 in spelled-out code; as a loop, GCC reloaded the lanes it had just stored as one vector, which stalls.
 
+The one-shot hash keeps the lanes in local variables, in one out-of-line function per width: XXH32 on every target,
+XXH64 only on 64-bit targets, since on Cortex-M4 its 64-bit lanes spilled and ran 18 % slower. XXH64 went from 0.88
+to 1.0× xxHash v0.8.4 at 64 B on x86-64. An empty `asm` statement on the lanes after the stripe loop keeps GCC from
+merging the last multiplication of each lane into the convergence, which kept two values per lane in the loop and cost
+7 % at 1-2 KiB.
+
 ## XXH3
 
 Inputs up to 240 bytes run straight-line code (0-16, 17-128 and 129-240 bytes, each separately) and never reach a
@@ -209,8 +215,8 @@ halves of data XOR secret, plus the neighbor lane's data, and a scramble after e
 | x86-64 AVX2 | Yes, every stripe loop | GCC 16: 48 994 MB/s at 1 MiB (3.5× the portable loop), 2.6× at 256 B; Clang 21: 46 907. The reference runs 47 996. |
 | x86-64 AVX-512 | Not measured | No AVX-512 hardware available. |
 | AArch64 NEON, all eight lanes | No | Cortex-A72: slower than the portable loop from 256 B on, 2.21 against 2.57 GiB/s at 256 B and 3.64 against 3.93 at 4 KiB. |
-| AArch64 NEON, four lanes in NEON and four scalar | Yes, from 448 B of whole stripes | A72: 4 315 against 4 239 MB/s at 1500 B, 4 698 against 4 602 at 4 KiB, a tie at 512 B, 2 % slower at 256 B. Six NEON lanes and two scalar ones, and all eight in NEON, were slower than four and four. |
-| 32-bit Arm NEON, little-endian | Yes, every stripe loop | A72 in AArch32: 1 596 against 1 144 MB/s at 256 B, 2 826 against 1 827 at 4 KiB (1.55×), where the portable loop builds 64-bit additions from 32-bit ones. |
+| AArch64 NEON, four lanes in NEON and four scalar | Yes, every stripe loop | A72, GCC `-O2`: 2 643 against 2 238 MB/s at 256 B, 4 704 against 3 771 at 4 KiB (1.25×); at `-O3` it ties the portable loop at 256 B and is 2 % faster at 4 KiB. Six NEON lanes and two scalar ones (the reference's split) ran 4 374 MB/s at 4 KiB and 3 807 at 1 MiB against 4 719 and 4 029; all eight in NEON were slower too. |
+| 32-bit Arm NEON, little-endian | Yes, every stripe loop | A72 in AArch32, GCC `-O2`: 1 544 against 921 MB/s at 256 B, 2 807 against 1 341 at 4 KiB (2.1×), where the portable loop builds 64-bit additions from 32-bit ones. |
 | Big-endian NEON | No | The kernels read vector lanes as little-endian values; big-endian targets run the portable loop. |
 | RISC-V V extension, VLEN ≥ 128 | Implemented, unproven | The eight accumulators in one register group (`vuint64m4_t`); about ten vector instructions per stripe instead of about fifty scalar ones. Tested in QEMU only. |
 | Cortex-M | No kernel | No vector unit; the portable loop runs. |
@@ -218,8 +224,13 @@ halves of data XOR secret, plus the neighbor lane's data, and a scramble after e
 Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cortex-A72):
 
 - Kernel thresholds: x86-64 and AArch32 NEON from the first stripe, since both kernels beat the portable loop at
-  256 B, the shortest input that reaches them. AArch64 from 448 bytes of whole stripes, messages from 512 bytes, where
-  the four-plus-four kernel overtakes the portable loop (3.31 against 3.25 GiB/s at 512 B).
+  256 B, the shortest input that reaches them; so does AArch64, where the four-plus-four kernel is 1.18× the portable
+  loop at 256 B with `-O2` and ties it with `-O3`.
+- The AArch64 kernel spells out its vector and scalar lanes: as loops, GCC at `-O2` did not unroll them and kept the
+  lanes in memory, which made the kernel 25 % slower than the portable loop (2 831 against 3 798 MB/s at 4 KiB).
+  Builds at `-O3` unrolled them, which hid the problem.
+- Software prefetch 384 bytes ahead, as the reference does, gained 7 % at 1 MiB on the A72 and lost 1-3 % from 1 to
+  4 KiB; the kernel does not prefetch.
 - AArch32 keeps all eight lanes in NEON: an empty scalar array kept GCC from holding the lanes in registers.
 - The RVV kernel requires `__riscv_v_min_vlen >= 128` and 64-bit elements: at VLEN 64 the register group holds only
   four lanes.
