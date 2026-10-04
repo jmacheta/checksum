@@ -184,19 +184,15 @@ template <unsigned Width> constexpr value<Width> hash_midsize(std::span<std::byt
 template <std::size_t Lane>
 constexpr void accumulate_lane(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept;
 
-// Mixes one stripe into the accumulators. Spelled out per lane: as a loop, GCC keeps the accumulators in memory; GCC for Cortex-M4
-// outlines the unforced lanes and calls them per stripe.
-constexpr void accumulate(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept;
-
-// Scrambles the accumulators with the last 64 bytes of the secret, at secret.
-constexpr void scramble(accumulator_array &accumulators, std::byte const *secret) noexcept;
-
 // The portable stripe kernel. A kernel keeps the accumulators in its lanes type and defines the same four functions.
 struct portable_kernel {
   using lanes = accumulator_array;
   static constexpr lanes load(accumulator_array const &accumulators) noexcept;
   static constexpr void store(accumulator_array &accumulators, lanes const &values) noexcept;
+  // Mixes one stripe into the accumulators. Spelled out per lane: as a loop, GCC keeps the accumulators in memory; GCC for
+  // Cortex-M4 outlines the unforced lanes and calls them per stripe.
   static constexpr void accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept;
+  // Scrambles the accumulators with the last 64 bytes of the secret, at secret.
   static constexpr void scramble(lanes &values, std::byte const *secret) noexcept;
 };
 
@@ -465,28 +461,22 @@ constexpr void accumulate_lane(accumulator_array &accumulators, std::byte const 
   std::get<Lane>(accumulators) += (key & low_half_mask) * (key >> 32U);
 }
 
-constexpr void accumulate(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept {
-  [&]<std::size_t... Lane> [[gnu::always_inline]] (std::index_sequence<Lane...>) {
-    (accumulate_lane<Lane>(accumulators, stripe, secret), ...);
-  }(std::make_index_sequence<std::tuple_size_v<accumulator_array>>{});
-}
-
-constexpr void scramble(accumulator_array &accumulators, std::byte const *secret) noexcept {
-  for(std::size_t lane = 0; lane < accumulators.size(); ++lane) {
-    std::uint64_t const accumulator = accumulators[lane] ^ (accumulators[lane] >> scramble_shift);
-    accumulators[lane] = (accumulator ^ load<std::uint64_t>(secret + (8 * lane))) * primes_32::prime_1;
-  }
-}
-
 constexpr portable_kernel::lanes portable_kernel::load(accumulator_array const &accumulators) noexcept { return accumulators; }
 
 constexpr void portable_kernel::store(accumulator_array &accumulators, lanes const &values) noexcept { accumulators = values; }
 
 constexpr void portable_kernel::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
-  xxh3_detail::accumulate(values, stripe, secret);
+  [&]<std::size_t... Lane> [[gnu::always_inline]] (std::index_sequence<Lane...>) {
+    (accumulate_lane<Lane>(values, stripe, secret), ...);
+  }(std::make_index_sequence<std::tuple_size_v<lanes>>{});
 }
 
-constexpr void portable_kernel::scramble(lanes &values, std::byte const *secret) noexcept { xxh3_detail::scramble(values, secret); }
+constexpr void portable_kernel::scramble(lanes &values, std::byte const *secret) noexcept {
+  for(std::size_t lane = 0; lane < values.size(); ++lane) {
+    std::uint64_t const accumulator = values[lane] ^ (values[lane] >> scramble_shift);
+    values[lane] = (accumulator ^ xxh3_detail::load<std::uint64_t>(secret + (8 * lane))) * primes_32::prime_1;
+  }
+}
 
 template <class Kernel>
 constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
