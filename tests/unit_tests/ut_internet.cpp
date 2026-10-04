@@ -116,6 +116,13 @@ TEST(internet, matches_model_with_carries) {
     EXPECT_EQ(internet_compute(std::span(ones).subspan(offset, (1 << 20) + 1)), 0x00FF) << "offset " << offset;
   }
   EXPECT_EQ(internet_compute(std::span(ones).first((5 << 20) + 1)), 0x00FF);
+  // Every length of the portable loop and its masked tail, where every word carries out.
+  for(std::size_t offset = 0; offset < 2; ++offset) {
+    for(std::size_t size = 0; size <= 600; ++size) {
+      auto const message = std::span(ones).subspan(offset, size);
+      ASSERT_EQ(internet_compute(message), reference(message)) << "offset " << offset << ", size " << size;
+    }
+  }
 }
 
 TEST(internet, split_anywhere) {

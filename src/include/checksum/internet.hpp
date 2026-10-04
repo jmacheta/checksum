@@ -77,14 +77,15 @@ namespace checksum::internet_detail {
 
 template <std::unsigned_integral Value> constexpr std::uint16_t fold(Value sum) noexcept {
   static_assert(std::numeric_limits<Value>::digits <= 64);
+  // The upper half of sum plus sum rotated by half its width is the end-around-carry sum of both halves.
+  std::uint32_t half = 0;
   if constexpr(std::numeric_limits<Value>::digits > 32) {
-    sum = (sum & 0xFFFFFFFFU) + (sum >> 32U); // < 2^33
+    std::uint64_t const wide = sum;
+    half = static_cast<std::uint32_t>((wide + std::rotr(wide, 32)) >> 32U);
+  } else {
+    half = sum;
   }
-  // < 2^17 + 2^16, then <= 0x10001, then <= 0xFFFF
-  for(int step = 0; step < 3; ++step) {
-    sum = (sum & 0xFFFFU) + (sum >> 16U);
-  }
-  return static_cast<std::uint16_t>(sum);
+  return static_cast<std::uint16_t>((half + std::rotr(half, 16)) >> 16U);
 }
 
 constexpr std::uint16_t sum_bytes(std::span<std::byte const> data) noexcept {
