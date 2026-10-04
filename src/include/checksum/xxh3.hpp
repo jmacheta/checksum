@@ -70,6 +70,18 @@ template <unsigned Width, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 [[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
+/// Running XXH3-64 hash.
+using xxh3_64_state = xxh3_state<64>;
+
+/// Running XXH3-128 hash.
+using xxh3_128_state = xxh3_state<128>;
+
+/// The XXH3-64 hash of data: xxh3_compute<64>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+
+/// The XXH3-128 hash of data: xxh3_compute<128>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr xxh3_hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -622,6 +634,14 @@ constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t
     }
   }
   return xxh3_finalize(xxh3_update(xxh3_state<Width>{.seed = seed}, std::forward<Range>(data)));
+}
+
+template <byte_range Range> constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed) noexcept {
+  return xxh3_compute<64>(std::forward<Range>(data), seed);
+}
+
+template <byte_range Range> constexpr xxh3_hash128 xxh3_128_compute(Range &&data, std::uint64_t seed) noexcept {
+  return xxh3_compute<128>(std::forward<Range>(data), seed);
 }
 
 } // namespace checksum
