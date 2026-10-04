@@ -16,11 +16,11 @@ using namespace std::literals;
 
 // One call, seed 0 or another seed.
 std::uint32_t small = checksum::xxh32_compute(key);
-std::uint64_t hash = checksum::xxh3_compute<64>(std::span(key), 1234);
-checksum::xxh3_hash128 wide = checksum::xxh3_compute<128>(std::span(key));
+std::uint64_t hash = checksum::xxh3_64_compute(key, 1234);
+checksum::xxh3_hash128 wide = checksum::xxh3_128_compute(key);
 
 // Incremental: a message may be split anywhere.
-checksum::xxh3_state<64> state{.seed = 1234};
+checksum::xxh3_64_state state{.seed = 1234};
 state = checksum::xxh3_update(state, first_part);
 state = checksum::xxh3_update(state, second_part);
 std::uint64_t value = checksum::xxh3_finalize(state);
@@ -28,10 +28,13 @@ std::uint64_t value = checksum::xxh3_finalize(state);
 // Compile time.
 static_assert(checksum::xxh32_compute("abc"sv) == 0x32D153FF);
 static_assert(checksum::xxh64_compute("abc"sv) == 0x44BC2CF5AD770999);
-static_assert(checksum::xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950);
-static_assert(checksum::xxh3_compute<128>("abc"sv) ==
+static_assert(checksum::xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950);
+static_assert(checksum::xxh3_128_compute("abc"sv) ==
               checksum::xxh3_hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
 ```
+
+`examples/xxh3` has complete programs: the XXH3-64 hash of a file read in chunks, deduplication of blocks by their
+XXH3-128 hash, and a hash table with seeded XXH3-64.
 
 ## 2. API
 
@@ -76,6 +79,8 @@ a cache keyed by the hash of its input.
 | `xxh3_finalize(state)` | The hash of the message folded into `state`; the state is unchanged. |
 | `xxh3_compute<Width>(data, seed = 0)` | `xxh3_finalize(xxh3_update(xxh3_state<Width>{.seed = seed}, data))`. |
 | `xxh3_hash128` | The XXH3-128 hash: `low` and `high`, its lower and upper 64 bits, as `XXH128_hash_t` of the reference. Compares with `==`. |
+| `xxh3_64_state`, `xxh3_128_state` | `xxh3_state<64>` and `xxh3_state<128>`. |
+| `xxh3_64_compute(data, seed = 0)`, `xxh3_128_compute(data, seed = 0)` | `xxh3_compute<64>` and `xxh3_compute<128>`. `xxh3_update` and `xxh3_finalize` take the width from the state. |
 
 `xxh3_state<Width>::value_type` is `std::uint64_t` for Width 64 and `xxh3_hash128` for Width 128. The seed is a
 `std::uint64_t` for both. The hashes always use the default secret; a custom secret cannot be passed.
@@ -121,7 +126,7 @@ Inputs up to 240 bytes run straight-line code with no loop and no kernel. Longer
 | --- | --- |
 | x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | Two 256-bit vectors, every stripe. |
 | x86-64 without AVX2 (SSE2 is always there) | Four 128-bit vectors, every stripe. |
-| AArch64, little-endian | Four lanes in NEON and four in scalar registers, from 448 bytes of whole stripes (messages from 512 bytes). |
+| AArch64, little-endian | Four lanes in NEON and four in scalar registers, from 448 bytes of whole stripes in one fold: one-shot messages from 512 bytes, and `xxh3_update` calls that fold that much past the state's 256-byte buffer. |
 | 32-bit Arm with NEON, little-endian | All eight lanes in NEON, every stripe. |
 | RISC-V RV64 with the V extension, VLEN ≥ 128 | One register group of eight 64-bit lanes, every stripe. Tested in QEMU, not measured on hardware. |
 | everything else (Cortex-M, 32-bit Arm without NEON, big-endian, RISC-V without V), or `CHECKSUM_ACCELERATION=OFF` | Portable loop. |
