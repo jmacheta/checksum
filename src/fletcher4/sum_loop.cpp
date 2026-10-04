@@ -16,7 +16,7 @@ namespace {
 // Bytes of one word per lane.
 inline constexpr std::size_t group_size = lane_count * word_size;
 
-// Shortest input for the lanes. The portable ones overtake the word loop on a Cortex-A72 at 256 bytes with GCC, 384 with Clang; on 32-bit targets
+// Shortest input for the lanes. The portable ones overtake the word loop on a Cortex-A72 at 128 bytes with GCC, 256 with Clang; on 32-bit targets
 // their 64-bit sums run out of registers, 3 times slower there.
 inline constexpr std::size_t lanes_minimum_size =
     lane_kernel_available ? lane_kernel_minimum_size
@@ -75,14 +75,21 @@ std::uint64_t ramp(std::array<std::uint64_t, lane_count> const &lanes) noexcept 
   std::uint64_t const triangular = (words / 2) * (words + 1);
   std::uint64_t const tetrahedral = triangular * (words + 2) * 0xAAAA'AAAA'AAAA'AAABU;
   auto const total = [&](std::size_t source) { return lanes[source][0] + lanes[source][1] + lanes[source][2] + lanes[source][3]; };
-  // Word i of n weighs 1, n-i, C(n-i+1, 2) and C(n-i+2, 3) in sum1 to sum4; these are those weights in terms of the lane sums.
+  // Word i of n weighs 1, n-i, C(n-i+1, 2) and C(n-i+2, 3) in sum1 to sum4; these are those weights in terms of the lane sums, where
+  // a lane word stands for lane_count message words.
+  constexpr std::uint64_t width = lane_count;
+  constexpr std::uint64_t squared = width * width;
+  constexpr std::uint64_t cubed = squared * width;
+  constexpr std::uint64_t pairs = (squared - width) / 2;
   std::uint64_t const tail1 = lanes[0][2] + (3 * lanes[0][3]);
   std::uint64_t const tail2 = lanes[1][2] + (3 * lanes[1][3]);
   return {.sum1 = state.sum1 + total(0),
-          .sum2 = state.sum2 + (words * state.sum1) + (4 * total(1)) - ramp(lanes[0]),
-          .sum3 = state.sum3 + (words * state.sum2) + (triangular * state.sum1) + (16 * total(2)) - (6 * total(1)) - (4 * ramp(lanes[1])) + tail1,
-          .sum4 = state.sum4 + (words * state.sum3) + (triangular * state.sum2) + (tetrahedral * state.sum1) + (64 * total(3)) - (48 * total(2)) -
-                  (16 * ramp(lanes[2])) + (4 * total(1)) + (6 * ramp(lanes[1])) + (4 * tail2) - lanes[0][3]};
+          .sum2 = state.sum2 + (words * state.sum1) + (width * total(1)) - ramp(lanes[0]),
+          .sum3 = state.sum3 + (words * state.sum2) + (triangular * state.sum1) + (squared * total(2)) - (pairs * total(1)) -
+                  (width * ramp(lanes[1])) + tail1,
+          .sum4 = state.sum4 + (words * state.sum3) + (triangular * state.sum2) + (tetrahedral * state.sum1) + (cubed * total(3)) -
+                  ((cubed - squared) * total(2)) - (squared * ramp(lanes[2])) + (width * total(1)) + (pairs * ramp(lanes[1])) + (width * tail2) -
+                  lanes[0][3]};
 }
 
 [[gnu::always_inline]] inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept {
