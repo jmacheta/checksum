@@ -29,6 +29,7 @@ target_sources(
          include/checksum/crc_catalog.hpp
          include/checksum/fletcher.hpp
          include/checksum/fletcher4.hpp
+         include/checksum/hash128.hpp
          include/checksum/internet.hpp
          include/checksum/murmur3.hpp
          include/checksum/xxh3.hpp
