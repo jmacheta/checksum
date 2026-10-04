@@ -139,7 +139,7 @@ template <class Integer> constexpr Integer load(std::byte const *data) noexcept 
   Integer value = 0;
   if consteval {
     for(std::size_t index = 0; index < sizeof(Integer); ++index) {
-      value |= std::to_integer<Integer>(data[index]) << (8 * index);
+      value |= static_cast<Integer>(std::to_integer<Integer>(data[index]) << (8 * index));
     }
   } else {
     std::memcpy(&value, data, sizeof(Integer));
@@ -160,7 +160,7 @@ template <class Integer> constexpr Integer load_partial(std::byte const *data, s
     }
   }
   if((size & 2U) != 0) {
-    value |= (std::to_integer<Integer>(data[offset]) | (std::to_integer<Integer>(data[offset + 1]) << 8)) << (8 * offset);
+    value |= Integer{load<std::uint16_t>(data + offset)} << (8 * offset);
     offset += 2;
   }
   if((size & 1U) != 0) {
