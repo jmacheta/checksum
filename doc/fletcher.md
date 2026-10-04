@@ -116,43 +116,43 @@ each choice are in [design/acceleration.md](design/acceleration.md#fletcher-and-
 
 ### 6.1 x86-64: Core Ultra 7 155H
 
-MB/s (10⁶ bytes per second) at 4 KiB, GCC 16 and Clang 21, measured on a loaded host, so the figures are approximate.
+MB/s (10⁶ bytes per second) at 4 KiB, GCC 16 and Clang 21, one pinned core, the better median of two runs.
 Portable is the library without kernels, SSE2 the default x86-64 flags, AVX2 a build with AVX2 enabled.
 
 | Checksum | GCC portable | GCC SSE2 | GCC AVX2 | Clang portable | Clang AVX2 |
 | --- | --- | --- | --- | --- | --- |
-| Fletcher-16 | 7 314 | 22 778 | 54 107 | 3 205 | 58 109 |
-| Fletcher-32 | 14 167 | 21 916 | 47 221 | 6 447 | 54 311 |
-| Fletcher-64 | 26 853 | | 52 801 | 13 065 | 54 881 |
+| Fletcher-16 | 7 373 | 22 955 | 54 620 | 3 183 | 56 748 |
+| Fletcher-32 | 14 419 | 21 918 | 53 037 | 6 436 | 52 933 |
+| Fletcher-64 | 27 485 | | 51 094 | 12 977 | 53 681 |
 
-The AVX2 kernels are 7.4× (Fletcher-16), 3.3× (Fletcher-32) and 2.0× (Fletcher-64) faster than the GCC portable loop.
-The portable columns predate the current portable loop. With `-march=native` (AVX-VNNI), GCC 16, MB/s:
+The AVX2 kernels are 7.4× (Fletcher-16), 3.7× (Fletcher-32) and 1.9× (Fletcher-64) faster than the GCC portable loop.
+Clang's portable loop is 2.1-2.3× slower than GCC's. With `-march=native` (AVX-VNNI), GCC 16, MB/s:
 
 | Checksum | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| Fletcher-16 | 3 094 | 9 959 | 31 780 | 54 938 | 81 283 | 90 798 |
-| Fletcher-32 | 3 972 | 7 739 | 21 029 | 37 057 | 49 934 | 51 822 |
-| Fletcher-64 | 3 920 | 9 423 | 18 352 | 37 030 | 49 787 | 59 639 |
+| Fletcher-16 | 3 402 | 10 461 | 32 186 | 55 934 | 78 507 | 76 821 |
+| Fletcher-32 | 4 234 | 8 187 | 20 612 | 40 062 | 50 327 | 51 876 |
+| Fletcher-64 | 4 358 | 10 300 | 19 442 | 37 377 | 49 912 | 56 686 |
 
-At 20 bytes the plain deferred-modulo loop of the Wikipedia article (`-O2 -march=native`) runs 3 300 MB/s for
-Fletcher-16 and 4 600 for Fletcher-32: 0.94× and 0.86× for the library, which needs the state and its unfinished
+At 20 bytes the plain deferred-modulo loop of the Wikipedia article (`-O2 -march=native`, same harness) runs 3 360 MB/s
+for Fletcher-16 and 5 700 for Fletcher-32: 1.0× and 0.74× for the library, which needs the state and its unfinished
 block on top.
 
 ### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
-GCC 14.3, `-O2`, one core. GiB/s at 64 B / 256 B / 1500 B / 4 KiB, start address aligned.
+GCC 14.3, `-O2`, AArch64 `-march=armv8-a`, one core. GiB/s at 64 B / 256 B / 1500 B / 4 KiB, start address aligned.
 
 | Checksum | AArch64 portable | AArch64 NEON | AArch32 portable | AArch32 NEON |
 | --- | --- | --- | --- | --- |
-| Fletcher-16 | 0.62 / 0.74 / 0.83 / 0.84 | 0.96 / 2.38 / 4.67 / 5.75 | 0.57 / 0.73 / 0.82 / 0.84 | 0.82 / 2.13 / 3.58 / 4.23 |
-| Fletcher-32 | 0.98 / 1.42 / 1.61 / 1.67 | 1.09 / 2.57 / 4.27 / 4.78 | 0.78 / 1.37 / 1.56 / 1.65 | 0.80 / 2.37 / 4.09 / 4.74 |
-| Fletcher-64 | 1.46 / 2.71 / 3.36 / 3.56 | 1.41 / 2.85 / 4.41 / 5.16 | 0.91 / 1.40 / 1.61 / 1.67 | 0.90 / 2.30 / 4.10 / 5.06 |
+| Fletcher-16 | 0.66 / 0.77 / 0.84 / 0.85 | 1.02 / 2.42 / 4.92 / 6.11 | 0.57 / 0.78 / 0.90 / 0.91 | 0.98 / 2.40 / 3.71 / 4.31 |
+| Fletcher-32 | 1.20 / 1.63 / 1.67 / 1.72 | 1.10 / 2.66 / 4.41 / 4.90 | 0.86 / 1.44 / 1.60 / 1.65 | 0.85 / 2.45 / 4.18 / 4.76 |
+| Fletcher-64 | 1.50 / 2.70 / 3.37 / 3.57 | 1.55 / 2.91 / 4.46 / 5.22 | 0.92 / 1.39 / 1.57 / 1.67 | 0.88 / 2.33 / 4.27 / 5.12 |
 
-At 4 KiB NEON is 5.0× (AArch32) to 6.8× (AArch64, 64 bytes per iteration) faster for Fletcher-16, 2.8-2.9× for Fletcher-32, and 1.45× (AArch64) or 3.0× (AArch32) for
-Fletcher-64, whose 64-bit portable loop is already fast on AArch64. Below the thresholds both builds run the portable
-loop; the differences there come from code layout. At 20 bytes AArch64 Fletcher-32 runs 592 MB/s, 0.88× the Wikipedia
-loop (675). The AArch64 portable column was measured before the current portable loop (32-bit sums for Fletcher-32, a
-constant `%` for the Fletcher moduli, pointer-bounded loop); re-measure before relying on it.
+At 4 KiB NEON is 4.7× (AArch32) to 7.2× (AArch64, 64 bytes per iteration) faster for Fletcher-16, 2.8-2.9× for
+Fletcher-32, and 1.47× (AArch64) or 3.1× (AArch32) for Fletcher-64, whose 64-bit portable loop is already fast on
+AArch64. Below the thresholds both builds run the portable loop; the differences there come from code layout. At 20
+bytes AArch64 Fletcher-32 runs 690 MB/s with `-mcpu=cortex-a72`, 0.85× the Wikipedia loop (813), and 654 MB/s with
+`-march=armv8-a`, 0.79× (823).
 
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 

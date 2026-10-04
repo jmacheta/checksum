@@ -106,15 +106,15 @@ AVX2 is with `-march=native`; portable is with `CHECKSUM_ACCELERATION=OFF` and d
 
 | Input | GCC 16 portable | GCC 16 AVX2 | Clang 21 portable | Clang 21 AVX2 |
 | --- | --- | --- | --- | --- |
-| 20 B (IPv4 header) | 7 709 | 7 699 | 7 094 | 7 103 |
-| 64 B | 23 687 | 22 613 | 22 634 | 21 829 |
-| 256 B | 43 669 | 43 347 | 42 295 | 42 198 |
-| 1500 B (Ethernet payload) | 49 918 | 71 039 | 47 943 | 76 279 |
-| 4 KiB | 50 691 | 75 516 | 52 012 | 79 779 |
-| 1 MiB | 56 060 | 90 044 | 55 770 | 93 630 |
+| 20 B (IPv4 header) | 8 198 | 8 193 | 7 564 | 7 573 |
+| 64 B | 25 213 | 24 161 | 24 291 | 23 353 |
+| 256 B | 46 748 | 46 352 | 45 065 | 45 027 |
+| 1500 B (Ethernet payload) | 53 538 | 74 313 | 52 868 | 81 358 |
+| 4 KiB | 55 492 | 82 858 | 56 057 | 95 187 |
+| 1 MiB | 59 974 | 71 025 | 60 008 | 88 316 |
 
 Below 512 bytes both builds run the portable loop; the differences come from `-march=native` and code layout. From
-1500 bytes the AVX2 kernel is 1.4-1.7× faster.
+1500 bytes the AVX2 kernel is 1.4-1.7× faster up to 4 KiB, and 1.2× (GCC) or 1.5× (Clang) at 1 MiB.
 
 Against Linux v7.3-rc5 `csum_partial` and DPDK `rte_raw_cksum`, built with the same GCC 16 `-O2 -march=native` and
 called the same way, this build runs at 0.97× the faster of the two at 256 B, 0.98× at 64 B, 1.14× at 20 B and
@@ -122,25 +122,25 @@ called the same way, this build runs at 0.97× the faster of the two at 256 B, 0
 
 ### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
-GCC 14.3, `-O2`, static binaries on one core. Portable is with `CHECKSUM_ACCELERATION=OFF`. In 32-bit mode, NEON is
-`-march=armv8-a+crc -mfpu=neon-fp-armv8`, and `ldm` is `-mfpu=vfpv3-d16` (no NEON).
+GCC 14.3, `-O2`, static binaries on one core. Portable is with `CHECKSUM_ACCELERATION=OFF`. AArch64 is
+`-march=armv8-a`; in 32-bit mode, NEON is `-march=armv8-a+crc -mfpu=neon-fp-armv8`, and `ldm` is `-mfpu=vfpv3-d16`
+(no NEON).
 
 | Input | AArch64 portable | AArch64 NEON | AArch32 portable | AArch32 NEON | AArch32 `ldm` |
 | --- | --- | --- | --- | --- | --- |
-| 20 B | 1 314 | 1 075 | 665 | 842 | 782 |
-| 64 B | 2 719 | 3 339 | 1 475 | 2 058 | 1 941 |
-| 256 B | 5 360 | 6 042 | 2 293 | 3 339 | 3 049 |
-| 1500 B | 6 636 | 10 312 | 2 630 | 8 289 | 4 561 |
-| 4 KiB | 7 214 | 13 182 | 2 737 | 11 149 | 5 359 |
-| 1 MiB | 5 386 | 6 679 | 2 580 | 6 253 | 4 561 |
+| 20 B | 1 190 | 1 144 | 899 | 842 | 837 |
+| 64 B | 2 974 | 2 758 | 1 779 | 1 730 | 1 730 |
+| 256 B | 5 682 | 5 437 | 2 819 | 4 426 | 3 536 |
+| 1500 B | 7 288 | 11 204 | 3 186 | 9 409 | 4 838 |
+| 4 KiB | 7 527 | 13 620 | 3 309 | 11 777 | 5 413 |
+| 1 MiB | 5 454 | 6 975 | 3 032 | 6 777 | 4 679 |
 
 The 64-bit portable loop is already fast, so the NEON kernel starts at 512 bytes and is 1.5-1.8× faster at
-1500 B-4 KiB (1.24× at 1 MiB). In 32-bit mode the kernels start at 192 bytes: NEON is 4.1× and `ldm` 2.0× faster at
+1500 B-4 KiB (1.28× at 1 MiB). In 32-bit mode the kernels start at 192 bytes: NEON is 3.6× and `ldm` 1.6× faster at
 4 KiB. Below the thresholds every build runs the portable loop, and the differences there come from code layout.
 
-The table predates the current portable loop, which is 1.1-1.45× faster in AArch64 and 1.05-1.4× faster in AArch32 up
-to 256 B. In the comparison harness, whose figures are lower than this table's, AArch64 takes 957 MB/s at 20 B, 1.10×
-Linux v7.3-rc5 `do_csum`, which reads whole 8-byte words and masks off the bytes past the end.
+In the comparison harness, whose figures are lower than this table's, AArch64 takes 957 MB/s at 20 B, 1.10× Linux
+v7.3-rc5 `do_csum`, which reads whole 8-byte words and masks off the bytes past the end.
 
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 
@@ -149,19 +149,19 @@ address modulo 4: 2 is typical for an IP header behind a 14-byte Ethernet header
 
 | Input | nRF52840 portable | nRF52840 `ldm` | STM32L4A6 portable | STM32L4A6 `ldm` |
 | --- | --- | --- | --- | --- |
-| 20 B | 10.3 | 10.0 | 12.9 | 12.5 |
-| 64 B | 24.4 | 23.4 | 30.5 | 29.3 |
-| 256 B | 40.2 | 49.5 | 50.2 | 61.9 |
-| 1500 B | 48.5 | 80.1 | 60.6 | 100.2 |
-| 4 KiB | 50.3 | 91.9 | 62.9 | 114.9 |
-| 1500 B, offset 2 | 40.8 | 80.4 | 51.0 | 100.5 |
-| 4 KiB, offset 1 | 36.1 | 88.7 | 45.2 | 110.9 |
+| 20 B | 10.8 | 10.5 | 13.4 | 13.1 |
+| 64 B | 23.3 | 22.6 | 29.1 | 28.3 |
+| 256 B | 39.4 | 52.0 | 49.2 | 65.0 |
+| 1500 B | 48.9 | 82.6 | 61.1 | 103.4 |
+| 4 KiB | 50.3 | 92.6 | 62.8 | 115.7 |
+| 1500 B, offset 2 | 41.0 | 81.1 | 51.3 | 101.9 |
+| 4 KiB, offset 1 | 36.1 | 90.2 | 45.1 | 112.8 |
 
-Per byte at 4 KiB, the kernel takes 0.70 cycles against 1.27 for the portable loop: 1.8× faster, 1.2× at 256 bytes,
+Per byte at 4 KiB, the kernel takes 0.69 cycles against 1.27 for the portable loop: 1.8× faster, 1.3× at 256 bytes,
 and up to 2.5× from odd or 2-modulo-4 addresses, where the portable loop's unaligned loads cost more. Both chips run the
-same cycles per byte, so the figures scale with the clock. The table predates the current portable loop: in a separate
-harness on the nRF52840, the `ldm` build of the current code is 1.22× faster than before at 20 B, 1.08× at 64 B and
-1.15× at 256 B. At 191 bytes it takes 345 cycles against 273 for the kernel at 192, so the threshold could move lower.
+same cycles per byte, so the figures scale with the clock. Below 192 bytes both builds run the portable loop: 191 bytes
+take 346 cycles against 273 for the kernel at 192. The kernel breaks even at 120-160 bytes, depending on the start
+address, so the threshold could move lower.
 
 ### 6.4 Code size
 

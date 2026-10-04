@@ -93,33 +93,32 @@ evaluation always runs a byte-by-byte loop with the same result. The measurement
 
 ### 6.1 x86-64: Core Ultra 7 155H
 
-GCC 16, 4 KiB, measured on a loaded host: 7 365 MB/s (10⁶ bytes per second) for the portable loop, 54 211 MB/s with
-the AVX2 kernel, 7.4× faster (56 382 MB/s in the later run of the table below). The portable figure predates the
-current portable loop. With `-march=native` the AVX-VNNI kernel runs (MB/s, GCC 16 and Clang 21):
+GCC 16, 4 KiB, one pinned core, the better median of two runs: 7 309 MB/s (10⁶ bytes per second) for the portable
+loop, 22 964 MB/s with SSE2 and 58 088 MB/s with the AVX2 kernel, 7.9× faster. With `-march=native` the AVX-VNNI
+kernel runs (MB/s, GCC 16 and Clang 21):
 
 | Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| GCC | 3 441 | 10 846 | 33 317 | 55 254 | 85 045 | 89 051 |
-| Clang | 3 420 | 10 542 | 34 390 | 54 459 | 83 602 | 90 845 |
+| GCC | 3 781 | 11 570 | 35 225 | 56 789 | 84 504 | 88 630 |
+| Clang | 3 746 | 11 655 | 36 649 | 57 952 | 85 027 | 89 914 |
 
-Against zlib-ng (develop, its AVX-VNNI kernel, same flags) that is 0.98× at 20 B, 0.78× at 64 B, 0.91× at 256 B and
-1.13-1.17× from 4 KiB; the AVX2 kernel reached 0.71-0.83× there.
+In a separate comparison harness, against zlib-ng (develop, its AVX-VNNI kernel, same flags) the library runs 0.98×
+at 20 B, 0.78× at 64 B, 0.91× at 256 B and 1.13-1.17× from 4 KiB; the AVX2 kernel reached 0.71-0.83× there.
 
 ### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
-GCC 14.3, `-O2`, one core, start address aligned. GiB/s:
+GCC 14.3, `-O2`, AArch64 `-march=armv8-a`, one core, start address aligned. GiB/s:
 
 | Build | 64 B | 256 B | 1500 B | 4 KiB |
 | --- | --- | --- | --- | --- |
-| AArch64 portable | 0.68 | 0.77 | 0.83 | 0.84 |
-| AArch64 NEON | 1.13 | 2.62 | 4.79 | 5.84 |
-| AArch32 portable | 0.52 | 0.71 | 0.85 | 0.86 |
-| AArch32 NEON | 0.98 | 2.44 | 3.75 | 4.32 |
+| AArch64 portable | 0.69 | 0.77 | 0.83 | 0.84 |
+| AArch64 NEON | 1.15 | 2.60 | 5.01 | 6.16 |
+| AArch32 portable | 0.66 | 0.77 | 0.85 | 0.87 |
+| AArch32 NEON | 0.95 | 2.42 | 3.75 | 4.30 |
 
-NEON is 5-7× faster at 4 KiB and 1.7-1.9× at 64 bytes. On AArch64, from 320 bytes the kernel sums 64 bytes per
-iteration: 0.96-0.99× zlib-ng and ISA-L from 1500 B, where 16 bytes per iteration reached 0.72-0.79×. The AArch64
-portable row was measured before the current portable loop, which bounds its loop by a pointer; re-measure before
-relying on it.
+NEON is 5.0-7.3× faster at 4 KiB and 1.4-1.7× at 64 bytes. On AArch64, from 320 bytes the kernel sums 64 bytes per
+iteration: 0.96-0.99× zlib-ng and ISA-L from 1500 B in the comparison harness, where 16 bytes per iteration reached
+0.72-0.79×.
 
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 

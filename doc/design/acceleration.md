@@ -89,26 +89,23 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
 
 A one's complement sum needs only additions, and the order of the bytes does not matter, so the portable loop is
 already fast. It adds native `std::size_t` words in two add-with-carry chains and swaps the bytes of the result once:
-on x86-64 that is about 7 700 MB/s at 20 B and 50 000 MB/s at 4 KiB, without any instruction-set flags. A kernel has
+on x86-64 that is about 8 200 MB/s at 20 B and 55 500 MB/s at 4 KiB, without any instruction-set flags. A kernel has
 to beat that, not a byte loop.
 
 | Target | Verdict | Why |
 | --- | --- | --- |
-| x86-64 AVX2 | Yes, from 512 B | 64-byte blocks, 32-bit halves summed into 64-bit lanes: 1.4-1.7× the portable loop from 1500 B. The call and the reduction make it slower below about 450 B. |
+| x86-64 AVX2 | Yes, from 512 B | 64-byte blocks, 32-bit halves summed into 64-bit lanes: 1.4-1.7× the portable loop at 1500 B-4 KiB, 1.2-1.5× at 1 MiB. The call and the reduction make it slower below about 350 B. |
 | x86-64 SSE2 (baseline) | No | The same scheme with 16-byte vectors matched the scalar carry loop and was never faster. |
 | x86-64 AVX-512 | Not measured | No AVX-512 hardware available; the AVX2 kernel is near the L1 bandwidth, so the gain is likely small. |
 | Compiler auto-vectorization | No | GCC `-O3 -march=native` vectorizes a 32-bit-word loop to about 47 000 MB/s, below the scalar carry loop; Clang does not vectorize it. |
-| AArch64 NEON (`uadalp`) | Yes, from 512 B | Cortex-A72: 1.5× at 1500 B, 1.8× at 4 KiB. The 64-bit portable loop is fast (5 400 MB/s at 256 B), so the kernel loses below about 450 B. Eight accumulators (128 B per iteration) were slower than four. |
+| AArch64 NEON (`uadalp`) | Yes, from 512 B | Cortex-A72: 1.5× at 1500 B, 1.8× at 4 KiB. The 64-bit portable loop is fast (5 700 MB/s at 256 B), so the kernel loses below about 370 B. Eight accumulators (128 B per iteration) were slower than four. |
 | AArch64 `ldp` + `adcs` assembly | No, for now | 1.3-1.5× the portable loop at 256 B-4 KiB on the A72, better than NEON at 256 B but worse from 1500 B. A second kernel for 256-511 B is not worth the assembly. |
-| 32-bit Arm NEON | Yes, from 192 B | A72 in AArch32: 4.1× at 4 KiB, where the portable loop runs 32-bit words. |
-| 32-bit Arm without NEON (Cortex-M) | Yes, from 192 B, inline assembly | `ldm` + `adcs` chain: 0.70 cycles per byte against 1.27 for the earlier portable loop on a Cortex-M4 (nRF52840 and STM32L4A6): 1.8× at 4 KiB, 1.2× at 256 B, up to 2.5× from an odd address. |
+| 32-bit Arm NEON | Yes, from 192 B | A72 in AArch32: 3.6× at 4 KiB, where the portable loop runs 32-bit words. |
+| 32-bit Arm without NEON (Cortex-M) | Yes, from 192 B, inline assembly | `ldm` + `adcs` chain: 0.69 cycles per byte against 1.27 for the portable loop on a Cortex-M4 (nRF52840 and STM32L4A6): 1.8× at 4 KiB, 1.3× at 256 B, up to 2.5× from an odd address. |
 | Cortex-M0/M0+/M23 (Thumb-1) | Not done | `adcs` and `ldm` exist for low registers, but there is no `teq`: the loop test must not clobber the carry. No hardware to measure. |
 | Big-endian NEON | No | `vreinterpret` lane order differs between GCC and Clang, as for PMULL; big-endian AArch64 runs the portable loop. |
 | RISC-V V extension | Implemented, unproven | Widening add `vwaddu.wv` into 64-bit lanes, vector-length agnostic; tested in QEMU with VLEN 128-1024. No hardware measured, so the 64 B threshold is a guess. |
 | RISC-V scalar (Zba, Zbb) | No | No carry flag: a 64-bit word costs a load and three instructions with or without `add.uw`, the same as the portable loop. |
-
-The Cortex-A72 figures and thresholds above predate the current portable loop, which is 1.1-1.45× faster in AArch64
-and 1.05-1.4× faster in AArch32 up to 256 B; the NEON thresholds have not been re-measured against it.
 
 Cortex-M methods, measured on the nRF52840 and STM32L4A6 (cycles per byte at 4 KiB):
 
@@ -124,9 +121,9 @@ Cortex-M methods, measured on the nRF52840 and STM32L4A6 (cycles per byte at 4 K
 | DSP (`uxtah`, `uadd16`, `usada8`) | - | At least two instructions per word, against one `adcs`. |
 | MCU CRC unit | - | It computes CRCs only. |
 
-What is left on Cortex-M: inputs below 192 bytes run the portable loop, dominated by the call and the final fold. In
-one harness the current loop takes 125 cycles for 20 bytes against 152 before; at 191 B it takes 345 cycles against
-273 for the `ldm` kernel at 192 B, so the threshold could move lower.
+What is left on Cortex-M: inputs below 192 bytes run the portable loop, dominated by the call and the final fold: 122
+cycles for 20 bytes, and 346 cycles at 191 B against 273 for the `ldm` kernel at 192 B, so the threshold could move
+lower.
 
 Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Cortex-M4: nRF52840):
 
@@ -144,14 +141,13 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Cortex-M
 - One final fold after the carry chains are merged: three separate folds cost 8-20 % at 20-64 B.
 - The AVX2 and NEON kernels work in passes of 2^26 blocks (4 GiB), the vector kernel in passes of 2^18 iterations, so
   their 64-bit lanes never overflow.
-- The final fold works in the width of the native word: on a Cortex-M4 a 64-bit fold cost 30 cycles of the 150 that
-  a 20-byte input took with the earlier portable loop.
+- The final fold works in the width of the native word: on a Cortex-M4 a 64-bit fold cost 30 cycles per call.
 - `sum_loop()` holds no call for short inputs: the kernel and the loop after it sit in a separate non-inlined function.
   A call inside `sum_loop()` saved registers on every input and cost 13-23 % below 256 bytes on x86-64; one shared,
   non-inlined copy of the portable loop saved 100 bytes on a Cortex-M4 but cost 25 % at 20 bytes on x86-64.
-- Thresholds are where the kernel overtakes the portable loop of the same build, measured against the earlier
-  portable loop: x86-64 at about 450 bytes, AArch64 at 450, AArch32 NEON at 150-190, the Cortex-M4 `ldm` kernel at
-  130-190 depending on the start address.
+- Thresholds sit above the point where the kernel overtakes the portable loop of the same build: x86-64 at about 350
+  bytes, AArch64 at 370, AArch32 NEON and `ldm` on the A72 at 100-130, the Cortex-M4 `ldm` kernel at 120-160 depending
+  on the start address.
 - The `ldm` kernel returns its last carry separately: added back into the 32-bit sum, it would be lost when the sum is
   0xFFFFFFFF.
 
@@ -169,14 +165,14 @@ x86-64 at 4 KiB with GCC, but only 0.84 GiB/s on a Cortex-A72 and 5.3 cycles per
 
 | Target | Verdict | Why |
 | --- | --- | --- |
-| x86-64 AVX-VNNI | Yes, bytes from 64 B | `vpdpbusd` weights 32 bytes in one instruction instead of `pmaddubsw` + `pmaddwd` + add; four blocks per iteration weigh 127 .. 0 against one `previous` addition. Adler-32 at 4 KiB: 85 045 MB/s against 56 382 for the AVX2 kernel (1.5×), 1.13× zlib-ng's AVX-VNNI kernel. Not in a test preset: QEMU has no AVX-VNNI and GitHub runners may lack it, so it is tested locally with `-march=native`. |
-| x86-64 AVX2 | Yes: bytes from 64 B, 16-bit values from 128 B, 32-bit values from 384 B | At 4 KiB with GCC, 7.4× the portable loop for Fletcher-16 and Adler-32, 3.3× for Fletcher-32, 2.0× for Fletcher-64. |
+| x86-64 AVX-VNNI | Yes, bytes from 64 B | `vpdpbusd` weights 32 bytes in one instruction instead of `pmaddubsw` + `pmaddwd` + add; four blocks per iteration weigh 127 .. 0 against one `previous` addition. Adler-32 at 4 KiB: 84 504 MB/s against 58 088 for the AVX2 kernel (1.45×), 1.13× zlib-ng's AVX-VNNI kernel. Not in a test preset: QEMU has no AVX-VNNI and GitHub runners may lack it, so it is tested locally with `-march=native`. |
+| x86-64 AVX2 | Yes: bytes from 64 B, 16-bit values from 128 B, 32-bit values from 384 B | At 4 KiB with GCC, 7.4× the portable loop for Fletcher-16, 7.9× for Adler-32, 3.7× for Fletcher-32, 1.9× for Fletcher-64. |
 | x86-64 SSE2 (baseline), SSSE3 | Yes, bytes and 16-bit values | Fletcher-16 3.1× and Fletcher-32 1.5× the portable loop at 4 KiB with GCC. SSSE3 `pmaddubsw` weights 16 bytes in two instructions; plain SSE2 widens the bytes first. |
-| x86-64 SSE2, 32-bit values | Not done | The 64-bit portable loop of Fletcher-64 already runs 26 900 MB/s at 4 KiB. |
+| x86-64 SSE2, 32-bit values | Not done | The 64-bit portable loop of Fletcher-64 already runs 27 500 MB/s at 4 KiB. |
 | x86-64 AVX-512 | Not measured | No AVX-512 hardware available. |
 | AArch64 NEON | Yes: bytes from 64 B, 16-bit from 128 B, 32-bit from 256 B | Cortex-A72 at 4 KiB: about 7× for Fletcher-16 and Adler-32, 2.8× for Fletcher-32, 1.45× for Fletcher-64, whose 64-bit portable loop is already fast. |
 | AArch64 NEON, 64 bytes per iteration (`group_kernel`) | Yes, bytes from 320 B | Pairwise additions of four blocks into `sum`, 64 column sums weighted 64 .. 1, one `previous` addition per 64 bytes, as zlib-ng: Adler-32 at 4 KiB 6 270 against 4 746 MB/s (1.32×), 0.96× zlib-ng and ISA-L. Below 320 B weighting 64 columns costs more than it saves. In AArch32 (16 NEON registers) it spilled and lost 10-27 %. |
-| 32-bit Arm NEON, little-endian | Yes, the same kernels and thresholds except `group_kernel` | A72 in AArch32 at 4 KiB: 5.0× for Fletcher-16 and Adler-32, 2.9× for Fletcher-32, 3.0× for Fletcher-64. |
+| 32-bit Arm NEON, little-endian | Yes, the same kernels and thresholds except `group_kernel` | A72 in AArch32 at 4 KiB: 4.7× for Fletcher-16, 5.0× for Adler-32, 2.9× for Fletcher-32, 3.1× for Fletcher-64. |
 | M-profile Arm DSP (Cortex-M4/M7/M33), bytes | Yes, from 64 B | `usada8` sums 4 bytes, `uxtb16` + `smlad` weight them: 2.69 cycles per byte against 5.30 on a Cortex-M4 (nRF52840 and STM32L4A6), 2.0× at 4 KiB, 1.6× at 256 B. |
 | M-profile Arm DSP, 16-bit and 32-bit values | No | The portable loop sums 32-bit words on 32-bit targets: 2.11 cycles per byte for Fletcher-32 and 1.80 for Fletcher-64, within 2 % of a DSP kernel of the same scheme. |
 | A-profile 32-bit Arm without NEON | No | The DSP kernel is slower than the portable loop on the Cortex-A72 in AArch32; only M-profile cores use it. |
@@ -202,7 +198,8 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
 - Short inputs, against a plain deferred-modulo loop (the Wikipedia one), at 20 bytes with GCC on x86-64:
   - GCC returned a small aggregate by storing its members one by one and loading them as one word, which stalls store
     forwarding. The sums are built in one integer and copied (`make_state()`), and Fletcher-16 and -32 pass their
-    state to `sum_loop()` as one integer (`state_word`): Fletcher-16 0.68 to 0.94×, Fletcher-32 0.51 to 0.86×.
+    state to `sum_loop()` as one integer (`state_word`): Fletcher-16 from 0.68× to 1.0×, Fletcher-32 from 0.51× to
+    0.74×.
   - Unfinished blocks go to a separate non-inlined function, so the whole-block path needs no frame; there the byte
     loops are inline. Fletcher-64, whose state passes in two registers, and 32-bit targets lost 3-10 % that way and
     keep them in `sum_any()`, with out-of-line byte loops.
