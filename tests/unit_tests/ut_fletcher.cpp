@@ -208,6 +208,49 @@ TYPED_TEST(fletcher, constant_evaluation_matches_run_time) {
   }
 }
 
+template <class Checksum>
+concept resumable = requires(Checksum checksum, std::span<std::byte const> data) { fletcher_update(checksum, data); };
+
+// The checksum type selects the width; other integers are rejected rather than converted.
+static_assert(resumable<std::uint16_t> && resumable<std::uint32_t> && resumable<std::uint64_t>);
+static_assert(!resumable<int> && !resumable<std::uint8_t> && !resumable<bool>);
+static_assert(std::same_as<decltype(fletcher_update(std::uint16_t{}, "a"sv)), std::uint16_t> &&
+              std::same_as<decltype(fletcher_update(std::uint32_t{}, "a"sv)), std::uint32_t> &&
+              std::same_as<decltype(fletcher_update(std::uint64_t{}, "a"sv)), std::uint64_t>);
+static_assert(fletcher_update(fletcher32_compute("abcd"sv), "e"sv) == 0xF04FC729);
+
+// A stored checksum continues the message after any number of whole blocks, at compile time and at run time. After an unfinished
+// block it does not: the checksum already counts the block as padded.
+TYPED_TEST(fletcher, resume_from_checksum) {
+  constexpr unsigned width = TypeParam::value;
+  using value_type = fletcher_state<width>::value_type;
+  constexpr std::size_t block_size = width / 16;
+  constexpr std::size_t constant_size = 64;
+  static constexpr auto resumed = [] {
+    auto const message = std::span(constant_message).first(constant_size);
+    std::array<value_type, (constant_size / block_size) + 1> result{};
+    for(std::size_t block = 0; block < result.size(); ++block) {
+      result[block] = fletcher_update(fletcher_compute<width>(message.first(block * block_size)), message.subspan(block * block_size));
+    }
+    return result;
+  }();
+  for(value_type const value : resumed) {
+    ASSERT_EQ(value, fletcher_compute<width>(std::span(constant_message).first(constant_size)));
+  }
+
+  auto const data = random_bytes(1100, 8);
+  auto const message = std::span<std::byte const>(data);
+  auto const whole = fletcher_compute<width>(message);
+  for(std::size_t first = 0; first <= data.size(); first += block_size) {
+    ASSERT_EQ(fletcher_update(fletcher_compute<width>(message.first(first)), message.subspan(first)), whole) << "split at " << first;
+  }
+  std::list<std::byte> const tail(data.begin() + 100, data.end());
+  EXPECT_EQ(fletcher_update(fletcher_compute<width>(message.first(100)), tail), whole);
+  if constexpr(block_size > 1) {
+    EXPECT_NE(fletcher_update(fletcher_compute<width>(message.first(1)), message.subspan(1)), whole);
+  }
+}
+
 TYPED_TEST(fletcher, byte_ranges) {
   constexpr unsigned width = TypeParam::value;
   constexpr std::string_view text = "123456789";

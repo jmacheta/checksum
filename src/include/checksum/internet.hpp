@@ -36,6 +36,15 @@ struct internet_state {
 /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
 template <byte_range Range> [[nodiscard]] constexpr internet_state internet_update(internet_state state, Range &&data) noexcept;
 
+/// Folds data into the message whose checksum is checksum and returns the new checksum. That message must have an even number of
+/// bytes, since a checksum does not record an odd last byte.
+template <std::same_as<std::uint16_t> Checksum>
+[[nodiscard]] constexpr std::uint16_t internet_update(Checksum checksum, std::span<std::byte const> data) noexcept;
+
+/// Folds a byte range into the message whose checksum is checksum and returns the new checksum; that message has an even length.
+template <std::same_as<std::uint16_t> Checksum, byte_range Range>
+[[nodiscard]] constexpr std::uint16_t internet_update(Checksum checksum, Range &&data) noexcept;
+
 /// The checksum of state: the one's complement of the sum, a last odd byte padded with zero. Store it most significant byte first.
 [[nodiscard]] constexpr std::uint16_t internet_finalize(internet_state state) noexcept;
 
@@ -110,6 +119,14 @@ template <byte_range Range> constexpr internet_state internet_update(internet_st
 }
 
 constexpr std::uint16_t internet_finalize(internet_state state) noexcept { return static_cast<std::uint16_t>(~state.sum); }
+
+template <std::same_as<std::uint16_t> Checksum> constexpr std::uint16_t internet_update(Checksum checksum, std::span<std::byte const> data) noexcept {
+  return internet_finalize(internet_update(internet_state{.sum = static_cast<std::uint16_t>(~checksum)}, data));
+}
+
+template <std::same_as<std::uint16_t> Checksum, byte_range Range> constexpr std::uint16_t internet_update(Checksum checksum, Range &&data) noexcept {
+  return internet_finalize(internet_update(internet_state{.sum = static_cast<std::uint16_t>(~checksum)}, std::forward<Range>(data)));
+}
 
 constexpr std::uint16_t internet_compute(std::span<std::byte const> data) noexcept {
   return internet_finalize(internet_update(internet_state{}, data));

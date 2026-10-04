@@ -3,8 +3,10 @@
 
 #include <checksum/byte_range.hpp>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -46,6 +48,17 @@ template <unsigned Width>
 /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
 template <unsigned Width, byte_range Range>
 [[nodiscard]] constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, Range &&data) noexcept;
+
+/// Folds data into the message whose checksum is checksum and returns the new checksum; the type of checksum selects Fletcher-16, -32
+/// or -64. That message must end on a whole block, since a checksum does not record an unfinished block.
+template <class Checksum>
+  requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
+[[nodiscard]] constexpr Checksum fletcher_update(Checksum checksum, std::span<std::byte const> data) noexcept;
+
+/// Folds a byte range into the message whose checksum is checksum and returns the new checksum; that message ends on a whole block.
+template <class Checksum, byte_range Range>
+  requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
+[[nodiscard]] constexpr Checksum fletcher_update(Checksum checksum, Range &&data) noexcept;
 
 /// The checksum of state, an unfinished block padded with zero bytes.
 template <unsigned Width> [[nodiscard]] constexpr fletcher_state<Width>::value_type fletcher_finalize(fletcher_state<Width> state) noexcept;
@@ -151,6 +164,24 @@ template <unsigned Width> constexpr fletcher_state<Width>::value_type fletcher_f
     sum2 = fletcher_detail::reduce_once<Width>(sum2 + sum1);
   }
   return static_cast<value_type>((sum2 << (Width / 2)) | sum1);
+}
+
+template <class Checksum>
+  requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
+constexpr Checksum fletcher_update(Checksum checksum, std::span<std::byte const> data) noexcept {
+  using state_type = fletcher_state<std::numeric_limits<Checksum>::digits>;
+  using sum_type = state_type::sum_type;
+  state_type const state{.sum1 = static_cast<sum_type>(checksum), .sum2 = static_cast<sum_type>(checksum >> (sizeof(sum_type) * 8))};
+  return fletcher_finalize(fletcher_update(state, data));
+}
+
+template <class Checksum, byte_range Range>
+  requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
+constexpr Checksum fletcher_update(Checksum checksum, Range &&data) noexcept {
+  using state_type = fletcher_state<std::numeric_limits<Checksum>::digits>;
+  using sum_type = state_type::sum_type;
+  state_type const state{.sum1 = static_cast<sum_type>(checksum), .sum2 = static_cast<sum_type>(checksum >> (sizeof(sum_type) * 8))};
+  return fletcher_finalize(fletcher_update(state, std::forward<Range>(data)));
 }
 
 template <unsigned Width> constexpr fletcher_state<Width>::value_type fletcher_compute(std::span<std::byte const> data) noexcept {

@@ -6,6 +6,7 @@
 #include <test_data.hpp>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -186,6 +187,41 @@ TEST(adler32, edge_states) {
       ASSERT_LT(result.sum2, 65521U);
     }
   }
+}
+
+template <class Checksum>
+concept resumable = requires(Checksum checksum, std::span<std::byte const> data) { adler32_update(checksum, data); };
+
+// Only a std::uint32_t is a checksum; {} stays the empty state.
+static_assert(resumable<std::uint32_t> && !resumable<int> && !resumable<std::uint64_t> && !resumable<std::uint16_t>);
+static_assert(std::same_as<decltype(adler32_update({}, std::span<std::byte const>{})), adler32_state>);
+static_assert(adler32_update(adler32_compute("12345"sv), "6789"sv) == 0x091E01DE);
+
+// A stored checksum continues the message after any number of bytes, at compile time and at run time.
+TEST(adler32, resume_from_checksum) {
+  constexpr std::size_t constant_size = 64;
+  static constexpr auto resumed = [] {
+    auto const message = std::span(constant_message).first(constant_size);
+    std::array<std::uint32_t, constant_size + 1> result{};
+    for(std::size_t first = 0; first <= constant_size; ++first) {
+      result[first] = adler32_update(adler32_compute(message.first(first)), message.subspan(first));
+    }
+    return result;
+  }();
+  for(std::uint32_t const value : resumed) {
+    ASSERT_EQ(value, adler32_compute(std::span(constant_message).first(constant_size)));
+  }
+
+  auto const data = random_bytes(1100, 8);
+  auto const message = std::span<std::byte const>(data);
+  auto const whole = reference(message);
+  for(std::size_t first = 0; first <= data.size(); ++first) {
+    ASSERT_EQ(adler32_update(adler32_compute(message.first(first)), message.subspan(first)), whole) << "split at " << first;
+  }
+  std::list<std::byte> const tail(data.begin() + 100, data.end());
+  EXPECT_EQ(adler32_update(adler32_compute(message.first(100)), tail), whole);
+  // Sums from 65521 count modulo 65521, as in the state.
+  EXPECT_EQ(adler32_update(std::uint32_t{0xFFFFFFFF}, message), reference(message, 0xFFFF, 0xFFFF));
 }
 
 } // namespace
