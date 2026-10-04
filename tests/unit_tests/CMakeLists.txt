@@ -4,13 +4,20 @@ target_compile_features(checksum_ut PRIVATE cxx_std_23)
 
 target_sources(
   checksum_ut
-  PRIVATE ut_crc_acceleration.cpp
+  PRIVATE ut_adler32.cpp
+          ut_crc_acceleration.cpp
           ut_crc_accumulator.cpp
           ut_crc_catalog.cpp
           ut_crc_engine.cpp
           ut_crc_parameters.cpp
           ut_crc_polynomial.cpp
           ut_crc_vectors.cpp
+          ut_fletcher.cpp
+          ut_fletcher4.cpp
+          ut_internet_checksum.cpp
+          ut_murmur3.cpp
+          ut_xxh3.cpp
+          ut_xxhash.cpp
   PRIVATE FILE_SET
           HEADERS
           BASE_DIRS
@@ -19,6 +26,10 @@ target_sources(
           include/crc_catalog_checks.hpp
           include/crc_reference_vectors.hpp
           include/crc_test_support.hpp
+          include/fletcher4_reference_vectors.hpp
+          include/murmur3_reference_vectors.hpp
+          include/xxh3_reference_vectors.hpp
+          include/xxhash_reference_vectors.hpp
 )
 
 target_link_libraries(checksum_ut PRIVATE checksum::checksum GTest::gtest_main)

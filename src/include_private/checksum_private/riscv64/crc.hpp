@@ -1,8 +1,12 @@
-#ifndef CHECKSUM_PRIVATE_CRC_ARCH_RISCV64_HPP
-#define CHECKSUM_PRIVATE_CRC_ARCH_RISCV64_HPP
+#ifndef CHECKSUM_PRIVATE_RISCV64_CRC_HPP
+#define CHECKSUM_PRIVATE_RISCV64_CRC_HPP
 
 // RISC-V kernel: folding with the Zbc scalar carry-less multiplication (clmul, clmulh) on little-endian RV64, e.g.
 // -march=rv64gc_zbc; RISC-V has no CRC instruction. Included only by crc_arch.hpp.
+
+#if !defined(__riscv_zbc)
+#include <checksum_private/generic/crc.hpp>
+#else
 
 #include <riscv_bitmanip.h>
 
@@ -128,4 +132,6 @@ template <bool Reflected>
 
 } // namespace checksum::crc_detail
 
-#endif // CHECKSUM_PRIVATE_CRC_ARCH_RISCV64_HPP
+#endif
+
+#endif // CHECKSUM_PRIVATE_RISCV64_CRC_HPP

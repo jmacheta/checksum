@@ -8,7 +8,7 @@
             "name": "bench-common",
             "hidden": true,
             "cacheVariables": {
-                "CHECKSUM_TESTS": "ON",
+                "CHECKSUM_BENCHMARKS": "ON",
                 "CMAKE_C_FLAGS_RELEASE": "-O2 -DNDEBUG",
                 "CMAKE_CXX_FLAGS_RELEASE": "-O2 -DNDEBUG"
             },
@@ -40,8 +40,8 @@
         },
         {
             "name": "native-gcc-bench-portable",
-            "displayName": "Linux native benchmarks (GCC, portable CRC loops)",
-            "description": "Release -O2 benchmarks using GCC with default target flags and CHECKSUM_ACCELERATION=OFF: portable CRC loops",
+            "displayName": "Linux native benchmarks (GCC, portable loops)",
+            "description": "Release -O2 benchmarks using GCC with default target flags and CHECKSUM_ACCELERATION=OFF: portable loops",
             "inherits": "native-gcc-bench",
             "cacheVariables": {
                 "CHECKSUM_ACCELERATION": "OFF"
@@ -53,8 +53,8 @@
         },
         {
             "name": "native-clang-bench-portable",
-            "displayName": "Linux native benchmarks (Clang, portable CRC loops)",
-            "description": "Release -O2 benchmarks using Clang with default target flags and CHECKSUM_ACCELERATION=OFF: portable CRC loops",
+            "displayName": "Linux native benchmarks (Clang, portable loops)",
+            "description": "Release -O2 benchmarks using Clang with default target flags and CHECKSUM_ACCELERATION=OFF: portable loops",
             "inherits": "native-clang-bench",
             "cacheVariables": {
                 "CHECKSUM_ACCELERATION": "OFF"

@@ -51,5 +51,19 @@
                 "CMAKE_CXX_COMPILER": "clang++"
             }
         }
+    ],
+    "testPresets": [
+        {
+            "name": "test-common",
+            "hidden": true,
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true,
+                "jobs": 8
+            }
+        }
     ]
 }

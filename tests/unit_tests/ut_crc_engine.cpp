@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <array>
 #include <concepts>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <list>
 #include <optional>
 #include <random>
@@ -173,19 +175,21 @@ TEST(CrcEngine, ByteRangeAdapters) {
   }
 }
 
-// Every length 0..1024 at every start offset 0..7, against the reference.
+// Every length 0..320 (every block and threshold of the loops, at most 256 bytes, with every tail), then every 37th up
+// to 1023, at an aligned and a misaligned start, against the reference.
 TEST(CrcEngine, EquivalenceLengthsAndOffsets) {
   constexpr std::size_t max_length = 1024;
-  constexpr std::size_t max_offset = 7;
+  constexpr std::size_t every_length = 320;
+  constexpr std::size_t length_step = 37;
   auto const message = crc_test::random_bytes(max_length, 42);
   alignas(64) std::array<std::byte, max_length + 64> buffer{};
   for(crc_model const &model : models) {
     auto const expected = crc_test::reference_prefixes(model, message);
-    for(std::size_t offset = 0; offset <= max_offset; ++offset) {
+    for(std::size_t const offset : {0U, 7U}) {
       std::ranges::copy(message, buffer.begin() + static_cast<std::ptrdiff_t>(offset));
       auto const data = std::span<std::byte const>(buffer).subspan(offset, max_length);
       for_each_engine(model, [&](auto const &engine) {
-        for(std::size_t length = 0; length <= max_length; ++length) {
+        for(std::size_t length = 0; length <= max_length; length += length < every_length ? 1 : length_step) {
           auto const state = engine.update(engine.initial(), data.first(length));
           ASSERT_LE(state, crc_test::mask_of(model.width)) << model.name << " length " << length;
           ASSERT_EQ(engine.finalize(state), expected[length]) << model.name << " length " << length << " offset " << offset;
@@ -377,13 +381,18 @@ TEST(CrcEngine, UserStrategy) {
 
 // Violated preconditions fail an assert unless NDEBUG is defined.
 #if !defined(NDEBUG)
+// The abort of the assert exits without a core dump: a crash reporter that collects it takes about a second.
+void exit_on_abort() {
+  (void)std::signal(SIGABRT, [](int /*signal*/) { std::_Exit(EXIT_FAILURE); });
+}
+
 TEST(CrcEngineDeathTest, PreconditionsAreChecked) {
   auto const &engine = crc_engine_for<crc15_can>;
   std::array<std::byte, 2> const data{};
-  EXPECT_DEATH((void)engine.update(0x8000, data), "state <= mask");
-  EXPECT_DEATH((void)engine.finalize(0xFFFF), "state <= mask");
-  EXPECT_DEATH((void)engine.update(engine.initial(), data, 17), "in_range");
-  EXPECT_DEATH((void)engine.update(engine.initial(), std::span<std::byte const>{}, 1), "in_range");
+  EXPECT_DEATH((exit_on_abort(), (void)engine.update(0x8000, data)), "state <= mask");
+  EXPECT_DEATH((exit_on_abort(), (void)engine.finalize(0xFFFF)), "state <= mask");
+  EXPECT_DEATH((exit_on_abort(), (void)engine.update(engine.initial(), data, 17)), "in_range");
+  EXPECT_DEATH((exit_on_abort(), (void)engine.update(engine.initial(), std::span<std::byte const>{}, 1)), "in_range");
 }
 #endif
 

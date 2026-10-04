@@ -83,7 +83,7 @@
         {
             "name": "cross-aarch64-portable",
             "displayName": "AArch64 Linux in QEMU (portable)",
-            "description": "AArch64 cross build with -march=armv8-a (no PMULL): generic header; tests run in QEMU",
+            "description": "AArch64 cross build with -march=armv8-a (no CRC32, no PMULL): portable CRC loops, the NEON Internet checksum kernel (NEON is baseline); tests run in QEMU",
             "inherits": "cross-aarch64-base",
             "environment": {
                 "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a",
@@ -93,7 +93,7 @@
         {
             "name": "cross-aarch64be",
             "displayName": "Big-endian AArch64 Linux in QEMU (CRC32, no PMULL)",
-            "description": "Big-endian AArch64 cross build with -march=armv8-a+crc+crypto: CRC32 instructions, the PMULL kernel is not used on big-endian (arm header); tests run in QEMU_be",
+            "description": "Big-endian AArch64 cross build with -march=armv8-a+crc+crypto: CRC32 instructions, the PMULL and NEON Internet checksum kernels are not used on big-endian; tests run in QEMU_be",
             "inherits": "cross-aarch64be-base",
             "environment": {
                 "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a+crc+crypto",
@@ -103,21 +103,21 @@
         {
             "name": "cross-arm-crc32",
             "displayName": "32-bit Arm Linux in QEMU (CRC32 instructions)",
-            "description": "32-bit Arm (hard float) cross build with -march=armv8-a+crc: CRC32 instructions in AArch32 (arm header); tests run in QEMU",
+            "description": "32-bit Arm (hard float) cross build with -march=armv8-a+crc -mfpu=neon-fp-armv8: CRC32 instructions in AArch32 and the NEON Internet checksum kernel; tests run in QEMU",
             "inherits": "cross-arm-base",
             "environment": {
-                "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a+crc",
-                "CHECKSUM_EXTRA_CXXFLAGS": "-march=armv8-a+crc"
+                "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a+crc -mfpu=neon-fp-armv8",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=armv8-a+crc -mfpu=neon-fp-armv8"
             }
         },
         {
             "name": "cross-arm-portable",
-            "displayName": "32-bit Arm Linux in QEMU (portable)",
-            "description": "32-bit Arm (hard float) cross build: generic header on a 32-bit target; tests run in QEMU",
+            "displayName": "32-bit Arm Linux in QEMU (no NEON)",
+            "description": "32-bit Arm (hard float) cross build with -mfpu=vfpv3-d16: portable CRC loops and the ldm + adcs Internet checksum kernel on a 32-bit target; tests run in QEMU. CHECKSUM_TEST_ARM_DSP enables the M-profile DSP kernel of Fletcher-16 and Adler-32, which QEMU user mode cannot run on an M-profile core",
             "inherits": "cross-arm-base",
             "environment": {
-                "CHECKSUM_EXTRA_CFLAGS": "",
-                "CHECKSUM_EXTRA_CXXFLAGS": ""
+                "CHECKSUM_EXTRA_CFLAGS": "-mfpu=vfpv3-d16",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-mfpu=vfpv3-d16 -DCHECKSUM_TEST_ARM_DSP"
             }
         },
         {
@@ -128,6 +128,16 @@
             "environment": {
                 "CHECKSUM_EXTRA_CFLAGS": "-march=rv64gc_zbb_zbc",
                 "CHECKSUM_EXTRA_CXXFLAGS": "-march=rv64gc_zbb_zbc"
+            }
+        },
+        {
+            "name": "cross-riscv64-rvv",
+            "displayName": "RISC-V 64 Linux in QEMU (V extension)",
+            "description": "Cross build for RISC-V 64 Linux with -march=rv64gcv, tests in QEMU user mode: the vector Internet checksum kernel",
+            "inherits": "cross-riscv64-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=rv64gcv",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=rv64gcv"
             }
         },
         {
@@ -185,6 +195,12 @@
             "configuration": "Debug"
         },
         {
+            "name": "cross-riscv64-rvv-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-riscv64-rvv",
+            "configuration": "Debug"
+        },
+        {
             "name": "cross-riscv64-portable-debug",
             "displayName": "all [Debug]",
             "configurePreset": "cross-riscv64-portable",
@@ -194,107 +210,66 @@
     "testPresets": [
         {
             "name": "cross-aarch64-pmull-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64-pmull",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-aarch64-crc32-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64-crc32",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-aarch64-portable-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64-portable",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-aarch64be-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64be",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-arm-crc32-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-arm-crc32",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-arm-portable-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-arm-portable",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         },
         {
             "name": "cross-riscv64-zbc-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-riscv64-zbc",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-riscv64-rvv-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-riscv64-rvv",
+            "configuration": "Debug"
         },
         {
             "name": "cross-riscv64-portable-debug",
+            "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-riscv64-portable",
-            "configuration": "Debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": true
-            }
+            "configuration": "Debug"
         }
     ],
     "workflowPresets": [
@@ -395,7 +370,7 @@
         },
         {
             "name": "cross-arm-portable",
-            "displayName": "32-bit Arm Linux in QEMU (portable)",
+            "displayName": "32-bit Arm Linux in QEMU (no NEON)",
             "description": "Configure, build [Debug], test",
             "steps": [
                 {
@@ -428,6 +403,25 @@
                 {
                     "type": "test",
                     "name": "cross-riscv64-zbc-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-riscv64-rvv",
+            "displayName": "RISC-V 64 Linux in QEMU (V extension)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-riscv64-rvv"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-riscv64-rvv-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-riscv64-rvv-debug"
                 }
             ]
         },

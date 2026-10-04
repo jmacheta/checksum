@@ -3,7 +3,9 @@ include(${CMAKE_CURRENT_LIST_DIR}/CPM.cmake)
 if (CHECKSUM_TESTS)
   CPMAddPackage("gh:google/googletest@1.17.0")
   target_compile_options(gtest PUBLIC $<$<CXX_COMPILER_ID:GNU,Clang>:-Wno-null-dereference>)
+endif ()
 
+if (CHECKSUM_BENCHMARKS)
   CPMAddPackage(
     NAME benchmark GITHUB_REPOSITORY google/benchmark VERSION 1.9.5 OPTIONS "BENCHMARK_ENABLE_TESTING OFF" "BENCHMARK_ENABLE_GTEST_TESTS OFF"
                                                                             "BENCHMARK_ENABLE_INSTALL OFF" "BENCHMARK_ENABLE_WERROR OFF"

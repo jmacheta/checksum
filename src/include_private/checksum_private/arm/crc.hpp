@@ -1,5 +1,5 @@
-#ifndef CHECKSUM_PRIVATE_CRC_ARCH_ARM_HPP
-#define CHECKSUM_PRIVATE_CRC_ARCH_ARM_HPP
+#ifndef CHECKSUM_PRIVATE_ARM_CRC_HPP
+#define CHECKSUM_PRIVATE_ARM_CRC_HPP
 
 // Arm kernels: the CRC32/CRC32C instructions (AArch64 and AArch32 with +crc) and PMULL folding (little-endian AArch64
 // with +crypto; big-endian NEON lane order differs between compilers). Included only by crc_arch.hpp.
@@ -198,4 +198,4 @@ template <bool Reflected>
 
 } // namespace checksum::crc_detail
 
-#endif // CHECKSUM_PRIVATE_CRC_ARCH_ARM_HPP
+#endif // CHECKSUM_PRIVATE_ARM_CRC_HPP
