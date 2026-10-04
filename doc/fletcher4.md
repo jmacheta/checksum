@@ -27,6 +27,9 @@ static_assert(checksum::fletcher4_compute("abcdefgh"sv) ==
               checksum::fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
 ```
 
+`examples/fletcher4` has complete programs: verifying a 4 KiB block against its stored checksum as ZFS does, and the
+checksum of a file read in chunks.
+
 ## 2. Definition
 
 fletcher4 reads the message as 32-bit little-endian words and keeps four 64-bit sums, all starting at 0. For each word

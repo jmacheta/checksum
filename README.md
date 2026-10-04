@@ -69,6 +69,7 @@ CPU acceleration follows your compiler flags (for example `-march=native` or `-m
 - [MurmurHash3 user guide](doc/murmur3.md): the API, seeds, byte order, measured performance and limitations.
 - [examples/crc](examples/crc): compile-time CRC, a file checksum, a custom CRC, run-time parameters, a MODBUS frame
   and a strategy driving an MCU CRC peripheral.
+- [examples/fletcher4](examples/fletcher4): verifying a ZFS block and a file checksum.
 
 ## Contributing
 
