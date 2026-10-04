@@ -49,7 +49,7 @@ template <class Value> Value load(std::byte const *data) noexcept;
 
 // Adds the whole kernel blocks at the start of data to the sums of state, a chunk of at most max_blocks blocks per kernel call, each sum
 // reduced after every chunk. Returns the number of bytes taken; inlined into its one caller.
-template <class Value, std::uint64_t Modulus, class State>
+template <class Kernel, class Value, std::uint64_t Modulus, class State>
 [[gnu::always_inline]] inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept;
 
 // The portable loop over the whole Values of data.
@@ -57,8 +57,13 @@ template <class Value, std::uint64_t Modulus, class State>
 [[gnu::always_inline]] inline State sum_portable(State state, std::span<std::byte const> data) noexcept;
 
 // The CPU kernel, then the portable loop over what it left. Not inlined, so that short inputs run sum_portable() without a call.
+// From the minimum size of group_kernel, a tail call to sum_groups() instead.
 template <class Value, std::uint64_t Modulus, class State>
 [[gnu::noinline, maybe_unused]] State sum_long(State state, std::span<std::byte const> data) noexcept;
+
+// group_kernel, then the portable loop. A separate function, so that its registers cost sum_long() nothing.
+template <class Value, std::uint64_t Modulus, class State>
+[[gnu::noinline, maybe_unused]] State sum_groups(State state, std::span<std::byte const> data) noexcept;
 
 // Whether size bytes go to sum_long(): from the minimum size of the kernel, if there is one. Callers branch on it themselves,
 // so that the call of sum_long() stays a tail call.
@@ -122,10 +127,10 @@ template <class Value> Value load(std::byte const *data) noexcept {
   }
 }
 
-template <class Value, std::uint64_t Modulus, class State>
+template <class Kernel, class Value, std::uint64_t Modulus, class State>
 [[gnu::always_inline]] inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept {
   constexpr unsigned bits = std::numeric_limits<Value>::digits;
-  using chunk_kernel = kernel<bits>;
+  using chunk_kernel = Kernel;
   constexpr std::uint64_t values_per_block = chunk_kernel::block_size / sizeof(Value);
   constexpr std::uint64_t max_values = chunk_kernel::max_blocks * values_per_block;
   constexpr std::uint64_t largest_value = std::numeric_limits<Value>::max();
@@ -259,10 +264,22 @@ template <class Value, std::uint64_t Modulus, class State>
 
 template <class Value, std::uint64_t Modulus, class State>
 [[gnu::noinline, maybe_unused]] State sum_long(State state, std::span<std::byte const> data) noexcept {
-  std::size_t size = 0;
-  if constexpr(kernel<std::numeric_limits<Value>::digits>::available) {
-    size = sum_chunks<Value, Modulus>(state, data);
+  constexpr unsigned bits = std::numeric_limits<Value>::digits;
+  if constexpr(group_kernel<bits>::available) {
+    if(data.size() >= group_kernel<bits>::minimum_size) {
+      return sum_groups<Value, Modulus>(state, data);
+    }
   }
+  std::size_t size = 0;
+  if constexpr(kernel<bits>::available) {
+    size = sum_chunks<kernel<bits>, Value, Modulus>(state, data);
+  }
+  return sum_portable<Value, Modulus>(state, data.subspan(size));
+}
+
+template <class Value, std::uint64_t Modulus, class State>
+[[gnu::noinline, maybe_unused]] State sum_groups(State state, std::span<std::byte const> data) noexcept {
+  std::size_t const size = sum_chunks<group_kernel<std::numeric_limits<Value>::digits>, Value, Modulus>(state, data);
   return sum_portable<Value, Modulus>(state, data.subspan(size));
 }
 

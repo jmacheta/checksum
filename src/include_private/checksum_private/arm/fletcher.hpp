@@ -34,6 +34,23 @@ template <> struct kernel<8> {
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
+#if defined(__aarch64__)
+// AArch32 has half the NEON registers: there the group loop spilled and ran 10-27 % slower than kernel<8>.
+template <> struct group_kernel<8> {
+  static constexpr bool available = true;
+  static constexpr std::size_t block_size = 16;
+  // The weighted sum of a chunk, at most 255 * n(n + 1) / 2 for n bytes, stays within 32 bits, so the chunk loop reduces in
+  // 32-bit arithmetic. A 16-bit lane of the column sums gains at most 255 per 4 blocks, and 255 per block in the last 3.
+  static constexpr std::size_t max_blocks = 360;
+  static_assert(std::uint64_t{255} * (block_size * max_blocks) * ((block_size * max_blocks) + 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
+  static_assert(255 * ((max_blocks / 4) + 3) <= std::numeric_limits<std::uint16_t>::max());
+  // Where it overtakes kernel<8> on a Cortex-A72 (Raspberry Pi 4); below, its 64 column weights cost more than they save.
+  static constexpr std::size_t minimum_size = 320;
+  static constexpr std::size_t alignment = 1;
+  static chunk_sums sum(std::byte const *start, std::size_t blocks) noexcept;
+};
+#endif
+
 template <> struct kernel<16> {
   static constexpr bool available = true;
   static constexpr std::size_t block_size = 16;
@@ -87,6 +104,67 @@ inline chunk_sums kernel<8>::sum(std::byte const *data, std::size_t blocks) noex
   weighted = vmlal_u16(weighted, vget_high_u16(high_columns), vget_high_u16(high_weights));
   return {.sum = lane_total(sum), .weighted = (block_size * lane_total(previous)) + lane_total(weighted)};
 }
+
+#if defined(__aarch64__)
+// As kernel<8> per 64 bytes, with pairwise additions of the 4 blocks into sum and 64 columns weighted 64 .. 1. The last
+// blocks that fill no group add to the columns of the last 16 bytes, weights 16 .. 1, and count their previous per block.
+inline chunk_sums group_kernel<8>::sum(std::byte const *start, std::size_t blocks) noexcept {
+  auto const *data = reinterpret_cast<std::uint8_t const *>(start);
+  static constexpr std::array<std::uint16_t, 64> weights{64, 63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, 44, 43,
+                                                         42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21,
+                                                         20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9,  8,  7,  6,  5,  4,  3,  2,  1};
+  uint32x4_t sum = vdupq_n_u32(0);
+  uint32x4_t previous = sum;
+  uint16x8_t columns0 = vdupq_n_u16(0);
+  uint16x8_t columns1 = columns0;
+  uint16x8_t columns2 = columns0;
+  uint16x8_t columns3 = columns0;
+  uint16x8_t columns4 = columns0;
+  uint16x8_t columns5 = columns0;
+  uint16x8_t columns6 = columns0;
+  uint16x8_t columns7 = columns0;
+  for(; blocks >= 4; blocks -= 4, data += 4 * block_size) {
+    uint8x16_t const first = vld1q_u8(data);
+    uint8x16_t const second = vld1q_u8(data + block_size);
+    uint8x16_t const third = vld1q_u8(data + (2 * block_size));
+    uint8x16_t const fourth = vld1q_u8(data + (3 * block_size));
+    previous = vaddq_u32(previous, sum);
+    sum = vpadalq_u16(sum, vpadalq_u8(vpadalq_u8(vpadalq_u8(vpaddlq_u8(first), second), third), fourth));
+    columns0 = vaddw_u8(columns0, vget_low_u8(first));
+    columns1 = vaddw_u8(columns1, vget_high_u8(first));
+    columns2 = vaddw_u8(columns2, vget_low_u8(second));
+    columns3 = vaddw_u8(columns3, vget_high_u8(second));
+    columns4 = vaddw_u8(columns4, vget_low_u8(third));
+    columns5 = vaddw_u8(columns5, vget_high_u8(third));
+    columns6 = vaddw_u8(columns6, vget_low_u8(fourth));
+    columns7 = vaddw_u8(columns7, vget_high_u8(fourth));
+  }
+  // Counted in blocks: 4 per group.
+  previous = vshlq_n_u32(previous, 2);
+  for(; blocks != 0; --blocks, data += block_size) {
+    uint8x16_t const value = vld1q_u8(data);
+    previous = vaddq_u32(previous, sum);
+    sum = vpadalq_u16(sum, vpaddlq_u8(value));
+    columns6 = vaddw_u8(columns6, vget_low_u8(value));
+    columns7 = vaddw_u8(columns7, vget_high_u8(value));
+  }
+  auto const add_weighted = [](uint32x4_t total, uint16x8_t columns, std::uint16_t const *column_weights) {
+    uint16x8_t const weight = vld1q_u16(column_weights);
+    total = vmlal_u16(total, vget_low_u16(columns), vget_low_u16(weight));
+    return vmlal_u16(total, vget_high_u16(columns), vget_high_u16(weight));
+  };
+  uint32x4_t weighted = vmull_u16(vget_low_u16(columns0), vget_low_u16(vld1q_u16(weights.data())));
+  weighted = vmlal_u16(weighted, vget_high_u16(columns0), vget_high_u16(vld1q_u16(weights.data())));
+  weighted = add_weighted(weighted, columns1, weights.data() + 8);
+  weighted = add_weighted(weighted, columns2, weights.data() + 16);
+  weighted = add_weighted(weighted, columns3, weights.data() + 24);
+  weighted = add_weighted(weighted, columns4, weights.data() + 32);
+  weighted = add_weighted(weighted, columns5, weights.data() + 40);
+  weighted = add_weighted(weighted, columns6, weights.data() + 48);
+  weighted = add_weighted(weighted, columns7, weights.data() + 56);
+  return {.sum = lane_total(sum), .weighted = (block_size * lane_total(previous)) + lane_total(weighted)};
+}
+#endif
 
 // As for bytes, with 8 values per block and 32-bit column sums.
 inline chunk_sums kernel<16>::sum(std::byte const *data, std::size_t blocks) noexcept {

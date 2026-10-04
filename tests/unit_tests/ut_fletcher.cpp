@@ -120,8 +120,8 @@ TYPED_TEST(fletcher, chunk_boundaries) {
   std::vector<std::byte> const ones((2 * largest_chunk) + 64, std::byte{0xFF});
   auto const random = random_bytes(ones.size(), 7);
   for(auto const &data : {ones, random}) {
-    for(std::size_t const chunk :
-        {std::size_t{1024}, std::size_t{2048}, std::size_t{4096}, std::size_t{5600}, std::size_t{16} << 10U, std::size_t{32} << 10U, largest_chunk}) {
+    for(std::size_t const chunk : {std::size_t{1024}, std::size_t{2048}, std::size_t{4096}, std::size_t{5600}, std::size_t{5760},
+                                   std::size_t{16} << 10U, std::size_t{32} << 10U, largest_chunk}) {
       for(std::size_t const size : {chunk - 1, chunk, chunk + 1, chunk + 35, (2 * chunk) + 35}) {
         for(std::size_t offset = 0; offset < 4; ++offset) {
           auto const message = std::span<std::byte const>(data).subspan(offset, size);
