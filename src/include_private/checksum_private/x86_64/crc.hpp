@@ -79,8 +79,19 @@ struct pclmul_kernel {
   template <bool Reflected> static std::uint64_t reduce(vector accumulator, folding_constants const &constants) noexcept;
 
 #if defined(__VPCLMULQDQ__) && defined(__AVX2__)
+  // Two blocks: byte 0 lowest if reflected, each block byte-reversed otherwise.
+  template <bool Reflected> static __m256i load_two(std::span<std::byte const> data) noexcept;
+
+  // fold() of two blocks with the constants of each lane.
+  static __m256i fold_two(__m256i accumulators, __m256i constants, __m256i next) noexcept;
+
   // Eight 256-bit accumulators (blocks 2j, 2j + 1 in accumulator j) fold 256 bytes per step, then four fold 128 and
-  // 64; their 8 blocks fold onto the last one in parallel, and fold_tail_with() takes the last 0..63 bytes.
+  // 64. Returns 8 blocks (2 per vector) with fewer than 64 bytes left after them; consumed: the bytes they cover.
+  template <bool Reflected>
+  static std::array<__m256i, 4> fold_wide_blocks(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data,
+                                                 std::size_t &consumed) noexcept;
+
+  // fold_wide_blocks(), its 8 blocks folded onto the last one in parallel, then fold_tail_with() on the last 0..63 bytes.
   template <bool Reflected>
   static vector fold_wide(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
 #endif
@@ -212,53 +223,71 @@ template <bool Reflected>
 }
 
 #if defined(__VPCLMULQDQ__) && defined(__AVX2__)
+template <bool Reflected> [[gnu::always_inline]] inline __m256i pclmul_kernel::load_two(std::span<std::byte const> data) noexcept {
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector load, the intrinsic's interface.
+  __m256i const blocks = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(data.data()));
+  if constexpr(Reflected) {
+    return blocks;
+  } else {
+    __m128i const reverse = _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+    return _mm256_shuffle_epi8(blocks, _mm256_broadcastsi128_si256(reverse));
+  }
+}
+
+[[gnu::always_inline]] inline __m256i pclmul_kernel::fold_two(__m256i accumulators, __m256i constants, __m256i next) noexcept {
+  return _mm256_xor_si256(
+      _mm256_xor_si256(_mm256_clmulepi64_epi128(accumulators, constants, 0x00), _mm256_clmulepi64_epi128(accumulators, constants, 0x11)), next);
+}
+
 // Inlined only into the non-inlined long-input callers (fold_long_message(), fold_long_crc32()): a second call cost
 // up to 10 % at 256 bytes.
 template <bool Reflected>
-[[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::fold_wide(folding_constants const &constants, std::uint64_t remainder,
-                                                                             std::span<std::byte const> data) noexcept {
+[[gnu::always_inline]] inline std::array<__m256i, 4> pclmul_kernel::fold_wide_blocks(folding_constants const &constants, std::uint64_t remainder,
+                                                                                     std::span<std::byte const> data,
+                                                                                     std::size_t &consumed) noexcept {
   constexpr std::size_t half = 32;   // bytes per 256-bit accumulator
   constexpr std::size_t eight = 256; // bytes per iteration of eight accumulators
   constexpr std::size_t four = 128;  // bytes per iteration of four
-  auto const load_two = [](std::span<std::byte const> bytes) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector load, the intrinsic's interface.
-    __m256i const blocks = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(bytes.data()));
-    if constexpr(Reflected) {
-      return blocks;
-    } else {
-      __m128i const reverse = _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
-      return _mm256_shuffle_epi8(blocks, _mm256_broadcastsi128_si256(reverse));
-    }
-  };
-  auto const fold_two = [](__m256i accumulator, __m256i distance, __m256i next) {
-    return _mm256_xor_si256(
-        _mm256_xor_si256(_mm256_clmulepi64_epi128(accumulator, distance, 0x00), _mm256_clmulepi64_epi128(accumulator, distance, 0x11)), next);
-  };
   __m256i const by_eight = _mm256_broadcastsi128_si256(pair(constants.by_eight));
-  __m256i const by_four = _mm256_broadcastsi128_si256(pair(constants.by_four));
-  __m256i const first = _mm256_zextsi128_si256(state<Reflected>(remainder));
   static_assert(wide_minimum_size == eight, "the eight-accumulator loop runs at least once");
   __m256i const by_sixteen = _mm256_broadcastsi128_si256(pair(constants.by_sixteen));
   std::array<__m256i, 8> accumulators{};
-  unrolled<8>([&](auto index) { accumulators[index] = load_two(data.subspan(index * half)); });
-  accumulators[0] = _mm256_xor_si256(accumulators[0], first);
-  std::size_t consumed = eight;
-  for(; data.size() - consumed >= eight; consumed += eight) {
-    unrolled<8>(
-        [&](auto index) { accumulators[index] = fold_two(accumulators[index], by_sixteen, load_two(data.subspan(consumed + (index * half)))); });
+  unrolled<8>([&](auto index) { accumulators[index] = load_two<Reflected>(data.subspan(index * half)); });
+  accumulators[0] = _mm256_xor_si256(accumulators[0], _mm256_zextsi128_si256(state<Reflected>(remainder)));
+  consumed = eight;
+  // Branches that 256 bytes do not take are marked unlikely: each taken branch on that path cost about 2 %.
+  if(data.size() - consumed >= eight) [[unlikely]] {
+    do {
+      unrolled<8>([&](auto index) {
+        accumulators[index] = fold_two(accumulators[index], by_sixteen, load_two<Reflected>(data.subspan(consumed + (index * half))));
+      });
+      consumed += eight;
+    } while(data.size() - consumed >= eight);
   }
   // Blocks 2j, 2j + 1 fold over eight blocks onto blocks 2j + 8, 2j + 9.
   std::array<__m256i, 4> pairs{};
   unrolled<4>([&](auto index) { pairs[index] = fold_two(accumulators[index], by_eight, accumulators[index + 4]); });
-  for(; data.size() - consumed >= four; consumed += four) {
-    unrolled<4>([&](auto index) { pairs[index] = fold_two(pairs[index], by_eight, load_two(data.subspan(consumed + (index * half)))); });
+  if(data.size() - consumed >= four) [[unlikely]] {
+    do {
+      unrolled<4>([&](auto index) { pairs[index] = fold_two(pairs[index], by_eight, load_two<Reflected>(data.subspan(consumed + (index * half)))); });
+      consumed += four;
+    } while(data.size() - consumed >= four);
   }
-  if(data.size() - consumed >= folding_four_blocks_size) {
+  if(data.size() - consumed >= folding_four_blocks_size) [[unlikely]] {
     // Blocks 0..3 fold over four blocks onto blocks 4..7, followed by blocks 8..11.
-    pairs = {fold_two(pairs[0], by_four, pairs[2]), fold_two(pairs[1], by_four, pairs[3]), load_two(data.subspan(consumed)),
-             load_two(data.subspan(consumed + half))};
+    __m256i const by_four = _mm256_broadcastsi128_si256(pair(constants.by_four));
+    pairs = {fold_two(pairs[0], by_four, pairs[2]), fold_two(pairs[1], by_four, pairs[3]), load_two<Reflected>(data.subspan(consumed)),
+             load_two<Reflected>(data.subspan(consumed + half))};
     consumed += folding_four_blocks_size;
   }
+  return pairs;
+}
+
+template <bool Reflected>
+[[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::fold_wide(folding_constants const &constants, std::uint64_t remainder,
+                                                                             std::span<std::byte const> data) noexcept {
+  std::size_t consumed = 0;
+  std::array<__m256i, 4> const pairs = fold_wide_blocks<Reflected>(constants, remainder, data, consumed);
   // Blocks 0..5 fold onto block 7 with the constants of their own distances, in parallel; block 6 folds over one.
   auto const distances = [](folding_pair const &longer) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned load of two adjacent constant pairs.
@@ -267,9 +296,12 @@ template <bool Reflected>
   __m256i const block_7 = _mm256_blend_epi32(pairs[3], _mm256_setzero_si256(), 0x0F);
   __m256i const folded = fold_two(pairs[0], distances(constants.by_seven),
                                   fold_two(pairs[1], distances(constants.by_five), fold_two(pairs[2], distances(constants.by_three), block_7)));
-  __m128i const accumulator = fold(_mm256_castsi256_si128(pairs[3]), pair(constants.by_one),
-                                   _mm_xor_si128(_mm256_castsi256_si128(folded), _mm256_extracti128_si256(folded, 1)));
-  return fold_tail_with<Reflected, pclmul_kernel>(accumulator, constants, data.subspan(consumed), data.last(folding_block_size));
+  vector const accumulator = fold(_mm256_castsi256_si128(pairs[3]), pair(constants.by_one),
+                                  _mm_xor_si128(_mm256_castsi256_si128(folded), _mm256_extracti128_si256(folded, 1)));
+  if(consumed != data.size()) [[unlikely]] {
+    return fold_tail_with<Reflected, pclmul_kernel>(accumulator, constants, data.subspan(consumed), data.last(folding_block_size));
+  }
+  return accumulator;
 }
 #endif
 
@@ -283,6 +315,28 @@ template <bool Reflected>
 template <>
 [[gnu::always_inline]] inline std::uint32_t fold_crc32<crc32c_reflected_polynomial>(folding_constants const &constants, std::uint32_t remainder,
                                                                                     std::span<std::byte const> data) noexcept {
+#if defined(__VPCLMULQDQ__) && defined(__AVX2__)
+  if(data.size() >= wide_folding_minimum_size) {
+    // Blocks 0..5 fold onto blocks 6 and 7 in parallel; crc32 instructions take the 32 bytes and the last 0..63 bytes:
+    // 20 % faster at 256 bytes than folding onto one block.
+    std::size_t consumed = 0;
+    std::array<__m256i, 4> const pairs = pclmul_kernel::fold_wide_blocks<true>(constants, remainder, data, consumed);
+    auto const both = [&](folding_pair const &distance) { return _mm256_broadcastsi128_si256(pclmul_kernel::pair(distance)); };
+    __m256i const last_two = pclmul_kernel::fold_two(
+        pairs[0], both(constants.by_six),
+        pclmul_kernel::fold_two(pairs[1], both(constants.by_four), pclmul_kernel::fold_two(pairs[2], both(constants.by_two), pairs[3])));
+    __m128i const low = _mm256_castsi256_si128(last_two);
+    __m128i const high = _mm256_extracti128_si256(last_two, 1);
+    std::uint32_t crc = crc32_word<crc32c_reflected_polynomial>(0, pclmul_kernel::lane<0>(low));
+    crc = crc32_word<crc32c_reflected_polynomial>(crc, pclmul_kernel::lane<1>(low));
+    crc = crc32_word<crc32c_reflected_polynomial>(crc, pclmul_kernel::lane<0>(high));
+    crc = crc32_word<crc32c_reflected_polynomial>(crc, pclmul_kernel::lane<1>(high));
+    if(consumed != data.size()) [[unlikely]] {
+      crc = crc32_instructions<crc32c_reflected_polynomial>(crc, data.subspan(consumed));
+    }
+    return crc;
+  }
+#endif
   return fold_crc32_with<crc32c_reflected_polynomial, pclmul_kernel>(constants, remainder, data);
 }
 #endif
