@@ -3,7 +3,6 @@
 
 #include <checksum/byte_range.hpp>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -68,16 +67,13 @@ template <unsigned Width> inline constexpr unsigned block_size = Width / 16;
 // M = 2^(Width/2) - 1.
 template <unsigned Width> inline constexpr std::uint64_t modulus = (std::uint64_t{1} << (Width / 2)) - 1;
 
-// value modulo M, in 0..M-1.
-template <unsigned Width> constexpr std::uint64_t reduce(std::uint64_t value) noexcept;
+// value modulo M for value < 2M.
+template <unsigned Width> constexpr std::uint64_t reduce_once(std::uint64_t value) noexcept;
 
-// (sum + value) modulo M for sum < M and value <= M.
-template <unsigned Width> constexpr std::uint64_t add(std::uint64_t sum, std::uint64_t value) noexcept;
-
-// Folds data byte by byte; the constant-evaluation loop, also used to finish an unfinished block at run time.
+// Folds data byte by byte; the constant-evaluation loop, also used at run time for the bytes of an unfinished block.
 template <unsigned Width> constexpr fletcher_state<Width> update_bytes(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
 
-// The same fold at run time for a state at a block boundary, defined in src/fletcher/sum_loop.cpp.
+// The same fold at run time, defined in src/fletcher/sum_loop.cpp.
 fletcher_state<16> sum_loop(fletcher_state<16> state, std::span<std::byte const> data) noexcept;
 fletcher_state<32> sum_loop(fletcher_state<32> state, std::span<std::byte const> data) noexcept;
 fletcher_state<64> sum_loop(fletcher_state<64> state, std::span<std::byte const> data) noexcept;
@@ -89,30 +85,20 @@ fletcher_state<64> sum_loop(fletcher_state<64> state, std::span<std::byte const>
 
 namespace checksum::fletcher_detail {
 
-// 2^(Width/2) is 1 modulo M, so the high bits fold onto the low ones; each fold makes value smaller until it is at most M.
-template <unsigned Width> constexpr std::uint64_t reduce(std::uint64_t value) noexcept {
-  while(value > modulus<Width>) {
-    std::uint64_t const low = value & modulus<Width>;
-    value = low + (value >> (Width / 2));
-  }
-  return value == modulus<Width> ? 0 : value;
-}
-
-template <unsigned Width> constexpr std::uint64_t add(std::uint64_t sum, std::uint64_t value) noexcept {
-  sum += value;
-  return sum >= modulus<Width> ? sum - modulus<Width> : sum;
+template <unsigned Width> constexpr std::uint64_t reduce_once(std::uint64_t value) noexcept {
+  return value >= modulus<Width> ? value - modulus<Width> : value;
 }
 
 template <unsigned Width> constexpr fletcher_state<Width> update_bytes(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
   using sum_type = fletcher_state<Width>::sum_type;
-  std::uint64_t sum1 = reduce<Width>(state.sum1);
-  std::uint64_t sum2 = reduce<Width>(state.sum2);
+  std::uint64_t sum1 = reduce_once<Width>(state.sum1);
+  std::uint64_t sum2 = reduce_once<Width>(state.sum2);
   unsigned offset = state.block_offset % block_size<Width>;
   for(std::byte const byte : data) {
-    sum1 = add<Width>(sum1, std::to_integer<std::uint64_t>(byte) << (8 * offset));
+    sum1 = reduce_once<Width>(sum1 + (std::to_integer<std::uint64_t>(byte) << (8 * offset)));
     if(++offset == block_size<Width>) {
       offset = 0;
-      sum2 = add<Width>(sum2, sum1);
+      sum2 = reduce_once<Width>(sum2 + sum1);
     }
   }
   return {.sum1 = static_cast<sum_type>(sum1), .sum2 = static_cast<sum_type>(sum2), .block_offset = static_cast<std::uint8_t>(offset)};
@@ -126,14 +112,7 @@ template <unsigned Width> constexpr fletcher_state<Width> fletcher_update(fletch
   if consteval {
     return fletcher_detail::update_bytes(state, data);
   } else {
-    constexpr unsigned block_size = fletcher_detail::block_size<Width>;
-    // Bytes that finish an unfinished block; the loop starts at a block boundary.
-    std::size_t const head = std::min<std::size_t>(data.size(), (block_size - (state.block_offset % block_size)) % block_size);
-    state = fletcher_detail::update_bytes(state, data.first(head));
-    if(head == data.size()) {
-      return state;
-    }
-    return fletcher_detail::sum_loop(state, data.subspan(head));
+    return fletcher_detail::sum_loop(state, data);
   }
 }
 
@@ -144,11 +123,11 @@ template <unsigned Width, byte_range Range> constexpr fletcher_state<Width> flet
 
 template <unsigned Width> constexpr fletcher_state<Width>::value_type fletcher_finalize(fletcher_state<Width> state) noexcept {
   using value_type = fletcher_state<Width>::value_type;
-  std::uint64_t const sum1 = fletcher_detail::reduce<Width>(state.sum1);
-  std::uint64_t sum2 = fletcher_detail::reduce<Width>(state.sum2);
+  std::uint64_t const sum1 = fletcher_detail::reduce_once<Width>(state.sum1);
+  std::uint64_t sum2 = fletcher_detail::reduce_once<Width>(state.sum2);
   // The zero padding adds nothing to sum1, but the padded block still adds sum1 to sum2.
   if(state.block_offset % fletcher_detail::block_size<Width> != 0) {
-    sum2 = fletcher_detail::add<Width>(sum2, sum1);
+    sum2 = fletcher_detail::reduce_once<Width>(sum2 + sum1);
   }
   return static_cast<value_type>((sum2 << (Width / 2)) | sum1);
 }
