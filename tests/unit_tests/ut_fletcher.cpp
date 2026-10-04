@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -30,6 +31,12 @@ static_assert(fletcher_compute<64>("abcde"sv) == 0xC8C6C527646362C6);
 static_assert(fletcher_compute<64>("abcdef"sv) == 0xC8C72B276463C8C6);
 static_assert(fletcher_compute<64>("abcdefgh"sv) == 0x312E2B28CCCAC8C6);
 static_assert(fletcher_compute<32>(std::span<std::byte const>{}) == 0);
+
+// The aliases of each width are the generic forms.
+static_assert(std::same_as<fletcher16_state, fletcher_state<16>> && std::same_as<fletcher32_state, fletcher_state<32>> &&
+              std::same_as<fletcher64_state, fletcher_state<64>>);
+static_assert(fletcher16_compute("abcde"sv) == 0xC8F0 && fletcher32_compute("abcde"sv) == 0xF04FC729 &&
+              fletcher64_compute("abcde"sv) == 0xC8C6C527646362C6);
 
 // Independent model: whole blocks read byte by byte with zero padding, each sum reduced with %.
 template <unsigned Width> std::uint64_t reference(std::span<std::byte const> data) {
@@ -78,6 +85,17 @@ TEST(fletcher_vectors, published_examples) {
   EXPECT_EQ(fletcher_compute<64>("abcde"sv), 0xC8C6C527646362C6);
   EXPECT_EQ(fletcher_compute<64>("abcdef"sv), 0xC8C72B276463C8C6);
   EXPECT_EQ(fletcher_compute<64>("abcdefgh"sv), 0x312E2B28CCCAC8C6);
+}
+
+TEST(fletcher_vectors, aliases) {
+  auto const data = random_bytes(300, 8);
+  auto const message = std::span<std::byte const>(data);
+  EXPECT_EQ(fletcher16_compute(message), fletcher_compute<16>(message));
+  EXPECT_EQ(fletcher32_compute(message), fletcher_compute<32>(message));
+  EXPECT_EQ(fletcher64_compute(message), fletcher_compute<64>(message));
+  EXPECT_EQ(fletcher16_compute(data), fletcher_compute<16>(message));
+  EXPECT_EQ(fletcher32_compute(std::list<std::byte>(data.begin(), data.end())), fletcher_compute<32>(message));
+  EXPECT_EQ(fletcher64_compute("123456789"sv), fletcher_compute<64>("123456789"sv));
 }
 
 // All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a vector.

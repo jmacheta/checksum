@@ -56,6 +56,24 @@ template <unsigned Width> [[nodiscard]] constexpr fletcher_state<Width>::value_t
 /// fletcher_finalize(fletcher_update(fletcher_state<Width>{}, data)) for a byte range.
 template <unsigned Width, byte_range Range> [[nodiscard]] constexpr fletcher_state<Width>::value_type fletcher_compute(Range &&data) noexcept;
 
+/// Running Fletcher-16 checksum.
+using fletcher16_state = fletcher_state<16>;
+
+/// Running Fletcher-32 checksum.
+using fletcher32_state = fletcher_state<32>;
+
+/// Running Fletcher-64 checksum.
+using fletcher64_state = fletcher_state<64>;
+
+/// fletcher_compute<16>(data).
+template <byte_range Range> [[nodiscard]] constexpr std::uint16_t fletcher16_compute(Range &&data) noexcept;
+
+/// fletcher_compute<32>(data).
+template <byte_range Range> [[nodiscard]] constexpr std::uint32_t fletcher32_compute(Range &&data) noexcept;
+
+/// fletcher_compute<64>(data).
+template <byte_range Range> [[nodiscard]] constexpr std::uint64_t fletcher64_compute(Range &&data) noexcept;
+
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -138,6 +156,18 @@ template <unsigned Width> constexpr fletcher_state<Width>::value_type fletcher_c
 
 template <unsigned Width, byte_range Range> constexpr fletcher_state<Width>::value_type fletcher_compute(Range &&data) noexcept {
   return fletcher_finalize(fletcher_update(fletcher_state<Width>{}, std::forward<Range>(data)));
+}
+
+template <byte_range Range> constexpr std::uint16_t fletcher16_compute(Range &&data) noexcept {
+  return fletcher_compute<16>(std::forward<Range>(data));
+}
+
+template <byte_range Range> constexpr std::uint32_t fletcher32_compute(Range &&data) noexcept {
+  return fletcher_compute<32>(std::forward<Range>(data));
+}
+
+template <byte_range Range> constexpr std::uint64_t fletcher64_compute(Range &&data) noexcept {
+  return fletcher_compute<64>(std::forward<Range>(data));
 }
 
 } // namespace checksum
