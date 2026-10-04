@@ -77,9 +77,11 @@ From 64 bytes, Adler-32 runs the byte kernel of Fletcher-16 with modulus 65521:
 
 | Target and flags | Kernel |
 | --- | --- |
+| x86-64 with AVX-VNNI (`-mavxvnni`, or a `-march` that includes it, e.g. Alder Lake, Meteor Lake) | `vpdpbusd`, 128 bytes per iteration |
 | x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | 32-byte vectors |
 | x86-64 without AVX2 (SSE2 is always there; SSSE3 used if enabled) | 16-byte vectors |
-| AArch64 and 32-bit Arm with NEON, little-endian | NEON, 16-byte vectors |
+| AArch64 with NEON, little-endian | NEON, 16-byte vectors; from 320 bytes 64 bytes per iteration |
+| 32-bit Arm with NEON, little-endian | NEON, 16-byte vectors |
 | Little-endian M-profile Arm with the DSP extension (Cortex-M4/M7/M33) | `usada8` + `smlad`, 8 bytes per iteration |
 | everything else, or `CHECKSUM_ACCELERATION=OFF` | portable loop |
 
@@ -92,7 +94,15 @@ evaluation always runs a byte-by-byte loop with the same result. The measurement
 ### 6.1 x86-64: Core Ultra 7 155H
 
 GCC 16, 4 KiB, measured on a loaded host: 7 365 MB/s (10⁶ bytes per second) for the portable loop, 54 211 MB/s with
-the AVX2 kernel, 7.4× faster.
+the AVX2 kernel, 7.4× faster. With `-march=native` the AVX-VNNI kernel runs (MB/s, GCC 16 and Clang 21):
+
+| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| GCC | 3 441 | 10 846 | 33 317 | 55 254 | 85 045 | 89 051 |
+| Clang | 3 420 | 10 542 | 34 390 | 54 459 | 83 602 | 90 845 |
+
+Against zlib-ng (develop, its AVX-VNNI kernel, same flags) that is 0.98× at 20 B, 0.78× at 64 B, 0.91× at 256 B and
+1.13-1.17× from 4 KiB; the AVX2 kernel reached 0.71-0.83× there.
 
 ### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
@@ -101,11 +111,12 @@ GCC 14.3, `-O2`, one core, start address aligned. GiB/s:
 | Build | 64 B | 256 B | 1500 B | 4 KiB |
 | --- | --- | --- | --- | --- |
 | AArch64 portable | 0.68 | 0.77 | 0.83 | 0.84 |
-| AArch64 NEON | 1.15 | 2.59 | 3.79 | 4.39 |
+| AArch64 NEON | 1.13 | 2.62 | 4.79 | 5.84 |
 | AArch32 portable | 0.52 | 0.71 | 0.85 | 0.86 |
 | AArch32 NEON | 0.98 | 2.44 | 3.75 | 4.32 |
 
-NEON is about 5× faster at 4 KiB and 1.7-1.9× at 64 bytes.
+NEON is 5-7× faster at 4 KiB and 1.7-1.9× at 64 bytes. On AArch64, from 320 bytes the kernel sums 64 bytes per
+iteration: 0.96-0.99× zlib-ng and ISA-L from 1500 B, where 16 bytes per iteration reached 0.72-0.79×.
 
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 

@@ -164,11 +164,13 @@ x86-64 at 4 KiB with GCC, but only 0.84 GiB/s on a Cortex-A72 and 5.3 cycles per
 
 | Target | Verdict | Why |
 | --- | --- | --- |
+| x86-64 AVX-VNNI | Yes, bytes from 64 B | `vpdpbusd` weights 32 bytes in one instruction instead of `pmaddubsw` + `pmaddwd` + add; four blocks per iteration weigh 127 .. 0 against one `previous` addition. Adler-32 at 4 KiB: 85 045 MB/s against 56 382 for the AVX2 kernel (1.5×), 1.13× zlib-ng's AVX-VNNI kernel. Not in a test preset: QEMU has no AVX-VNNI and GitHub runners may lack it, so it is tested locally with `-march=native`. |
 | x86-64 AVX2 | Yes: bytes from 64 B, 16-bit values from 128 B, 32-bit values from 384 B | At 4 KiB with GCC, 7.4× the portable loop for Fletcher-16 and Adler-32, 3.3× for Fletcher-32, 2.0× for Fletcher-64. |
 | x86-64 SSE2 (baseline), SSSE3 | Yes, bytes and 16-bit values | Fletcher-16 3.1× and Fletcher-32 1.5× the portable loop at 4 KiB with GCC. SSSE3 `pmaddubsw` weights 16 bytes in two instructions; plain SSE2 widens the bytes first. |
 | x86-64 SSE2, 32-bit values | Not done | The 64-bit portable loop of Fletcher-64 already runs 26 900 MB/s at 4 KiB. |
 | x86-64 AVX-512 | Not measured | No AVX-512 hardware available. |
-| AArch64 NEON | Yes: bytes from 64 B, 16-bit from 128 B, 32-bit from 256 B | Cortex-A72 at 4 KiB: about 5× for Fletcher-16 and Adler-32, 2.8× for Fletcher-32, 1.45× for Fletcher-64, whose 64-bit portable loop is already fast. |
+| AArch64 NEON | Yes: bytes from 64 B, 16-bit from 128 B, 32-bit from 256 B | Cortex-A72 at 4 KiB: about 7× for Fletcher-16 and Adler-32, 2.8× for Fletcher-32, 1.45× for Fletcher-64, whose 64-bit portable loop is already fast. |
+| AArch64 NEON, 64 bytes per iteration (`group_kernel`) | Yes, bytes from 320 B | Pairwise additions of four blocks into `sum`, 64 column sums weighted 64 .. 1, one `previous` addition per 64 bytes, as zlib-ng: Adler-32 at 4 KiB 6 270 against 4 746 MB/s (1.32×), 0.96× zlib-ng and ISA-L. Below 320 B weighting 64 columns costs more than it saves. In AArch32 (16 NEON registers) it spilled and lost 10-27 %. |
 | 32-bit Arm NEON, little-endian | Yes, the same kernels and thresholds | A72 in AArch32 at 4 KiB: 5.0× for Fletcher-16 and Adler-32, 2.9× for Fletcher-32, 3.0× for Fletcher-64. |
 | M-profile Arm DSP (Cortex-M4/M7/M33), bytes | Yes, from 64 B | `usada8` sums 4 bytes, `uxtb16` + `smlad` weight them: 2.69 cycles per byte against 5.30 on a Cortex-M4 (nRF52840 and STM32L4A6), 2.0× at 4 KiB, 1.6× at 256 B. |
 | M-profile Arm DSP, 16-bit and 32-bit values | No | The portable loop sums 32-bit words on 32-bit targets: 2.11 cycles per byte for Fletcher-32 and 1.80 for Fletcher-64, within 2 % of a DSP kernel of the same scheme. |
@@ -188,7 +190,24 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
 - The chunk sums are reduced in 32-bit arithmetic wherever every intermediate result fits, with the high half of a
   64-bit value folded with the weight 2^32 modulo M, so the modulo is a 32-bit operation on every target.
 - The kernel and the portable loop after it sit in a separate non-inlined function, as for the Internet checksum, so
-  inputs below the threshold run without a call.
+  inputs below the threshold run without a call. `group_kernel` has its own such function, reached by a tail call:
+  inside the same function its registers slowed the 16-byte kernel by 10-15 % at 64-256 B.
+- The 64-byte NEON kernel takes chunks of 360 blocks, so the weighted sum of a chunk fits 32 bits and the chunk loop
+  stays in 32-bit arithmetic; with 1016 blocks it went to 64 bits and cost 15 % at 64 B.
+- Short inputs, against a plain deferred-modulo loop (the Wikipedia one), at 20 bytes with GCC on x86-64:
+  - GCC returned a small aggregate by storing its members one by one and loading them as one word, which stalls store
+    forwarding. The sums are built in one integer and copied (`make_state()`), and Fletcher-16 and -32 pass their
+    state to `sum_loop()` as one integer (`state_word`): Fletcher-16 0.68 to 0.94×, Fletcher-32 0.51 to 0.86×.
+  - Unfinished blocks go to a separate non-inlined function, so the whole-block path needs no frame; there the byte
+    loops are inline. Fletcher-64, whose state passes in two registers, and 32-bit targets lost 3-10 % that way and
+    keep them in `sum_any()`, with out-of-line byte loops.
+  - The portable loop ends with straight-line steps of 2 and 1 values on 64-bit targets, and bounds its 4-value loop by
+    a pointer; on the Cortex-M4 the pointer cost Fletcher-64 3 % at 4 KiB, so 32-bit targets count.
+  - On 64-bit targets the Fletcher moduli reduce 64-bit sums with a constant `%`, a multiplication: the fold loop's
+    branches made Fletcher-32 on the A72 swing between 0.55 and 0.85× of the reference with the input size. Adler-32
+    keeps the fold, which was 5-10 % faster for 65521, and 32-bit targets would call a division function.
+  - AArch64 sums 16-bit values in 32-bit sums: Fletcher-32 at 20 B 0.80 to 0.86× on the A72; on x86-64 it was 9 %
+    slower, so x86-64 keeps 64-bit sums.
 - The DSP kernel sums single bytes up to a 4-byte aligned address first: word loads from other addresses made the
   Cortex-M4 loop 15-25 % slower. From an odd address it takes 2.71 cycles per byte against 2.69.
 - The DSP kernel is not inlined into the chunk loop: there GCC reloaded two weights in every iteration.
