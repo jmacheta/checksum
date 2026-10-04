@@ -130,13 +130,12 @@ fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data)
 }
 
 fletcher4_value compute_loop(std::span<std::byte const> data) noexcept {
-  fletcher4_value value{};
   if(use_lanes(data)) {
+    fletcher4_value value{};
     compute_long(data, value);
-  } else {
-    value = fletcher4_finalize(sum_words(fletcher4_state{}, data));
+    return value;
   }
-  return value;
+  return fletcher4_finalize(sum_words(fletcher4_state{}, data));
 }
 
 } // namespace checksum::fletcher4_detail
