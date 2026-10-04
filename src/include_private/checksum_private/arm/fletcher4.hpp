@@ -12,14 +12,13 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
 namespace checksum::fletcher4_detail {
 
 inline constexpr bool lane_kernel_available = true;
 
-// Where the kernel overtakes the word loop on a Cortex-A72 with GCC and Clang. On AArch32 it pays a slower combination of the lanes.
-inline constexpr std::size_t lane_kernel_minimum_size = std::numeric_limits<std::size_t>::digits == 64 ? 192 : 384;
+// Where the kernel overtakes the word loop on a Cortex-A72 with Clang, on AArch64 and AArch32; with GCC it wins from 80 bytes on AArch64.
+inline constexpr std::size_t lane_kernel_minimum_size = 192;
 
 // Lanes 0 and 1 in the low vectors, 2 and 3 in the high ones.
 inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept {
