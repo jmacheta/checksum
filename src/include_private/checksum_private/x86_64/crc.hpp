@@ -79,8 +79,8 @@ struct pclmul_kernel {
   template <bool Reflected> static std::uint64_t reduce(vector accumulator, folding_constants const &constants) noexcept;
 
 #if defined(__VPCLMULQDQ__) && defined(__AVX2__)
-  // Eight 256-bit accumulators (blocks 2j, 2j + 1 in accumulator j) fold 256 bytes per step, then four fold 128; the
-  // last 64 bytes go to fold_four_with().
+  // Eight 256-bit accumulators (blocks 2j, 2j + 1 in accumulator j) fold 256 bytes per step, then four fold 128 and
+  // 64; their 8 blocks fold onto the last one in parallel, and fold_tail_with() takes the last 0..63 bytes.
   template <bool Reflected>
   static vector fold_wide(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
 #endif
@@ -191,29 +191,32 @@ template <int Lane> [[gnu::always_inline]] inline std::uint64_t pclmul_kernel::l
 
 template <bool Reflected>
 [[gnu::always_inline]] inline std::uint64_t pclmul_kernel::reduce(vector accumulator, folding_constants const &constants) noexcept {
-  constexpr unsigned top_bit = 63;
-  std::uint64_t const low = lane<0>(accumulator);
-  std::uint64_t const high = lane<1>(accumulator);
+  // Stays in vector registers: each move between them and general registers costs about 3 cycles of latency.
+  vector const by_one = pair(constants.by_one);
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): aligned load of the quotient and the polynomial.
+  vector const barrett = _mm_load_si128(reinterpret_cast<vector const *>(&constants.quotient));
   if constexpr(Reflected) {
-    vector const folded = multiply(low, constants.by_one[1]);
-    std::uint64_t const value_high = lane<0>(folded) ^ high;
-    std::uint64_t const quotient = value_high ^ (lane<0>(multiply(value_high, constants.quotient)) << 1U);
-    vector const product = multiply(quotient, constants.polynomial);
-    return lane<1>(folded) ^ (lane<0>(product) >> top_bit) ^ (lane<1>(product) << 1U);
+    // Low lane: the high half plus the low half folded over 64 bits; high lane: the rest of the fold.
+    vector const value = _mm_xor_si128(_mm_clmulepi64_si128(accumulator, by_one, 0x10), _mm_srli_si128(accumulator, 8));
+    vector const quotient = _mm_xor_si128(value, _mm_slli_epi64(_mm_clmulepi64_si128(value, barrett, 0x00), 1));
+    vector const product = _mm_clmulepi64_si128(quotient, barrett, 0x10);
+    // High lane of the 128-bit product shifted left by one.
+    vector const shifted = _mm_xor_si128(_mm_slli_epi64(product, 1), _mm_srli_epi64(_mm_slli_si128(product, 8), 63));
+    return lane<1>(_mm_xor_si128(value, shifted));
   } else {
-    vector const folded = multiply(high, constants.by_one[0]);
-    std::uint64_t const value_high = lane<1>(folded) ^ low;
-    std::uint64_t const quotient = value_high ^ lane<1>(multiply(value_high, constants.quotient));
-    return lane<0>(folded) ^ lane<0>(multiply(quotient, constants.polynomial));
+    // High lane: the low half plus the high half folded over 64 bits; low lane: the rest of the fold.
+    vector const value = _mm_xor_si128(_mm_clmulepi64_si128(accumulator, by_one, 0x01), _mm_slli_si128(accumulator, 8));
+    vector const quotient = _mm_xor_si128(value, _mm_clmulepi64_si128(value, barrett, 0x01));
+    return lane<0>(_mm_xor_si128(value, _mm_clmulepi64_si128(quotient, barrett, 0x11)));
   }
 }
 
 #if defined(__VPCLMULQDQ__) && defined(__AVX2__)
-// Not inlined: long inputs pay one call, and the eight 256-bit accumulators do not spill onto the stack frame of the
-// short-input callers.
+// Inlined only into the non-inlined long-input callers (fold_long_message(), fold_long_crc32()): a second call cost
+// up to 10 % at 256 bytes.
 template <bool Reflected>
-[[gnu::noinline]] inline pclmul_kernel::vector pclmul_kernel::fold_wide(folding_constants const &constants, std::uint64_t remainder,
-                                                                        std::span<std::byte const> data) noexcept {
+[[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::fold_wide(folding_constants const &constants, std::uint64_t remainder,
+                                                                             std::span<std::byte const> data) noexcept {
   constexpr std::size_t half = 32;   // bytes per 256-bit accumulator
   constexpr std::size_t eight = 256; // bytes per iteration of eight accumulators
   constexpr std::size_t four = 128;  // bytes per iteration of four
@@ -250,12 +253,23 @@ template <bool Reflected>
   for(; data.size() - consumed >= four; consumed += four) {
     unrolled<4>([&](auto index) { pairs[index] = fold_two(pairs[index], by_eight, load_two(data.subspan(consumed + (index * half)))); });
   }
-  // Blocks 0..3 fold over four blocks onto blocks 4..7.
-  __m256i const low = fold_two(pairs[0], by_four, pairs[2]);
-  __m256i const high = fold_two(pairs[1], by_four, pairs[3]);
-  return fold_four_with<Reflected, pclmul_kernel>(
-      {_mm256_castsi256_si128(low), _mm256_extracti128_si256(low, 1), _mm256_castsi256_si128(high), _mm256_extracti128_si256(high, 1)}, constants,
-      data.subspan(consumed), data.last(folding_block_size));
+  if(data.size() - consumed >= folding_four_blocks_size) {
+    // Blocks 0..3 fold over four blocks onto blocks 4..7, followed by blocks 8..11.
+    pairs = {fold_two(pairs[0], by_four, pairs[2]), fold_two(pairs[1], by_four, pairs[3]), load_two(data.subspan(consumed)),
+             load_two(data.subspan(consumed + half))};
+    consumed += folding_four_blocks_size;
+  }
+  // Blocks 0..5 fold onto block 7 with the constants of their own distances, in parallel; block 6 folds over one.
+  auto const distances = [](folding_pair const &longer) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned load of two adjacent constant pairs.
+    return _mm256_loadu_si256(reinterpret_cast<__m256i const *>(longer.data()));
+  };
+  __m256i const block_7 = _mm256_blend_epi32(pairs[3], _mm256_setzero_si256(), 0x0F);
+  __m256i const folded = fold_two(pairs[0], distances(constants.by_seven),
+                                  fold_two(pairs[1], distances(constants.by_five), fold_two(pairs[2], distances(constants.by_three), block_7)));
+  __m128i const accumulator = fold(_mm256_castsi256_si128(pairs[3]), pair(constants.by_one),
+                                   _mm_xor_si128(_mm256_castsi256_si128(folded), _mm256_extracti128_si256(folded, 1)));
+  return fold_tail_with<Reflected, pclmul_kernel>(accumulator, constants, data.subspan(consumed), data.last(folding_block_size));
 }
 #endif
 

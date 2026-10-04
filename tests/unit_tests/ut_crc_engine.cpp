@@ -63,10 +63,10 @@ static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_none>>(0));
 static_assert(engine_size_is<crc_engine<std::uint32_t, crc_lut_nibble>>(16 * sizeof(std::uint32_t)));
 static_assert(engine_size_is<crc_engine<std::uint32_t, crc_lut_byte>>(1024));
 static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_byte>>(2048));
-// The slicing-by-8 and braided tables also hold 10 x 8 bytes of folding constants. The braided table is the 8
+// The slicing-by-8 and braided tables also hold 20 x 8 bytes of folding constants. The braided table is the 8
 // slicing-by-8 slices plus 8 braid slices.
-static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_sliced>>(16384 + 80));
-static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_braided>>(32768 + 80));
+static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_sliced>>(16384 + 160));
+static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_braided>>(32768 + 160));
 static_assert(!std::is_default_constructible_v<crc_engine<std::uint32_t>>);
 static_assert(std::is_trivially_copyable_v<crc_engine<std::uint32_t, crc_lut_byte>> && std::is_copy_assignable_v<crc_engine<std::uint32_t>>);
 
