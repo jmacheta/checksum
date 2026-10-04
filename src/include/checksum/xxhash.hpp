@@ -47,7 +47,7 @@ template <unsigned Width>
 template <unsigned Width, byte_range Range>
 [[nodiscard]] constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, Range &&data) noexcept;
 
-/// The hash of the message folded into state.
+/// The hash of the message folded into state. Messages of 4 GiB or more mix in their length modulo 2^32 for Width 32.
 template <unsigned Width> [[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_finalize(xxhash_state<Width> const &state) noexcept;
 
 /// The hash of data: xxhash_finalize(xxhash_update(xxhash_state<Width>{.seed = seed}, data)).
@@ -59,6 +59,18 @@ template <unsigned Width>
 template <unsigned Width, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 [[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_compute(Range &&data, typename xxhash_state<Width>::value_type seed = 0) noexcept;
+
+/// Running XXH32 hash.
+using xxh32_state = xxhash_state<32>;
+
+/// Running XXH64 hash.
+using xxh64_state = xxhash_state<64>;
+
+/// The XXH32 hash of data: xxhash_compute<32>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr std::uint32_t xxh32_compute(Range &&data, std::uint32_t seed = 0) noexcept;
+
+/// The XXH64 hash of data: xxhash_compute<64>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
 } // namespace checksum
 
@@ -271,8 +283,7 @@ template <unsigned Width, byte_range Range> constexpr xxhash_state<Width> xxhash
 template <unsigned Width> constexpr xxhash_state<Width>::value_type xxhash_finalize(xxhash_state<Width> const &state) noexcept {
   auto const buffered = static_cast<std::size_t>(state.length % xxhash_detail::stripe_size<Width>);
   // Before the first stripe the lanes are unused, and converging them would cost 8 multiplications for nothing.
-  typename xxhash_state<Width>::value_type const converged =
-      state.length >= xxhash_detail::stripe_size<Width> ? xxhash_detail::converge<Width>(state.lanes) : 0;
+  xxhash_detail::word<Width> const converged = state.length >= xxhash_detail::stripe_size<Width> ? xxhash_detail::converge<Width>(state.lanes) : 0;
   return xxhash_detail::finish<Width>(converged, state.seed, state.length, std::span(state.buffer).first(buffered));
 }
 
@@ -286,7 +297,7 @@ constexpr xxhash_state<Width>::value_type xxhash_compute(std::span<std::byte con
       }
     }
   }
-  typename xxhash_state<Width>::value_type converged = 0;
+  xxhash_detail::word<Width> converged = 0;
   if(whole != 0) {
     xxhash_detail::lane_array<Width> lanes = xxhash_detail::initial_lanes<Width>(seed);
     converged = xxhash_detail::fold_and_converge<Width>(lanes, data.first(whole), true);
@@ -304,6 +315,14 @@ constexpr xxhash_state<Width>::value_type xxhash_compute(Range &&data, typename 
     }
   }
   return xxhash_finalize(xxhash_update(xxhash_state<Width>{.seed = seed}, std::forward<Range>(data)));
+}
+
+template <byte_range Range> constexpr std::uint32_t xxh32_compute(Range &&data, std::uint32_t seed) noexcept {
+  return xxhash_compute<32>(std::forward<Range>(data), seed);
+}
+
+template <byte_range Range> constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed) noexcept {
+  return xxhash_compute<64>(std::forward<Range>(data), seed);
 }
 
 } // namespace checksum

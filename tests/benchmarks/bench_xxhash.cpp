@@ -30,11 +30,11 @@ template <class Hash> void run(benchmark::State &state, Hash hash) {
 }
 
 void xxhash32(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxhash_compute<32>(data); });
+  run(state, [](std::span<std::byte const> data) { return checksum::xxh32_compute(data); });
 }
 
 void xxhash64(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxhash_compute<64>(data); });
+  run(state, [](std::span<std::byte const> data) { return checksum::xxh64_compute(data); });
 }
 
 void xxh3_64(benchmark::State &state) {

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -71,6 +72,8 @@ static_assert(chunked<32>(message, 13, xxhash32_vectors[1].seed) == xxhash32_vec
 // Every tail length around two XXH64 stripes; longer prefixes exceed the constant-evaluation step limit of Clang.
 static_assert(prefix_mismatches<32>(70) == 0);
 static_assert(prefix_mismatches<64>(70) == 0);
+static_assert(std::same_as<xxh32_state, xxhash_state<32>> && std::same_as<xxh64_state, xxhash_state<64>>);
+static_assert(xxh32_compute("abc"sv) == 0x32D153FFU && xxh64_compute("abc"sv, 1) == xxhash_compute<64>("abc"sv, 1));
 
 template <class Width> class xxhash : public testing::Test {};
 
@@ -157,6 +160,22 @@ TYPED_TEST(xxhash, long_message) {
     EXPECT_EQ(xxhash_compute<width>(data, set.seed), set.long_message) << "seed " << set.seed;
     EXPECT_EQ(chunked<width>(data, 4099, set.seed), set.long_message) << "seed " << set.seed;
   }
+}
+
+TEST(xxhash, aliases) {
+  constexpr std::string_view text = "123456789 123456789 123456789 123456789";
+  auto const bytes = std::as_bytes(std::span(text));
+  for(auto const &set : xxhash32_vectors) {
+    EXPECT_EQ(xxh32_compute(text, set.seed), xxhash_compute<32>(text, set.seed));
+    EXPECT_EQ(xxh32_compute(bytes, set.seed), xxhash_compute<32>(bytes, set.seed));
+    EXPECT_EQ(xxh32_compute(std::span(message), set.seed), set.prefixes[300]);
+  }
+  for(auto const &set : xxhash64_vectors) {
+    EXPECT_EQ(xxh64_compute(text, set.seed), xxhash_compute<64>(text, set.seed));
+    EXPECT_EQ(xxh64_compute(bytes, set.seed), xxhash_compute<64>(bytes, set.seed));
+    EXPECT_EQ(xxh64_compute(std::span(message), set.seed), set.prefixes[300]);
+  }
+  EXPECT_EQ(xxhash_finalize(xxhash_update(xxh64_state{.seed = 7}, text)), xxh64_compute(text, 7));
 }
 
 // Seeds of all ones wrap every lane's initial value; hashes from xxhash.h 0.8.4.
