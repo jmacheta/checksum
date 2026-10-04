@@ -1,7 +1,7 @@
 # CPU acceleration
 
 How algorithms use CPU instructions and which architectures are worth it, per algorithm. Measured figures are in the
-user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#5-performance),
+user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#6-performance),
 [Fletcher](../fletcher.md#6-performance), [Adler-32](../adler32.md#6-performance),
 [MurmurHash3](../murmur3.md#5-performance), [xxHash](../xxhash.md#5-performance),
 [fletcher4](../fletcher4.md#6-performance)).

@@ -13,7 +13,7 @@ allocates no memory and has no global state.
 #include <checksum/internet.hpp>
 
 // One call. The result goes into the packet most significant byte first.
-std::uint16_t value = checksum::internet_compute(std::span(ipv4_header));
+std::uint16_t value = checksum::internet_compute(std::span(header));
 header[10] = std::byte(value >> 8);
 header[11] = std::byte(value & 0xFF);
 
@@ -28,7 +28,16 @@ std::uint16_t udp_checksum = checksum::internet_finalize(state);
 static_assert(checksum::internet_compute(std::string_view("123456789")) == 0xF62A);
 ```
 
-## 2. API
+`examples/internet` has complete programs: an IPv4 header checksum filled in and verified, a UDP checksum summed from
+the pseudo-header, the header and the payload, and the RFC 1624 update of a header after a TTL decrement.
+
+## 2. Definition
+
+The message is read as 16-bit big-endian words, a last odd byte padded with a zero byte. The words are added in one's
+complement arithmetic, each carry out of bit 15 added back into bit 0, and the checksum is the one's complement
+(bitwise NOT) of that sum.
+
+## 3. API
 
 | Name | What it does |
 | --- | --- |
@@ -38,17 +47,16 @@ static_assert(checksum::internet_compute(std::string_view("123456789")) == 0xF62
 | `internet_compute(data)` | `internet_finalize(internet_update({}, data))`. |
 
 All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`,
-`char`, `unsigned char`, `signed char` or `char8_t`, the same as for the CRC engines. Contiguous ranges are passed
+`char`, `unsigned char`, `signed char` or `char8_t`, as for the other algorithms. Contiguous ranges are passed
 on as one span and other ranges in 64-byte chunks. Arrays of `char` are rejected, so the `'\0'` of a string literal
 is never summed: pass text as `std::string_view`.
 
 Every `internet_state` value is valid, so nothing has preconditions.
 
-## 3. Behavior
+## 4. Behavior
 
 - **Splits:** a message may be split anywhere, including inside a 16-bit word. `odd` records that the next byte is
   the low byte of a word, and the result is the same as for one call.
-- **Odd length:** a last odd byte is padded with a zero byte, as RFC 1071 specifies.
 - **Zero:** the sum is 0 only if every byte is 0. Otherwise a sum that is a multiple of 0xFFFF is 0xFFFF, so:
   - the empty message and an all-zero message give 0xFFFF;
   - a message that already contains its correct checksum gives 0.
@@ -57,7 +65,7 @@ Every `internet_state` value is valid, so nothing has preconditions.
 - **Byte order:** the result is a number; write it into the packet most significant byte first. The library reads
   the message the same way on little- and big-endian targets.
 
-## 4. CPU acceleration
+## 5. CPU acceleration
 
 The portable loop adds the widest native word (`std::size_t`) with two independent carry chains. It runs at every
 optimization level, and its result does not depend on the target's byte order. The order in which bytes are added
@@ -77,11 +85,11 @@ Cortex-M3/M4/M7/M33 builds get their kernel from their usual `-march` or `-mcpu`
 byte-by-byte loop with the same result. Which other architectures are worth a kernel is discussed in
 [design/acceleration.md](design/acceleration.md).
 
-## 5. Performance
+## 6. Performance
 
 All figures are in MB/s (10⁶ bytes per second) and are medians of 5 runs of `checksum_bench_internet` on one core.
 
-### 5.1 x86-64: Core Ultra 7 155H, `-O2`
+### 6.1 x86-64: Core Ultra 7 155H, `-O2`
 
 AVX2 is with `-march=native`; portable is with `CHECKSUM_ACCELERATION=OFF` and default flags.
 
@@ -97,7 +105,7 @@ AVX2 is with `-march=native`; portable is with `CHECKSUM_ACCELERATION=OFF` and d
 Below 512 bytes both builds run the portable loop; the differences come from `-march=native` and code layout. From
 1500 bytes the AVX2 kernel is 1.6-1.8× faster. At 1 MiB the gain is smaller, because the data comes from the L2 cache.
 
-### 5.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
+### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
 GCC 14.3, `-O2`, static binaries on one core. Portable is with `CHECKSUM_ACCELERATION=OFF`. In 32-bit mode, NEON is
 `-march=armv8-a+crc -mfpu=neon-fp-armv8`, and `ldm` is `-mfpu=vfpv3-d16` (no NEON).
@@ -115,7 +123,7 @@ The 64-bit portable loop is already fast, so the NEON kernel starts at 512 bytes
 bytes. In 32-bit mode the kernels start at 192 bytes: NEON is 4.1× and `ldm` 2.0× faster at 4 KiB. Below the
 thresholds every build runs the portable loop, and the differences there come from code layout.
 
-### 5.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
+### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 
 GCC 14.3, `-O2`, code in flash and data in RAM; the cycle counter gives the best of 5 calls. Offset is the start
 address modulo 4: 2 is typical for an IP header behind a 14-byte Ethernet header.
@@ -135,7 +143,7 @@ and up to 2.5× from odd or 2-modulo-4 addresses, where the portable loop's unal
 same cycles per byte, so the figures scale with the clock. Below 192 bytes the build with the kernel is up to 5 %
 slower.
 
-### 5.4 Code size
+### 6.4 Code size
 
 `sum_loop` and its helpers, the whole run-time code, GCC with `-ffunction-sections`. A kernel build holds the portable
 loop twice: once for short inputs, once after the kernel.
@@ -150,11 +158,11 @@ loop twice: once for short inputs, once after the kernel.
 
 RISC-V has not been measured on hardware; the vector kernel is tested in QEMU with vector lengths of 128-1024 bits.
 
-## 6. Limitations
+## 7. Limitations
 
 - **No in-place update helper:** RFC 1624 updates a checksum after one 16-bit-aligned field changes. The public API
   already does it: start from `internet_state{.sum = static_cast<std::uint16_t>(~old_checksum)}`, fold the bitwise
-  complement of the old field, then the new field, and finalize.
+  complement of the old field, then the new field, and finalize, as `examples/internet/ttl_decrement.cpp` does.
 - **UDP zero:** the UDP rule of sending 0xFFFF instead of a computed 0 is protocol logic and stays in the caller.
 - **No verification helper:** to verify a packet, compute over it, checksum included, and compare the result with 0.
 - **Code size:** a build with a kernel adds 290-810 bytes; `CHECKSUM_ACCELERATION=OFF` keeps the portable loop alone.
