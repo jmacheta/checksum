@@ -2,8 +2,10 @@
 #define CHECKSUM_BYTE_RANGE_HPP
 
 #include <array>
+#include <bit>
 #include <concepts>
 #include <cstddef>
+#include <cstring>
 #include <ranges>
 #include <span>
 #include <type_traits>
@@ -36,6 +38,9 @@ namespace checksum::detail {
 
 // Calls visit(std::span<std::byte const>) once for a contiguous range at run time, otherwise once per 64-byte chunk copied to the stack.
 template <byte_range Range, class Visitor> constexpr void for_each_chunk(Range &&data, Visitor visit) noexcept;
+
+// Reads a little-endian integer from the first sizeof(Integer) bytes at data.
+template <class Integer> constexpr Integer load(std::byte const *data) noexcept;
 
 } // namespace checksum::detail
 
@@ -71,6 +76,21 @@ template <byte_range Range, class Visitor> constexpr void for_each_chunk(Range &
   if(used != 0) {
     visit(std::span<std::byte const>(chunk.data(), used));
   }
+}
+
+template <class Integer> constexpr Integer load(std::byte const *data) noexcept {
+  Integer value = 0;
+  if consteval {
+    for(std::size_t index = 0; index < sizeof(Integer); ++index) {
+      value |= static_cast<Integer>(std::to_integer<Integer>(data[index]) << (8 * index));
+    }
+  } else {
+    std::memcpy(&value, data, sizeof(Integer));
+    if constexpr(std::endian::native == std::endian::big) {
+      value = std::byteswap(value);
+    }
+  }
+  return value;
 }
 
 } // namespace checksum::detail

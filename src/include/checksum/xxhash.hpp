@@ -9,7 +9,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <ranges>
 #include <span>
 #include <type_traits>
@@ -115,8 +114,7 @@ template <> struct algorithm_constants<64> {
   static constexpr std::array<int, 3> avalanche_shifts{33, 29, 32};
 };
 
-// Reads a little-endian integer from the first sizeof(Integer) bytes at data.
-template <class Integer> constexpr Integer load(std::byte const *data) noexcept;
+using detail::load;
 
 // Mixes one input lane into a lane accumulator.
 template <unsigned Width> constexpr word<Width> round(word<Width> accumulator, word<Width> lane) noexcept;
@@ -137,6 +135,9 @@ template <unsigned Width> word<Width> stripe_loop(lane_array<Width> &lanes, std:
 // fold_stripes() and converge() if wanted, during constant evaluation, else stripe_loop().
 template <unsigned Width> constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
 
+// The final mix of a hash.
+template <unsigned Width> constexpr word<Width> avalanche(word<Width> hash) noexcept;
+
 // The hash of a message of length bytes: converged holds its stripes if length reaches a stripe, tail holds the rest.
 template <unsigned Width>
 constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint64_t length, std::span<std::byte const> tail) noexcept;
@@ -151,21 +152,6 @@ std::uint32_t run_time_xxh32(std::span<std::byte const> data, std::uint32_t seed
 ///@}
 
 namespace checksum::xxhash_detail {
-
-template <class Integer> constexpr Integer load(std::byte const *data) noexcept {
-  Integer value = 0;
-  if consteval {
-    for(std::size_t index = 0; index < sizeof(Integer); ++index) {
-      value |= std::to_integer<Integer>(data[index]) << (8 * index);
-    }
-  } else {
-    std::memcpy(&value, data, sizeof(Integer));
-    if constexpr(std::endian::native == std::endian::big) {
-      value = std::byteswap(value);
-    }
-  }
-  return value;
-}
 
 template <unsigned Width> constexpr word<Width> round(word<Width> accumulator, word<Width> lane) noexcept {
   using constants = algorithm_constants<Width>;
@@ -211,6 +197,15 @@ constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std:
   }
 }
 
+template <unsigned Width> constexpr word<Width> avalanche(word<Width> hash) noexcept {
+  using constants = algorithm_constants<Width>;
+  hash ^= hash >> constants::avalanche_shifts[0];
+  hash *= constants::prime_2;
+  hash ^= hash >> constants::avalanche_shifts[1];
+  hash *= constants::prime_3;
+  return hash ^ (hash >> constants::avalanche_shifts[2]);
+}
+
 template <unsigned Width>
 constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint64_t length, std::span<std::byte const> tail) noexcept {
   using constants = algorithm_constants<Width>;
@@ -239,12 +234,7 @@ constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint6
     value_type const byte = std::to_integer<value_type>(*position) * constants::prime_5;
     hash = std::rotl(static_cast<value_type>(Width == 32 ? hash + byte : hash ^ byte), constants::byte_rotation) * constants::prime_1;
   }
-  hash ^= hash >> constants::avalanche_shifts[0];
-  hash *= constants::prime_2;
-  hash ^= hash >> constants::avalanche_shifts[1];
-  hash *= constants::prime_3;
-  hash ^= hash >> constants::avalanche_shifts[2];
-  return hash;
+  return avalanche<Width>(hash);
 }
 
 } // namespace checksum::xxhash_detail

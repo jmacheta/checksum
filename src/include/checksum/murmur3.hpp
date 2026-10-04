@@ -9,7 +9,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <ranges>
 #include <span>
 #include <type_traits>
@@ -108,8 +107,7 @@ template <> struct algorithm_constants<128> {
   static constexpr std::array<int, 3> avalanche_shifts{33, 33, 33};
 };
 
-// Reads a little-endian integer from the first sizeof(Integer) bytes at data.
-template <class Integer> constexpr Integer load(std::byte const *data) noexcept;
+using detail::load;
 
 // Reads a little-endian integer from the first size bytes at data, size < sizeof(Integer), with fixed-size loads.
 template <class Integer> constexpr Integer load_partial(std::byte const *data, std::size_t size) noexcept;
@@ -146,21 +144,6 @@ constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::
 ///@}
 
 namespace checksum::murmur3_detail {
-
-template <class Integer> constexpr Integer load(std::byte const *data) noexcept {
-  Integer value = 0;
-  if consteval {
-    for(std::size_t index = 0; index < sizeof(Integer); ++index) {
-      value |= static_cast<Integer>(std::to_integer<Integer>(data[index]) << (8 * index));
-    }
-  } else {
-    std::memcpy(&value, data, sizeof(Integer));
-    if constexpr(std::endian::native == std::endian::big) {
-      value = std::byteswap(value);
-    }
-  }
-  return value;
-}
 
 template <class Integer> constexpr Integer load_partial(std::byte const *data, std::size_t size) noexcept {
   Integer value = 0;

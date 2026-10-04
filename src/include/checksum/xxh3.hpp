@@ -153,8 +153,6 @@ std::uint64_t run_time_multiply_fold(std::uint64_t left, std::uint64_t right) no
 
 constexpr std::uint64_t avalanche(std::uint64_t hash) noexcept;
 
-constexpr std::uint64_t avalanche_xxh64(std::uint64_t hash) noexcept;
-
 // The default secret with the seed added to its even words and subtracted from its odd ones.
 constexpr secret_array make_secret(std::uint64_t seed) noexcept;
 
@@ -276,14 +274,6 @@ constexpr std::uint64_t avalanche(std::uint64_t hash) noexcept {
   return hash ^ (hash >> 32U);
 }
 
-constexpr std::uint64_t avalanche_xxh64(std::uint64_t hash) noexcept {
-  hash ^= hash >> static_cast<unsigned>(primes_64::avalanche_shifts[0]);
-  hash *= primes_64::prime_2;
-  hash ^= hash >> static_cast<unsigned>(primes_64::avalanche_shifts[1]);
-  hash *= primes_64::prime_3;
-  return hash ^ (hash >> static_cast<unsigned>(primes_64::avalanche_shifts[2]));
-}
-
 constexpr secret_array make_secret(std::uint64_t seed) noexcept {
   std::array<std::uint64_t, secret_size / 8> words = default_secret_words;
   for(std::size_t index = 0; index < words.size(); ++index) {
@@ -368,18 +358,18 @@ template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte 
                                    (std::to_integer<std::uint32_t>(input[0]) << 16U) | (std::to_integer<std::uint32_t>(input[length / 2]) << 24U);
     std::uint64_t const low = (std::uint64_t{secret_xor<std::uint32_t>(secret)} + seed) ^ combined;
     if constexpr(Width == 64) {
-      return avalanche_xxh64(low);
+      return xxhash_detail::avalanche<64>(low);
     } else {
       std::uint64_t const high = (std::uint64_t{secret_xor<std::uint32_t>(secret + 8)} - seed) ^ std::rotl(std::byteswap(combined), 13);
-      return {.low = avalanche_xxh64(low), .high = avalanche_xxh64(high)};
+      return {.low = xxhash_detail::avalanche<64>(low), .high = xxhash_detail::avalanche<64>(high)};
     }
   }
   if constexpr(Width == 64) {
     constexpr std::size_t offset = 56;
-    return avalanche_xxh64(seed ^ secret_xor<std::uint64_t>(secret + offset));
+    return xxhash_detail::avalanche<64>(seed ^ secret_xor<std::uint64_t>(secret + offset));
   } else {
-    return {.low = avalanche_xxh64(seed ^ secret_xor<std::uint64_t>(secret + 64)),
-            .high = avalanche_xxh64(seed ^ secret_xor<std::uint64_t>(secret + 64 + 16))};
+    return {.low = xxhash_detail::avalanche<64>(seed ^ secret_xor<std::uint64_t>(secret + 64)),
+            .high = xxhash_detail::avalanche<64>(seed ^ secret_xor<std::uint64_t>(secret + 64 + 16))};
   }
 }
 
