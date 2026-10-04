@@ -17,10 +17,10 @@
 
 namespace checksum::fletcher_detail {
 
-// Both sums of a checksum, each below the modulus.
-struct sum_pair {
-  std::uint64_t sum1 = 0;
-  std::uint64_t sum2 = 0;
+// The two sums of a Fletcher checksum without its block offset: up to 4 bytes pass in one register on 32-bit Arm.
+template <class Sum> struct sum_pair {
+  Sum sum1 = 0;
+  Sum sum2 = 0;
 };
 
 // Internal linkage lets compilers inline these loops fully into each source; with external linkage they keep an
@@ -44,21 +44,25 @@ template <std::uint64_t Modulus, class Word> Word reduce_chunk(Word value) noexc
 // and elsewhere load single bytes instead of calling memcpy.
 template <class Value> Value load(std::byte const *data) noexcept;
 
-// Adds the whole kernel blocks at the start of data to sums, a chunk of at most max_blocks blocks per kernel call, each sum
+// The loops take and return a sum_pair or an adler32_state, which has the same members: sums below 2 * Modulus in, below
+// Modulus out.
+
+// Adds the whole kernel blocks at the start of data to the sums of state, a chunk of at most max_blocks blocks per kernel call, each sum
 // reduced after every chunk. Returns the number of bytes taken; inlined into its one caller.
-template <class Value, std::uint64_t Modulus>
-[[gnu::always_inline]] inline std::size_t sum_chunks(sum_pair &sums, std::span<std::byte const> data) noexcept;
+template <class Value, std::uint64_t Modulus, class State>
+[[gnu::always_inline]] inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept;
 
 // The portable loop over the whole Values of data.
-template <class Value, std::uint64_t Modulus>
-[[gnu::always_inline]] inline sum_pair sum_portable(sum_pair sums, std::span<std::byte const> data) noexcept;
+template <class Value, std::uint64_t Modulus, class State>
+[[gnu::always_inline]] inline State sum_portable(State state, std::span<std::byte const> data) noexcept;
 
-// The CPU kernel, then the portable loop over what it left. Not inlined, so that short inputs run sum_values() without a call.
-template <class Value, std::uint64_t Modulus>
-[[gnu::noinline, maybe_unused]] sum_pair sum_long(sum_pair sums, std::span<std::byte const> data) noexcept;
+// The CPU kernel, then the portable loop over what it left. Not inlined, so that short inputs run sum_portable() without a call.
+template <class Value, std::uint64_t Modulus, class State>
+[[gnu::noinline, maybe_unused]] State sum_long(State state, std::span<std::byte const> data) noexcept;
 
-// Adds the whole Values of data to sums: the kernel from its minimum size, else the portable loop.
-template <class Value, std::uint64_t Modulus> sum_pair sum_values(sum_pair sums, std::span<std::byte const> data) noexcept;
+// Whether size bytes go to sum_long(): from the minimum size of the kernel, if there is one. Callers branch on it themselves,
+// so that the call of sum_long() stays a tail call.
+template <class Value> constexpr bool runs_kernel(std::size_t size) noexcept;
 
 template <class Integer, std::uint64_t Modulus> constexpr std::size_t values_per_reduction(std::uint64_t largest_value) noexcept {
   constexpr std::uint64_t maximum = std::numeric_limits<Integer>::max();
@@ -118,8 +122,8 @@ template <class Value> Value load(std::byte const *data) noexcept {
   }
 }
 
-template <class Value, std::uint64_t Modulus>
-[[gnu::always_inline]] inline std::size_t sum_chunks(sum_pair &sums, std::span<std::byte const> data) noexcept {
+template <class Value, std::uint64_t Modulus, class State>
+[[gnu::always_inline]] inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept {
   constexpr unsigned bits = std::numeric_limits<Value>::digits;
   using chunk_kernel = kernel<bits>;
   constexpr std::uint64_t values_per_block = chunk_kernel::block_size / sizeof(Value);
@@ -135,8 +139,8 @@ template <class Value, std::uint64_t Modulus>
   using word = std::conditional_t<largest_weighted <= largest_word && (max_values + 2) * largest_sum <= largest_word &&
                                       largest_sum + (max_values * largest_value) <= largest_word,
                                   std::uint32_t, std::uint64_t>;
-  auto sum1 = static_cast<word>(sums.sum1);
-  auto sum2 = static_cast<word>(sums.sum2);
+  auto sum1 = static_cast<word>(state.sum1);
+  auto sum2 = static_cast<word>(state.sum2);
   std::byte const *position = data.data();
   std::size_t head = 0;
   if constexpr(bits == 8) {
@@ -163,12 +167,13 @@ template <class Value, std::uint64_t Modulus>
     blocks -= count;
     position += count * chunk_kernel::block_size;
   }
-  sums = {.sum1 = sum1, .sum2 = sum2};
+  state.sum1 = static_cast<decltype(state.sum1)>(sum1);
+  state.sum2 = static_cast<decltype(state.sum2)>(sum2);
   return size;
 }
 
-template <class Value, std::uint64_t Modulus>
-[[gnu::always_inline]] inline sum_pair sum_portable(sum_pair sums, std::span<std::byte const> data) noexcept {
+template <class Value, std::uint64_t Modulus, class State>
+[[gnu::always_inline]] inline State sum_portable(State state, std::span<std::byte const> data) noexcept {
   // The widest integer the target adds natively, or 64 bits for 32-bit values.
   using accumulator = std::conditional_t<sizeof(Value) == 4, std::uint64_t, std::size_t>;
   // 32-bit targets sum 16-bit values as 32-bit words, two values each; 64-bit targets keep the 4-value formula on native words.
@@ -178,8 +183,8 @@ template <class Value, std::uint64_t Modulus>
   static_assert(run >= 8);
   // In a run of w words, previous is at most 2M * w(w - 1) / 2.
   static_assert(!sums_words || Modulus * (run / 2) * ((run / 2) - 1) <= std::numeric_limits<std::uint32_t>::max());
-  auto sum1 = static_cast<accumulator>(sums.sum1);
-  auto sum2 = static_cast<accumulator>(sums.sum2);
+  auto sum1 = static_cast<accumulator>(state.sum1 >= Modulus ? state.sum1 - Modulus : state.sum1);
+  auto sum2 = static_cast<accumulator>(state.sum2 >= Modulus ? state.sum2 - Modulus : state.sum2);
   std::byte const *position = data.data();
   std::size_t values = data.size() / size;
   while(values != 0) {
@@ -249,22 +254,21 @@ template <class Value, std::uint64_t Modulus>
     sum1 = reduce<Modulus>(sum1);
     sum2 = reduce<Modulus>(sum2);
   }
-  return {.sum1 = sum1, .sum2 = sum2};
+  return {.sum1 = static_cast<decltype(state.sum1)>(sum1), .sum2 = static_cast<decltype(state.sum2)>(sum2)};
 }
 
-template <class Value, std::uint64_t Modulus>
-[[gnu::noinline, maybe_unused]] sum_pair sum_long(sum_pair sums, std::span<std::byte const> data) noexcept {
-  std::size_t const size = sum_chunks<Value, Modulus>(sums, data);
-  return sum_portable<Value, Modulus>(sums, data.subspan(size));
-}
-
-template <class Value, std::uint64_t Modulus> sum_pair sum_values(sum_pair sums, std::span<std::byte const> data) noexcept {
-  using value_kernel = kernel<std::numeric_limits<Value>::digits>;
-  if constexpr(value_kernel::available) {
-    return data.size() >= value_kernel::minimum_size ? sum_long<Value, Modulus>(sums, data) : sum_portable<Value, Modulus>(sums, data);
-  } else {
-    return sum_portable<Value, Modulus>(sums, data);
+template <class Value, std::uint64_t Modulus, class State>
+[[gnu::noinline, maybe_unused]] State sum_long(State state, std::span<std::byte const> data) noexcept {
+  std::size_t size = 0;
+  if constexpr(kernel<std::numeric_limits<Value>::digits>::available) {
+    size = sum_chunks<Value, Modulus>(state, data);
   }
+  return sum_portable<Value, Modulus>(state, data.subspan(size));
+}
+
+template <class Value> constexpr bool runs_kernel(std::size_t size) noexcept {
+  using value_kernel = kernel<std::numeric_limits<Value>::digits>;
+  return value_kernel::available && size >= value_kernel::minimum_size;
 }
 
 } // namespace
