@@ -240,7 +240,7 @@ template <bool Reflected> [[gnu::always_inline]] inline __m256i pclmul_kernel::l
 }
 
 // Inlined only into the non-inlined long-input callers (fold_long_message(), fold_long_crc32()): a second call cost
-// up to 10 % at 256 bytes.
+// 8-15 % at 256 bytes.
 template <bool Reflected>
 [[gnu::always_inline]] inline std::array<__m256i, 4> pclmul_kernel::fold_wide_blocks(folding_constants const &constants, std::uint64_t remainder,
                                                                                      std::span<std::byte const> data,
@@ -255,7 +255,7 @@ template <bool Reflected>
   unrolled<8>([&](auto index) { accumulators[index] = load_two<Reflected>(data.subspan(index * half)); });
   accumulators[0] = _mm256_xor_si256(accumulators[0], _mm256_zextsi128_si256(state<Reflected>(remainder)));
   consumed = eight;
-  // Branches that 256 bytes do not take are marked unlikely: each taken branch on that path cost about 2 %.
+  // Branches that 256 bytes do not take are marked unlikely, so that path runs without taken jumps.
   if(data.size() - consumed >= eight) [[unlikely]] {
     do {
       unrolled<8>([&](auto index) {
@@ -317,8 +317,8 @@ template <>
                                                                                     std::span<std::byte const> data) noexcept {
 #if defined(__VPCLMULQDQ__) && defined(__AVX2__)
   if(data.size() >= wide_folding_minimum_size) {
-    // Blocks 0..5 fold onto blocks 6 and 7 in parallel; crc32 instructions take the 32 bytes and the last 0..63 bytes:
-    // 20 % faster at 256 bytes than folding onto one block.
+    // Blocks 0..5 fold onto blocks 6 and 7 in parallel; crc32 instructions take the 32 bytes and the last 0..63 bytes,
+    // two carry-less multiplications fewer than folding onto one block.
     std::size_t consumed = 0;
     std::array<__m256i, 4> const pairs = pclmul_kernel::fold_wide_blocks<true>(constants, remainder, data, consumed);
     auto const both = [&](folding_pair const &distance) { return _mm256_broadcastsi128_si256(pclmul_kernel::pair(distance)); };

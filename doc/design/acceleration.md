@@ -48,10 +48,15 @@ user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#
   Kernel>` implements it once over `pclmul_kernel`, `pmull_kernel` and `clmul_kernel`.
 - **One modulus for every width:** a CRC of width W runs in a 64-bit register modulo
   Q = x^(64−W) · (x^W + polynomial), so one kernel per bit order covers widths 1..64 and every register type. The
-  80 bytes of constants live in the slicing-by-8 and braided tables in every build.
+  160 bytes of constants live in the slicing-by-8 and braided tables in every build.
+- **Wide x86 loop** (VPCLMULQDQ, from 256 bytes): eight 256-bit accumulators over 256-byte steps, then four over
+  128 bytes and one 64-byte step. Like Intel ISA-L, it then folds the 8 remaining blocks onto the last one in a
+  single step, each block with the constants of its own distance (`by_seven` to `by_one`), instead of a chain of
+  folds over one block.
 - **CRC instructions** run for CRC-32 and CRC-32C with reflected input in a 32-bit register, whatever the initial
   value and final XOR. On x86-64, CRC-32C inputs from 25 bytes fold with PCLMULQDQ and reduce their last 128 bits
-  with two `crc32` instructions.
+  with two `crc32` instructions; from 256 bytes the wide loop leaves two blocks, and `crc32` takes those 32 bytes
+  and the last 0..63 message bytes.
 - `crc_lut_braided` runs the `crc_lut_sliced` path wherever a kernel applies.
 
 Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cortex-A72; MCU: Cortex-M4):
@@ -60,7 +65,17 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
 - Kernel inlined into each of the 8 loops (register type × bit order): one shared copy per bit order was up to 31 %
   (GCC) and 43 % (Clang) slower below 256 B, for 2.7-5.5 KB of code saved.
 - The wide x86 loop sits behind one non-inlined call: inlined, it gave every caller a stack frame, about 20 %
-  slower at 16-64 B.
+  slower at 16-64 B. It is inlined into that callee, one copy per register type and bit order: a second call cost
+  8-15 % at 256 B; one shared copy per bit order saved 10 KB but was 9 % slower at 256 B.
+- The x86 Barrett reduction stays in vector registers: moving the lanes to general registers and back cost about
+  3 cycles per move, and keeping them in vector registers made 16-256 B 10-45 % faster.
+- Branches that a 256-byte input does not take are marked unlikely, so that path has no taken jumps: CRC-32C at
+  256 B went from 0.84 to 0.93 of ISA-L, measured together with its two-block ending (four `crc32` instructions
+  instead of a fold over one block and two). CRC-32 and CRC-64/XZ were unchanged.
+- Tried at 256 B without gain: starting with four accumulators as ISA-L does (7 % slower), folding all 16 blocks in
+  one parallel step (5-10 % slower, 128 more bytes of constants), 64-byte alignment of the constants (within 2 %).
+- Compared with Intel ISA-L's AVX2 kernels (GCC 16 `-O2 -march=native`): 1.01× (CRC-32), 0.95× (CRC-32C) and
+  0.96× (CRC-64/XZ) at 256 B, against 0.71-0.78× before the single-step fold.
 - Each table source has its own copy of the loops it reuses (internal linkage): equal or up to 20 % faster than
   calling across sources.
 - Portable braided loop from 128 bytes, where it overtakes slicing-by-8.
