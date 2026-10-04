@@ -2,8 +2,8 @@
 
 ## Layout
 
-- Unit tests: Google Test, `tests/unit_tests/ut_<algorithm>_<area>.cpp`. Shared test data and helpers are headers in
-  `tests/unit_tests/include/`, maintained by hand.
+- Unit tests: Google Test, `tests/unit_tests/ut_<algorithm>.cpp`, or `ut_<algorithm>_<area>.cpp` when an algorithm has
+  several. Shared test data and helpers are headers in `tests/unit_tests/include/`, maintained by hand.
 - Negative compile tests: `tests/compile_fail`. Each is a CTest test that builds an `EXCLUDE_FROM_ALL` target and
   passes only if the build output matches the expected diagnostic; each source also builds as a control target
   without the error.
@@ -20,6 +20,7 @@
 | Bit or byte manipulation (tables, slicing, loads) | also `native-asan` (AddressSanitizer + UBSan) |
 | Preconditions, exceptions, RTTI | also `native-gcc-no-exceptions`; the unit tests include one executable built with `NDEBUG` |
 | Architecture headers or the table loops | also `x86_64-gcc-pclmul`, `native-gcc-portable` and the cross presets of `cmake/emulator_presets.json` (QEMU user mode) |
+| The x86-64 AVX-VNNI Fletcher/Adler-32 kernel | also a local build with `-march=native` on a CPU with AVX-VNNI (no preset or CI job covers it) |
 
 Run benchmarks and the full cross matrix only when the change needs them, filtered to what changed; they are slow.
 

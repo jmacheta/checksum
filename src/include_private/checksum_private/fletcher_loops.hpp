@@ -209,7 +209,7 @@ template <class Kernel, class Value, std::uint64_t Modulus, class State>
 template <class Value, std::uint64_t Modulus, class State>
 [[gnu::always_inline]] inline State sum_portable(State state, std::span<std::byte const> data) noexcept {
   // The widest integer the target adds natively, or 64 bits for 32-bit values. AArch64 sums 16-bit values in 32 bits:
-  // Fletcher-32 at 20 bytes ran 6 % faster on a Cortex-A72 (a reduction every 360 values costs little), but 9 % slower on x86-64.
+  // Fletcher-32 at 20 bytes ran 7 % faster on a Cortex-A72 (a reduction every 360 values costs little), but 9 % slower on x86-64.
   using accumulator =
       std::conditional_t<sizeof(Value) == 4, std::uint64_t, std::conditional_t<sizeof(Value) == 2 && narrow_value_sums, std::uint32_t, std::size_t>>;
   // 32-bit targets sum 16-bit values as 32-bit words, two values each; 64-bit targets keep the 4-value formula on native words.

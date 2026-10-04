@@ -10,6 +10,8 @@
 // - minimum_size: shortest input for the kernel (max: never)
 // - for kernel<8> also alignment: sum_chunks() of fletcher_loops.hpp adds single bytes up to an address of that alignment
 //   before the kernel
+// An optional group_kernel<Bits> with the same interface runs instead of kernel from its own minimum_size (sum_long() of
+// fletcher_loops.hpp).
 
 #include <cstdint>
 

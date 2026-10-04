@@ -16,8 +16,8 @@ namespace {
 // Bytes of one word per lane.
 inline constexpr std::size_t group_size = lane_count * word_size;
 
-// Shortest input for the lanes. The portable ones overtake the word loop on a Cortex-A72 at 128 bytes with GCC, 256 with Clang; on 32-bit targets
-// their 64-bit sums run out of registers, 3 times slower there.
+// Shortest input for the lanes. The portable ones overtake the word loop on a Cortex-A72 at 128 bytes with GCC but stay below
+// Clang's unrolled word loop; on 32-bit targets their 64-bit sums run out of registers, 3 times slower there.
 inline constexpr std::size_t lanes_minimum_size =
     lane_kernel_available ? lane_kernel_minimum_size
                           : (std::numeric_limits<std::size_t>::digits == 64 ? 256 : std::numeric_limits<std::size_t>::max());

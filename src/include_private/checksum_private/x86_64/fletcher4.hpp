@@ -46,7 +46,7 @@ inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept
 
 #else
 
-// The kernel overtakes the word loop on a Core Ultra 7 155H at 192 bytes with GCC and at 384 with Clang, which is 10 % slower at 256.
+// Where the kernel overtakes the word loop on a Core Ultra 7 155H, with GCC and Clang; GCC's lanes are slower at 128 and 160 bytes.
 inline constexpr std::size_t lane_kernel_minimum_size = 192;
 
 // Lanes 0 and 1 in the low vectors, 2 and 3 in the high ones.

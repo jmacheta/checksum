@@ -94,7 +94,8 @@ evaluation always runs a byte-by-byte loop with the same result. The measurement
 ### 6.1 x86-64: Core Ultra 7 155H
 
 GCC 16, 4 KiB, measured on a loaded host: 7 365 MB/s (10⁶ bytes per second) for the portable loop, 54 211 MB/s with
-the AVX2 kernel, 7.4× faster. With `-march=native` the AVX-VNNI kernel runs (MB/s, GCC 16 and Clang 21):
+the AVX2 kernel, 7.4× faster (56 382 MB/s in the later run of the table below). The portable figure predates the
+current portable loop. With `-march=native` the AVX-VNNI kernel runs (MB/s, GCC 16 and Clang 21):
 
 | Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -116,7 +117,9 @@ GCC 14.3, `-O2`, one core, start address aligned. GiB/s:
 | AArch32 NEON | 0.98 | 2.44 | 3.75 | 4.32 |
 
 NEON is 5-7× faster at 4 KiB and 1.7-1.9× at 64 bytes. On AArch64, from 320 bytes the kernel sums 64 bytes per
-iteration: 0.96-0.99× zlib-ng and ISA-L from 1500 B, where 16 bytes per iteration reached 0.72-0.79×.
+iteration: 0.96-0.99× zlib-ng and ISA-L from 1500 B, where 16 bytes per iteration reached 0.72-0.79×. The AArch64
+portable row was measured before the current portable loop, which bounds its loop by a pointer; re-measure before
+relying on it.
 
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 

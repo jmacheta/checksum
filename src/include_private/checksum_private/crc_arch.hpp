@@ -80,7 +80,8 @@ std::uint32_t fold_crc32(folding_constants const &constants, std::uint32_t remai
 // - partial<R>(accumulator, by_one, last, size): accumulator plus the last size (1..15) bytes; last = final 16 bytes
 // - reduce<R>(accumulator, constants): the 64-bit register
 // - lane<L>(accumulator): low (0) or high (1) 64 bits; fold_crc32_with() only
-// - wide; if true, wide_minimum_size and fold_wide<R>(), a wider loop that finishes with fold_four_with()
+// - wide; if true, wide_minimum_size and fold_wide<R>(), a wider loop that folds its 8 last blocks in parallel and ends
+//   with fold_tail_with()
 template <bool Reflected, class Kernel>
 typename Kernel::vector fold_blocks_with(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
 

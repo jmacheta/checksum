@@ -1,8 +1,8 @@
 #ifndef CHECKSUM_PRIVATE_X86_64_FLETCHER_HPP
 #define CHECKSUM_PRIVATE_X86_64_FLETCHER_HPP
 
-// x86-64 kernels of the Fletcher checksums and Adler-32 on 256-bit AVX2 vectors, else on 128-bit SSE2 vectors (the x86-64
-// baseline) for bytes and 16-bit values. Included only by fletcher_arch.hpp.
+// x86-64 kernels of the Fletcher checksums and Adler-32 on 256-bit AVX2 vectors (bytes with vpdpbusd under AVX-VNNI), else
+// on 128-bit SSE2 vectors (the x86-64 baseline) for bytes and 16-bit values. Included only by fletcher_arch.hpp.
 
 #include <checksum_private/generic/fletcher.hpp>
 

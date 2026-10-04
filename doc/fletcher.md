@@ -126,7 +126,7 @@ Portable is the library without kernels, SSE2 the default x86-64 flags, AVX2 a b
 | Fletcher-64 | 26 853 | | 52 801 | 13 065 | 54 881 |
 
 The AVX2 kernels are 7.4× (Fletcher-16), 3.3× (Fletcher-32) and 2.0× (Fletcher-64) faster than the GCC portable loop.
-With `-march=native` (AVX-VNNI), GCC 16, MB/s:
+The portable columns predate the current portable loop. With `-march=native` (AVX-VNNI), GCC 16, MB/s:
 
 | Checksum | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -151,7 +151,8 @@ GCC 14.3, `-O2`, one core. GiB/s at 64 B / 256 B / 1500 B / 4 KiB, start address
 At 4 KiB NEON is 5.0× (AArch32) to 6.8× (AArch64, 64 bytes per iteration) faster for Fletcher-16, 2.8-2.9× for Fletcher-32, and 1.45× (AArch64) or 3.0× (AArch32) for
 Fletcher-64, whose 64-bit portable loop is already fast on AArch64. Below the thresholds both builds run the portable
 loop; the differences there come from code layout. At 20 bytes AArch64 Fletcher-32 runs 592 MB/s, 0.88× the Wikipedia
-loop (675).
+loop (675). The AArch64 portable column was measured before the current portable loop (32-bit sums for Fletcher-32, a
+constant `%` for the Fletcher moduli, pointer-bounded loop); re-measure before relying on it.
 
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 
