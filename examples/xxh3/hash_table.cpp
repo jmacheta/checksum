@@ -28,7 +28,7 @@ int main() {
   port_by_service.emplace("ssh", 22);
   port_by_service.emplace("http", 80);
   port_by_service.emplace("https", 443);
-  port_by_service.emplace("mqtt", 1883);
+  port_by_service.emplace("domain", 53);
 
   auto const found = port_by_service.find("https"sv);
   if(found == port_by_service.end() || found->second != 443) {

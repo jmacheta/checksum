@@ -1,4 +1,4 @@
-// Computes the XXH3-64 hash of a file in chunks, like `xxhsum -H3`.
+// Computes the XXH3-64 hash of a file in chunks and prints it with the file name.
 
 #include <checksum/xxh3.hpp>
 
