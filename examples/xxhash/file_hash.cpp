@@ -21,7 +21,7 @@ int main(int argument_count, char **arguments) {
   }
 
   // The state is a plain value: each update returns it with one more chunk folded in.
-  checksum::xxh64_state state{};
+  checksum::xxh64_state state;
   std::array<char, 64 * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
     state = checksum::xxhash_update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));

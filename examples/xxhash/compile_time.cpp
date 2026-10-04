@@ -11,6 +11,8 @@ using namespace std::literals;
 // The compiler verifies the reference value of XXH32("abc").
 static_assert(checksum::xxh32_compute("abc"sv) == 0x32D153FF);
 
+namespace {
+
 // The seed keeps these IDs apart from hashes of the same names elsewhere.
 constexpr std::uint32_t message_id(std::string_view name) { return checksum::xxh32_compute(name, 0x4D534731); }
 
@@ -18,29 +20,23 @@ constexpr std::uint32_t temperature_id = message_id("sensor/temperature");
 constexpr std::uint32_t humidity_id = message_id("sensor/humidity");
 static_assert(temperature_id != humidity_id);
 
-namespace {
-
-void handle(std::string_view name) {
-  // A run-time hash of the same text matches the constant.
+// The handler of a message; a run-time hash of the same text matches the constant.
+std::string_view handler(std::string_view name) {
   switch(message_id(name)) {
   case temperature_id:
-    std::println("{}: temperature handler", name);
-    break;
+    return "temperature handler";
   case humidity_id:
-    std::println("{}: humidity handler", name);
-    break;
+    return "humidity handler";
   default:
-    std::println("{}: unknown message", name);
-    break;
+    return "unknown message";
   }
 }
 
 } // namespace
 
 int main() {
-  std::println("ID of sensor/temperature = 0x{:08X}", temperature_id);
-  handle("sensor/temperature");
-  handle("sensor/humidity");
-  handle("sensor/pressure");
-  return 0;
+  for(std::string_view const name : {"sensor/temperature"sv, "sensor/humidity"sv, "sensor/pressure"sv}) {
+    std::println("{:18} 0x{:08X} -> {}", name, message_id(name), handler(name));
+  }
+  return handler("sensor/humidity") == "humidity handler" && handler("sensor/pressure") == "unknown message" ? 0 : 1;
 }
