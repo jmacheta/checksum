@@ -25,7 +25,8 @@ Run benchmarks and the full cross matrix only when the change needs them, filter
 
 Test presets build one configuration (Debug) and run `ctest` with 8 jobs; the negative compile tests share a
 resource lock because each runs the build tool on the same tree. Keep a whole run fast: about 2 s of tests natively
-and 20 s in QEMU user mode.
+and 20 s in QEMU user mode. Debug test builds use `-Og`; `cross-arm-portable` keeps `-O0` so the inline assembly is built
+without optimization.
 
 ## Coverage expectations
 

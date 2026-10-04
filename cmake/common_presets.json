@@ -21,8 +21,8 @@
             "hidden": true,
             "inherits": "common",
             "cacheVariables": {
-                "CMAKE_C_FLAGS_DEBUG": "-g -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern",
-                "CMAKE_CXX_FLAGS_DEBUG": "-g -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern"
+                "CMAKE_C_FLAGS_DEBUG": "-g -Og -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern",
+                "CMAKE_CXX_FLAGS_DEBUG": "-g -Og -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern"
             },
             "environment": {
                 "CHECKSUM_WARNINGS": "-Wall -Wextra -Wpedantic -Wunused-parameter -Winit-self -Wcast-align -Wconversion -Wnull-dereference -Wsign-conversion -Wno-psabi $env{CHECKSUM_GCC_WARNINGS}",

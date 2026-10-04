@@ -63,11 +63,11 @@
         {
             "name": "cross-aarch64-pmull",
             "displayName": "AArch64 Linux in QEMU (PMULL and CRC32)",
-            "description": "AArch64 cross build with -march=armv8-a+crc+crypto: PMULL folding and CRC32 instructions (aarch64 header); tests run in QEMU",
+            "description": "AArch64 cross build with -march=armv8.2-a+crc+crypto+sha3: PMULL folding with EOR3 and CRC32 instructions (aarch64 header); tests run in QEMU",
             "inherits": "cross-aarch64-base",
             "environment": {
-                "CHECKSUM_EXTRA_CFLAGS": "-march=armv8-a+crc+crypto",
-                "CHECKSUM_EXTRA_CXXFLAGS": "-march=armv8-a+crc+crypto"
+                "CHECKSUM_EXTRA_CFLAGS": "-march=armv8.2-a+crc+crypto+sha3",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=armv8.2-a+crc+crypto+sha3"
             }
         },
         {
@@ -113,8 +113,12 @@
         {
             "name": "cross-arm-portable",
             "displayName": "32-bit Arm Linux in QEMU (no NEON)",
-            "description": "32-bit Arm (hard float) cross build with -mfpu=vfpv3-d16: portable CRC loops and the ldm + adcs Internet checksum kernel on a 32-bit target; tests run in QEMU. CHECKSUM_TEST_ARM_DSP enables the M-profile DSP kernel of Fletcher-16 and Adler-32, which QEMU user mode cannot run on an M-profile core",
+            "description": "32-bit Arm (hard float) cross build with -mfpu=vfpv3-d16: portable CRC loops and the ldm + adcs Internet checksum kernel on a 32-bit target; tests run in QEMU. CHECKSUM_TEST_ARM_DSP enables the M-profile DSP kernel of Fletcher-16 and Adler-32, which QEMU user mode cannot run on an M-profile core. Debug stays at -O0 here so that the inline assembly is built without optimization",
             "inherits": "cross-arm-base",
+            "cacheVariables": {
+                "CMAKE_C_FLAGS_DEBUG": "-g -O0 -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern",
+                "CMAKE_CXX_FLAGS_DEBUG": "-g -O0 -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -ftrivial-auto-var-init=pattern"
+            },
             "environment": {
                 "CHECKSUM_EXTRA_CFLAGS": "-mfpu=vfpv3-d16",
                 "CHECKSUM_EXTRA_CXXFLAGS": "-mfpu=vfpv3-d16 -DCHECKSUM_TEST_ARM_DSP"

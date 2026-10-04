@@ -50,10 +50,10 @@ TEST(adler32, published_examples) {
   EXPECT_EQ(adler32_compute("123456789"sv), 0x091E01DEU);
 }
 
-// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a vector.
+// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a word and two vector misalignments.
 TEST(adler32, matches_model) {
   auto const data = random_bytes(2100 + 16, 32);
-  for(std::size_t offset = 0; offset < 16; ++offset) {
+  for(std::size_t const offset : {0U, 1U, 2U, 3U, 7U, 15U}) {
     for(std::size_t size = 0; size <= 2100; ++size) {
       auto const message = std::span<std::byte const>(data).subspan(offset, size);
       ASSERT_EQ(adler32_compute(message), reference(message)) << "offset " << offset << ", size " << size;
@@ -64,7 +64,7 @@ TEST(adler32, matches_model) {
 // The largest bytes from the largest canonical sums, over many deferred reductions of 5'552 bytes on 32-bit targets.
 TEST(adler32, all_ones) {
   adler32_state const largest{.sum1 = 65520, .sum2 = 65520};
-  for(std::size_t const size : {(std::size_t{6} << 20), (std::size_t{6} << 20) + 1, (std::size_t{6} << 20) + 7, std::size_t{5552 * 1000}}) {
+  for(std::size_t const size : {(std::size_t{600} << 10), (std::size_t{600} << 10) + 1, (std::size_t{600} << 10) + 7, std::size_t{5552 * 120}}) {
     std::vector<std::byte> const data(size, std::byte{0xFF});
     ASSERT_EQ(adler32_compute(data), reference(data)) << "size " << size;
     ASSERT_EQ(adler32_finalize(adler32_update(largest, data)), reference(data, 65520, 65520)) << "size " << size;

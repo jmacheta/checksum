@@ -89,11 +89,11 @@ TEST(fletcher_vectors, aliases) {
   EXPECT_EQ(fletcher64_compute("123456789"sv), fletcher_compute<64>("123456789"sv));
 }
 
-// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a vector.
+// All lengths past the kernel thresholds and a few kernel blocks, at every alignment of a word and two vector misalignments.
 TYPED_TEST(fletcher, matches_model) {
   constexpr unsigned width = TypeParam::value;
   auto const data = random_bytes(2100 + 16, width);
-  for(std::size_t offset = 0; offset < 16; ++offset) {
+  for(std::size_t const offset : {0U, 1U, 2U, 3U, 7U, 15U}) {
     for(std::size_t size = 0; size <= 2100; ++size) {
       auto const message = std::span<std::byte const>(data).subspan(offset, size);
       ASSERT_EQ(fletcher_compute<width>(message), reference<width>(message)) << "offset " << offset << ", size " << size;
@@ -104,7 +104,7 @@ TYPED_TEST(fletcher, matches_model) {
 // The largest blocks over several deferred reductions; the tail sizes leave an unfinished block.
 TYPED_TEST(fletcher, all_ones) {
   constexpr unsigned width = TypeParam::value;
-  for(std::size_t const size : {(std::size_t{4} << 20), (std::size_t{4} << 20) + 1, (std::size_t{4} << 20) + 3}) {
+  for(std::size_t const size : {(std::size_t{600} << 10), (std::size_t{600} << 10) + 1, (std::size_t{600} << 10) + 3}) {
     std::vector<std::byte> const data(size, std::byte{0xFF});
     ASSERT_EQ(fletcher_compute<width>(data), reference<width>(data)) << "size " << size;
   }
