@@ -75,9 +75,12 @@ keep the state instead. `value` must be a `std::uint16_t`: another integer type 
 
 ## 5. CPU acceleration
 
-The portable loop adds the widest native word (`std::size_t`) with two independent carry chains. It runs at every
-optimization level, and its result does not depend on the target's byte order. The order in which bytes are added
-does not change a one's complement sum, so the loop adds native-order words and swaps the bytes of the result once.
+The portable loop adds the widest native word (`std::size_t`) in 64-byte blocks (32 bytes on 32-bit targets) with two
+independent carry chains of four words; on x86-64 each chain is an `add`/`adc` sequence with its carry added back at
+once. The bytes after the last whole word come from one load of the message's last word, the bytes already summed
+masked off, so no load reaches past the message. It runs at every optimization level, and its result does not depend
+on the target's byte order. The order in which bytes are added does not change a one's complement sum, so the loop
+adds native-order words and swaps the bytes of the result once.
 
 | Target and flags | Kernel | Used from |
 | --- | --- | --- |
@@ -103,15 +106,19 @@ AVX2 is with `-march=native`; portable is with `CHECKSUM_ACCELERATION=OFF` and d
 
 | Input | GCC 16 portable | GCC 16 AVX2 | Clang 21 portable | Clang 21 AVX2 |
 | --- | --- | --- | --- | --- |
-| 20 B (IPv4 header) | 8 788 | 8 325 | 7 822 | 7 383 |
-| 64 B | 19 619 | 19 412 | 22 743 | 19 761 |
-| 256 B | 36 378 | 38 476 | 38 666 | 39 792 |
-| 1500 B (Ethernet payload) | 39 273 | 64 339 | 37 892 | 69 386 |
-| 4 KiB | 49 066 | 78 821 | 48 414 | 83 060 |
-| 1 MiB | 54 418 | 68 182 | 53 725 | 77 821 |
+| 20 B (IPv4 header) | 7 709 | 7 699 | 7 094 | 7 103 |
+| 64 B | 23 687 | 22 613 | 22 634 | 21 829 |
+| 256 B | 43 669 | 43 347 | 42 295 | 42 198 |
+| 1500 B (Ethernet payload) | 49 918 | 71 039 | 47 943 | 76 279 |
+| 4 KiB | 50 691 | 75 516 | 52 012 | 79 779 |
+| 1 MiB | 56 060 | 90 044 | 55 770 | 93 630 |
 
 Below 512 bytes both builds run the portable loop; the differences come from `-march=native` and code layout. From
-1500 bytes the AVX2 kernel is 1.6-1.8× faster. At 1 MiB the gain is smaller, because the data comes from the L2 cache.
+1500 bytes the AVX2 kernel is 1.4-1.7× faster.
+
+Against Linux v7.3-rc5 `csum_partial` and DPDK `rte_raw_cksum`, built with the same GCC 16 `-O2 -march=native` and
+called the same way, this build runs at 0.97× the faster of the two at 256 B, 0.98× at 64 B, 1.14× at 20 B and
+1.35-1.76× from 1500 B.
 
 ### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
@@ -131,6 +138,10 @@ The 64-bit portable loop is already fast, so the NEON kernel starts at 512 bytes
 bytes. In 32-bit mode the kernels start at 192 bytes: NEON is 4.1× and `ldm` 2.0× faster at 4 KiB. Below the
 thresholds every build runs the portable loop, and the differences there come from code layout.
 
+The table predates the current portable loop, which is 1.1-1.45× faster in AArch64 and 1.05-1.4× faster in AArch32 up
+to 256 B (comparison harness, same flags): AArch64 now takes 957 MB/s at 20 B, 1.10× Linux v7.3-rc5 `do_csum`, which
+reads whole 8-byte words and masks off the bytes past the end.
+
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 
 GCC 14.3, `-O2`, code in flash and data in RAM; the cycle counter gives the best of 5 calls. Offset is the start
@@ -138,18 +149,19 @@ address modulo 4: 2 is typical for an IP header behind a 14-byte Ethernet header
 
 | Input | nRF52840 portable | nRF52840 `ldm` | STM32L4A6 portable | STM32L4A6 `ldm` |
 | --- | --- | --- | --- | --- |
-| 20 B | 10.3 | 10.0 | 12.9 | 12.5 |
-| 64 B | 24.4 | 23.4 | 30.5 | 29.3 |
-| 256 B | 40.2 | 49.5 | 50.2 | 61.9 |
-| 1500 B | 48.5 | 80.1 | 60.6 | 100.2 |
-| 4 KiB | 50.3 | 91.9 | 62.9 | 114.9 |
-| 1500 B, offset 2 | 40.8 | 80.4 | 51.0 | 100.5 |
-| 4 KiB, offset 1 | 36.1 | 88.7 | 45.2 | 110.9 |
+| 20 B | 10.3 | 10.2 | 12.9 | 12.5 |
+| 64 B | 24.4 | 22.4 | 30.5 | 29.3 |
+| 256 B | 40.2 | 52.0 | 50.2 | 61.9 |
+| 1500 B | 48.5 | 82.6 | 60.6 | 100.2 |
+| 4 KiB | 50.3 | 92.5 | 62.9 | 114.9 |
+| 1500 B, offset 2 | 40.8 | 81.4 | 51.0 | 100.5 |
+| 4 KiB, offset 1 | 36.1 | 90.2 | 45.2 | 110.9 |
 
 Per byte at 4 KiB, the kernel takes 0.70 cycles against 1.27 for the portable loop: 1.8× faster, 1.2× at 256 bytes,
 and up to 2.5× from odd or 2-modulo-4 addresses, where the portable loop's unaligned loads cost more. Both chips run the
-same cycles per byte, so the figures scale with the clock. Below 192 bytes the build with the kernel is up to 5 %
-slower.
+same cycles per byte, so the figures scale with the clock. The nRF52840 `ldm` column is re-measured with the current
+portable loop, which is 1.05-1.4× faster than the one in the other columns below 192 bytes (1.2× at 20 B); at 191
+bytes it takes 345 cycles against 273 for the kernel at 192, so the threshold could move lower.
 
 ### 6.4 Code size
 
@@ -158,11 +170,13 @@ loop twice: once for short inputs, once after the kernel.
 
 | Target | Portable | With kernel |
 | --- | --- | --- |
-| Cortex-M4, `-Os` | 210 B | 778 B |
-| Cortex-M4, `-O2` | 248 B | 944 B |
-| x86-64, `-O2` (AVX2 with `-mavx2`) | 419 B | 1 229 B |
-| AArch64, `-O2` | 364 B | 992 B |
-| RISC-V RV64, `-O2` (V with `-march=rv64gcv`) | 848 B | 1 136 B |
+| Cortex-M4, `-Os` | 284 B | 920 B |
+| Cortex-M4, `-O2` | 356 B | 1 104 B |
+| x86-64, `-O2` (AVX2 with `-mavx2`) | 385 B | 985 B |
+| AArch64, `-O2` | 484 B | 1 076 B |
+| RISC-V RV64, `-O2` (V with `-march=rv64gcv`) | 1 620 B | 1 402 B |
+
+RV64 without fast unaligned access loads each word byte by byte, which makes its unrolled portable loop large.
 
 RISC-V has not been measured on hardware; the vector kernel is tested in QEMU with vector lengths of 128-1024 bits.
 
@@ -173,4 +187,4 @@ RISC-V has not been measured on hardware; the vector kernel is tested in QEMU wi
   field, as `examples/internet/ttl_decrement.cpp` does.
 - **UDP zero:** the UDP rule of sending 0xFFFF instead of a computed 0 is protocol logic and stays in the caller.
 - **No verification helper:** to verify a packet, compute over it, checksum included, and compare the result with 0.
-- **Code size:** a build with a kernel adds 290-810 bytes; `CHECKSUM_ACCELERATION=OFF` keeps the portable loop alone.
+- **Code size:** a build with a kernel adds 590-750 bytes on Arm and x86-64; `CHECKSUM_ACCELERATION=OFF` keeps the portable loop alone.

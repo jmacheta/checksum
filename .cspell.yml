@@ -33,6 +33,7 @@ words:
 - adccp
 - adcs
 - addc
+- addcll
 - addtogroup
 - aixm
 - alderlake
@@ -49,6 +50,7 @@ words:
 - castsi
 - ccitt
 - cdma
+- cinc
 - cksum
 - clmul
 - clmulepi
@@ -62,6 +64,7 @@ words:
 - crcs
 - crosscompiling
 - cstdint
+- csum
 - ctest
 - cvref
 - cvtepu
@@ -70,6 +73,7 @@ words:
 - darc
 - datagram
 - dect
+- DPDK
 - dtcm
 - eabi
 - endforeach

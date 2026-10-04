@@ -88,7 +88,7 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
 
 A one's complement sum needs only additions, and the order of the bytes does not matter, so the portable loop is
 already fast. It adds native `std::size_t` words in two add-with-carry chains and swaps the bytes of the result once:
-on x86-64 that is about 8 000 MB/s at 20 B and 49 000 MB/s at 4 KiB, without any instruction-set flags. A kernel has
+on x86-64 that is about 7 700 MB/s at 20 B and 50 000 MB/s at 4 KiB, without any instruction-set flags. A kernel has
 to beat that, not a byte loop.
 
 | Target | Verdict | Why |
@@ -121,14 +121,22 @@ Cortex-M methods, measured on the nRF52840 and STM32L4A6 (cycles per byte at 4 K
 | MCU CRC unit | - | It computes CRCs only. |
 
 What is left on Cortex-M: inputs below 192 bytes run the portable loop, dominated by the call and the final fold (about
-100 cycles for 20 bytes).
+125 cycles for 20 bytes). The `ldm` kernel at 192 B (273 cycles) now beats the portable loop at 191 B (345), so its
+threshold could move lower.
 
 Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Cortex-M4: nRF52840):
 
-- Two carry chains of 64-bit words: 1.3× one chain at 64 B, 2.6× at 4 KiB. A four-chain prototype was up to 1.3×
+- Two carry chains of 64-bit words: 1.3× one chain at 64 B, 2.6× at 4 KiB. Each chain takes four words per 64-byte
+  block; on x86-64 `__builtin_addcll` makes it `add` + 3 `adc` + `adc $0` like Linux `csum_partial`, which took
+  256 B from 0.84× to 0.97× of that function. GCC 14 on Arm materializes each carry of the builtin, so Arm and the
+  other targets keep the carry count (`adds` + `cinc`). Four chains of two words were not faster on x86-64.
+- The bytes after the last whole word come from one load of the message's last word with the summed bytes masked off,
+  rotated by one byte when the length is odd; with the rotating fold this made 20 B 1.7× faster on the A72 (0.62× to 1.10× Linux `do_csum`,
+  which over-reads instead). Inputs shorter than one word take the 4-, 2- and 1-byte loads before any other branch;
+  behind the word steps they cost 10-13 % at 7 B. Skipping the masked load for whole-word lengths keeps 64-256 B fast.
+- `fold()` adds a value to its rotation by half its width, two steps instead of four. A four-chain prototype was up to 1.3×
   faster again with Clang but 4× slower with GCC, which kept its array in memory; untried with separate variables.
-- The tail is loaded in fixed 4-, 2- and 1-byte steps: a `memcpy` of variable size called the library function and
-  made a 20-byte input 3.5× slower.
+- No `memcpy` of variable size for the tail: it called the library function and made a 20-byte input 3.5× slower.
 - One final fold after the carry chains are merged: three separate folds cost 8-20 % at 20-64 B.
 - The AVX2 and NEON kernels work in passes of 2^26 blocks (4 GiB), the vector kernel in passes of 2^18 iterations, so
   their 64-bit lanes never overflow.
