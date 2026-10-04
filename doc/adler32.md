@@ -29,8 +29,8 @@ static_assert(checksum::adler32_compute("123456789"sv) == 0x091E01DE);
 static_assert(checksum::adler32_compute("Wikipedia"sv) == 0x11E60398);
 ```
 
-`examples/adler32` has complete programs: checking the Adler-32 trailer of a zlib stream, and extending a stored
-checksum when data is appended.
+`examples/adler32` has complete programs: the checksum of default settings computed at compile time, checking the
+Adler-32 trailer of a zlib stream, and extending a stored checksum when data is appended.
 
 ## 2. Definition
 

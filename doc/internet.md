@@ -28,8 +28,9 @@ std::uint16_t udp_checksum = checksum::internet_finalize(state);
 static_assert(checksum::internet_compute(std::string_view("123456789")) == 0xF62A);
 ```
 
-`examples/internet` has complete programs: an IPv4 header checksum filled in and verified, a UDP checksum summed from
-the pseudo-header, the header and the payload, and the RFC 1624 update of a header after a TTL decrement.
+`examples/internet` has complete programs: an IPv4 header template with its checksum filled in at compile time, an
+IPv4 header checksum filled in and verified, a UDP checksum summed from the pseudo-header, the header and the payload,
+and the RFC 1624 update of a header after a TTL decrement.
 
 ## 2. Definition
 

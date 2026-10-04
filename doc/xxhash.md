@@ -33,8 +33,8 @@ static_assert(checksum::xxh3_128_compute("abc"sv) ==
               checksum::hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
 ```
 
-`examples/xxh3` has complete programs: the XXH3-64 hash of a file read in chunks, deduplication of blocks by their
-XXH3-128 hash, and a hash table with seeded XXH3-64.
+`examples/xxh3` has complete programs: asset IDs hashed at compile time, the XXH3-64 hash of a file read in chunks,
+deduplication of blocks by their XXH3-128 hash, and a hash table with seeded XXH3-64.
 
 ## 2. API
 

@@ -27,8 +27,8 @@ static_assert(checksum::fletcher4_compute("abcdefgh"sv) ==
               checksum::fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
 ```
 
-`examples/fletcher4` has complete programs: verifying a 4 KiB block against its stored checksum as ZFS does, and the
-checksum of a file read in chunks.
+`examples/fletcher4` has complete programs: the checksum of a constant block computed at compile time, the checksum of
+a file read in chunks, and verifying a 4 KiB block against its stored checksum as ZFS does.
 
 ## 2. Definition
 
