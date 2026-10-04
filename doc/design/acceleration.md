@@ -133,7 +133,8 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Cortex-M
 Fletcher-16, Fletcher-32, Fletcher-64 and Adler-32 share one kernel interface in `fletcher_arch.hpp`: `kernel<Bits>`
 sums little-endian values of 8, 16 or 32 bits and returns, for a chunk of n values v_i, their sum and the weighted sum
 of (n − i) · v_i. The caller adds n · `sum1` plus the weighted sum to `sum2` and reduces both sums after every chunk.
-Fletcher-16 and Adler-32 run the same byte kernel with moduli 255 and 65521.
+Fletcher-16 and Adler-32 run the same byte kernel with moduli 255 and 65521. The portable loop, the chunk loop and the
+choice between them are written once, in `fletcher_loops.hpp`, for both families.
 
 The portable loops are the baseline. They reduce only when an overflow could otherwise happen (every 380 million bytes
 on 64-bit targets for Fletcher-16 and Adler-32) and add four blocks per step, so a byte loop still runs 7 300 MB/s on

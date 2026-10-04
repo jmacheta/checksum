@@ -14,19 +14,22 @@ allocates no memory and has no global state.
 using namespace std::literals;
 
 // One call.
-std::uint32_t value = checksum::fletcher_compute<32>(std::span(buffer));
+std::uint32_t value = checksum::fletcher32_compute(std::span(buffer));
 
 // Incremental: a message may be split anywhere.
-checksum::fletcher_state<16> state;
+checksum::fletcher16_state state;
 state = checksum::fletcher_update(state, header);
 state = checksum::fletcher_update(state, payload);
 std::uint16_t frame_checksum = checksum::fletcher_finalize(state);
 
 // Compile time.
-static_assert(checksum::fletcher_compute<16>("abcde"sv) == 0xC8F0);
-static_assert(checksum::fletcher_compute<32>("abcde"sv) == 0xF04FC729);
-static_assert(checksum::fletcher_compute<64>("abcde"sv) == 0xC8C6C527646362C6);
+static_assert(checksum::fletcher16_compute("abcde"sv) == 0xC8F0);
+static_assert(checksum::fletcher32_compute("abcde"sv) == 0xF04FC729);
+static_assert(checksum::fletcher64_compute("abcde"sv) == 0xC8C6C527646362C6);
 ```
+
+`examples/fletcher` has complete programs: checksums at compile time, a file checksum computed in chunks, and a frame
+check.
 
 ## 2. Definition
 
@@ -44,7 +47,8 @@ A last incomplete block is padded with zero bytes. The values match the examples
 
 ## 3. API
 
-`Width` is 16, 32 or 64.
+`Width` is 16, 32 or 64. `fletcher_update` and `fletcher_finalize` take the width from the state, so only the state
+and `fletcher_compute` have aliases per width.
 
 | Name | What it does |
 | --- | --- |
@@ -52,6 +56,8 @@ A last incomplete block is padded with zero bytes. The values match the examples
 | `fletcher_update(state, data)` | Folds `data` into `state` and returns the new state. |
 | `fletcher_finalize(state)` | The checksum, an unfinished block padded with zero bytes. |
 | `fletcher_compute<Width>(data)` | `fletcher_finalize(fletcher_update(fletcher_state<Width>{}, data))`. |
+| `fletcher16_state`, `fletcher32_state`, `fletcher64_state` | `fletcher_state<16>`, `fletcher_state<32>`, `fletcher_state<64>`. |
+| `fletcher16_compute(data)`, `fletcher32_compute(data)`, `fletcher64_compute(data)` | `fletcher_compute<16>(data)`, `fletcher_compute<32>(data)`, `fletcher_compute<64>(data)`. |
 
 `fletcher_state<Width>::value_type` is the checksum type and `sum_type` the type of one sum (`std::uint8_t`,
 `std::uint16_t`, `std::uint32_t`). All functions are `constexpr` and `noexcept`. `data` is a
@@ -79,7 +85,7 @@ adds four blocks per step, so `sum1` has one addition per four blocks in its dep
 Fletcher-32 sums 32-bit words, two blocks at a time.
 
 From a minimum size, a kernel sums whole vectors of blocks. It returns the sum of the blocks and their weighted sum,
-and `sum2` gains both at the end of each chunk of a few kilobytes.
+and `sum2` gains both at the end of each chunk, 2 KiB to 256 KiB depending on the kernel.
 
 | Target and flags | Fletcher-16 | Fletcher-32 | Fletcher-64 |
 | --- | --- | --- | --- |

@@ -26,6 +26,9 @@ static_assert(checksum::adler32_compute("123456789"sv) == 0x091E01DE);
 static_assert(checksum::adler32_compute("Wikipedia"sv) == 0x11E60398);
 ```
 
+`examples/adler32` has complete programs: checking the Adler-32 trailer of a zlib stream, and extending a stored
+checksum when data is appended.
+
 ## 2. Definition
 
 Adler-32 keeps two sums modulo 65521, the largest prime below 2^16: `sum1` starts at 1 and adds each byte, `sum2`
