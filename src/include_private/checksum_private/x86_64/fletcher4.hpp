@@ -20,7 +20,7 @@ inline constexpr bool lane_kernel_available = true;
 #if defined(__AVX2__)
 
 // Where the kernel overtakes the word loop on a Core Ultra 7 155H, with GCC and Clang.
-inline constexpr std::size_t lane_kernel_minimum_size = 192;
+inline constexpr std::size_t lane_kernel_minimum_size = 128;
 
 inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept {
   __m256i sum1 = _mm256_setzero_si256();
