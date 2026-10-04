@@ -60,6 +60,18 @@ template <unsigned Width, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 [[nodiscard]] constexpr murmur3_state<Width>::value_type murmur3_compute(Range &&data, std::uint32_t seed = 0) noexcept;
 
+/// Running MurmurHash3_x86_32 hash.
+using murmur3_32_state = murmur3_state<32>;
+
+/// Running MurmurHash3_x64_128 hash.
+using murmur3_128_state = murmur3_state<128>;
+
+/// The MurmurHash3_x86_32 hash of data: murmur3_compute<32>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr murmur3_32_state::value_type murmur3_32_compute(Range &&data, std::uint32_t seed = 0) noexcept;
+
+/// The MurmurHash3_x64_128 hash of data: murmur3_compute<128>(data, seed).
+template <byte_range Range> [[nodiscard]] constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed = 0) noexcept;
+
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -306,6 +318,14 @@ constexpr murmur3_state<Width>::value_type murmur3_compute(Range &&data, std::ui
     }
   }
   return murmur3_finalize(murmur3_update(murmur3_state<Width>{.seed = seed}, std::forward<Range>(data)));
+}
+
+template <byte_range Range> constexpr murmur3_32_state::value_type murmur3_32_compute(Range &&data, std::uint32_t seed) noexcept {
+  return murmur3_compute<32>(std::forward<Range>(data), seed);
+}
+
+template <byte_range Range> constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed) noexcept {
+  return murmur3_compute<128>(std::forward<Range>(data), seed);
 }
 
 } // namespace checksum

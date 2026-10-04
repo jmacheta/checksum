@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -72,6 +73,9 @@ static_assert(chunked<32>(message, 3, murmur3_32_vectors[1].seed) == murmur3_32_
 // Every tail length around a few blocks; longer prefixes exceed the constant-evaluation step limit of Clang.
 static_assert(prefix_mismatches<32>(70) == 0);
 static_assert(prefix_mismatches<128>(70) == 0);
+static_assert(murmur3_32_compute("Hello, world!"sv, 1234) == 0xFAF6CDB3U);
+static_assert(murmur3_128_compute("Hello, world!"sv, 1234) == hash128{0x61130E64AA0AC6FEU, 0x51F9046D087E1B56U});
+static_assert(std::same_as<murmur3_32_state, murmur3_state<32>> && std::same_as<murmur3_128_state, murmur3_state<128>>);
 
 template <class Width> class murmur3 : public testing::Test {};
 
@@ -169,6 +173,23 @@ TEST(murmur3_x86_32, length_wraps) {
   murmur3_state<32> wrapped = state;
   wrapped.length = 5;
   EXPECT_EQ(murmur3_finalize(state), murmur3_finalize(wrapped));
+}
+
+// The aliases take the same inputs as the generic form: spans of std::byte, text and other byte ranges.
+TEST(murmur3_aliases, match_generic_form) {
+  auto const bytes = std::span<std::byte const>(message);
+  constexpr std::string_view text = "123456789";
+  std::list<unsigned char> const list(text.begin(), text.end());
+  for(std::uint32_t const seed : {0U, 1U, 0x9747B28CU}) {
+    EXPECT_EQ(murmur3_32_compute(bytes, seed), murmur3_compute<32>(bytes, seed));
+    EXPECT_EQ(murmur3_32_compute(text, seed), murmur3_compute<32>(text, seed));
+    EXPECT_EQ(murmur3_32_compute(list, seed), murmur3_compute<32>(list, seed));
+    EXPECT_EQ(murmur3_128_compute(bytes, seed), murmur3_compute<128>(bytes, seed));
+    EXPECT_EQ(murmur3_128_compute(text, seed), murmur3_compute<128>(text, seed));
+    EXPECT_EQ(murmur3_128_compute(list, seed), murmur3_compute<128>(list, seed));
+  }
+  EXPECT_EQ(murmur3_32_compute(bytes), murmur3_compute<32>(bytes));
+  EXPECT_EQ(murmur3_128_compute(bytes), murmur3_compute<128>(bytes));
 }
 
 TYPED_TEST(murmur3, long_message) {
