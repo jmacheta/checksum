@@ -39,10 +39,10 @@ template <byte_range Range> [[nodiscard]] constexpr internet_state internet_upda
 /// The checksum of state: the one's complement of the sum, a last odd byte padded with zero. Store it most significant byte first.
 [[nodiscard]] constexpr std::uint16_t internet_finalize(internet_state state) noexcept;
 
-/// internet_finalize(internet_update({}, data)).
+/// internet_finalize(internet_update(internet_state{}, data)).
 [[nodiscard]] constexpr std::uint16_t internet_compute(std::span<std::byte const> data) noexcept;
 
-/// internet_finalize(internet_update({}, data)) for a byte range.
+/// internet_finalize(internet_update(internet_state{}, data)) for a byte range.
 template <byte_range Range> [[nodiscard]] constexpr std::uint16_t internet_compute(Range &&data) noexcept;
 
 } // namespace checksum
@@ -111,10 +111,12 @@ template <byte_range Range> constexpr internet_state internet_update(internet_st
 
 constexpr std::uint16_t internet_finalize(internet_state state) noexcept { return static_cast<std::uint16_t>(~state.sum); }
 
-constexpr std::uint16_t internet_compute(std::span<std::byte const> data) noexcept { return internet_finalize(internet_update({}, data)); }
+constexpr std::uint16_t internet_compute(std::span<std::byte const> data) noexcept {
+  return internet_finalize(internet_update(internet_state{}, data));
+}
 
 template <byte_range Range> constexpr std::uint16_t internet_compute(Range &&data) noexcept {
-  return internet_finalize(internet_update({}, std::forward<Range>(data)));
+  return internet_finalize(internet_update(internet_state{}, std::forward<Range>(data)));
 }
 
 } // namespace checksum
