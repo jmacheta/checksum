@@ -1,5 +1,7 @@
 add_subdirectory(crc)
 add_subdirectory(internet)
+add_subdirectory(fletcher)
+add_subdirectory(adler32)
 add_subdirectory(fletcher4)
 add_subdirectory(murmur3)
 add_subdirectory(xxhash)
