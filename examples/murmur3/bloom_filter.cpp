@@ -34,7 +34,7 @@ private:
   static constexpr std::size_t bit_count = 1024;
   static constexpr std::size_t hash_count = 5;
 
-  // The halves h1 and h2 combine into hash_count positions as h1 + index * h2 (Kirsch and Mitzenmacher).
+  // The halves h1 and h2 combine into hash_count positions as h1 + index * h2, double hashing.
   static std::size_t position(std::string_view key, std::size_t index) {
     auto const [h1, h2] = checksum::murmur3_128_compute(key);
     return static_cast<std::size_t>((h1 + (index * h2)) % bit_count);
