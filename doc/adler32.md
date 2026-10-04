@@ -21,6 +21,9 @@ state = checksum::adler32_update(state, first_part);
 state = checksum::adler32_update(state, second_part);
 std::uint32_t stream_checksum = checksum::adler32_finalize(state);
 
+// Continue from a stored checksum.
+std::uint32_t extended = checksum::adler32_update(stream_checksum, third_part);
+
 // Compile time.
 static_assert(checksum::adler32_compute("123456789"sv) == 0x091E01DE);
 static_assert(checksum::adler32_compute("Wikipedia"sv) == 0x11E60398);
@@ -41,6 +44,7 @@ starts at 0 and adds `sum1` after each byte. The checksum is `(sum2 << 16) | sum
 | --- | --- |
 | `adler32_state` | The two sums, `sum1` and `sum2`. A plain value: copy it, compare it, store it. The default (`sum1 = 1`, `sum2 = 0`) is the empty message. |
 | `adler32_update(state, data)` | Folds `data` into `state` and returns the new state. |
+| `adler32_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum`, a `std::uint32_t`, and returns the new checksum. |
 | `adler32_finalize(state)` | The checksum. |
 | `adler32_compute(data)` | `adler32_finalize(adler32_update({}, data))`. |
 
@@ -55,9 +59,12 @@ Every state value is valid, so nothing has preconditions: sums from 65521 up cou
 
 - **Splits:** a message may be split anywhere; the result is the same as for one call.
 - **Empty message:** gives 1.
-- **Resuming from a checksum:** `adler32_state{.sum1 = value & 0xFFFF, .sum2 = value >> 16}` continues a message whose
-  checksum is `value`, for example one computed by zlib.
 - **Byte order:** the result is a number; zlib stores it most significant byte first.
+
+**Continuing from a stored checksum.** The checksum holds both sums, so `adler32_update(value, data)` continues a
+message whose checksum is `value`, for example one computed by zlib, after any number of bytes, and returns the new
+checksum, as zlib's `adler32(adler, buf, len)` does. `value` must be a `std::uint32_t`: another integer type does not
+compile, so that `adler32_update({}, data)` still starts from the empty state, not from checksum 0.
 
 ## 5. CPU acceleration
 

@@ -43,6 +43,7 @@ complement arithmetic, each carry out of bit 15 added back into bit 0, and the c
 | --- | --- |
 | `internet_state` | The running sum (`sum`) and whether an odd number of bytes was folded (`odd`). A plain value: copy it, compare it, store it. The default is the empty message. |
 | `internet_update(state, data)` | Folds `data` into `state` and returns the new state. |
+| `internet_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum`, a `std::uint16_t`, and returns the new checksum. That message must have an even length. |
 | `internet_finalize(state)` | The checksum: `~state.sum`. |
 | `internet_compute(data)` | `internet_finalize(internet_update({}, data))`. |
 
@@ -64,6 +65,12 @@ Every `internet_state` value is valid, so nothing has preconditions.
   That is how a receiver verifies a packet.
 - **Byte order:** the result is a number; write it into the packet most significant byte first. The library reads
   the message the same way on little- and big-endian targets.
+
+**Continuing from a stored checksum.** `internet_update(value, data)` continues a message whose checksum is `value`
+and returns the new checksum; the running sum is `~value`. It is correct only if that message has an even number of
+bytes: the checksum does not record an odd last byte, which `internet_state` keeps in `odd`, so after an odd length
+keep the state instead. `value` must be a `std::uint16_t`: another integer type does not compile, so that
+`internet_update({}, data)` still starts from the empty state.
 
 ## 5. CPU acceleration
 
@@ -161,8 +168,8 @@ RISC-V has not been measured on hardware; the vector kernel is tested in QEMU wi
 ## 7. Limitations
 
 - **No in-place update helper:** RFC 1624 updates a checksum after one 16-bit-aligned field changes. The public API
-  already does it: start from `internet_state{.sum = static_cast<std::uint16_t>(~old_checksum)}`, fold the bitwise
-  complement of the old field, then the new field, and finalize, as `examples/internet/ttl_decrement.cpp` does.
+  already does it: continue from the old checksum with the bitwise complement of the old field, then with the new
+  field, as `examples/internet/ttl_decrement.cpp` does.
 - **UDP zero:** the UDP rule of sending 0xFFFF instead of a computed 0 is protocol logic and stays in the caller.
 - **No verification helper:** to verify a packet, compute over it, checksum included, and compare the result with 0.
 - **Code size:** a build with a kernel adds 290-810 bytes; `CHECKSUM_ACCELERATION=OFF` keeps the portable loop alone.

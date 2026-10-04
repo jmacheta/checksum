@@ -47,13 +47,14 @@ A last incomplete block is padded with zero bytes. The values match the examples
 
 ## 3. API
 
-`Width` is 16, 32 or 64. `fletcher_update` and `fletcher_finalize` take the width from the state, so only the state
-and `fletcher_compute` have aliases per width.
+`Width` is 16, 32 or 64. `fletcher_update` and `fletcher_finalize` take the width from the state or the checksum
+type, so only the state and `fletcher_compute` have aliases per width.
 
 | Name | What it does |
 | --- | --- |
 | `fletcher_state<Width>` | `sum1`, `sum2` and `block_offset`, the bytes of an unfinished block already in `sum1`. A plain value: copy it, compare it, store it. The default is the empty message. |
 | `fletcher_update(state, data)` | Folds `data` into `state` and returns the new state. |
+| `fletcher_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum` and returns the new checksum; `std::uint16_t`, `std::uint32_t` or `std::uint64_t` selects the width. That message must end on a whole block. |
 | `fletcher_finalize(state)` | The checksum, an unfinished block padded with zero bytes. |
 | `fletcher_compute<Width>(data)` | `fletcher_finalize(fletcher_update(fletcher_state<Width>{}, data))`. |
 | `fletcher16_state`, `fletcher32_state`, `fletcher64_state` | `fletcher_state<16>`, `fletcher_state<32>`, `fletcher_state<64>`. |
@@ -76,6 +77,14 @@ modulo the block size.
   bytes 0x00 and 0xFF give the same checksum, and neither byte of the result is ever 0xFF.
 - **Byte order:** words are read little-endian on every target, and the result is a number; the protocol decides how
   it goes into a frame.
+
+**Continuing from a stored checksum.** `fletcher_update(value, data)` continues a message whose checksum is `value`
+and returns the new checksum. The type of `value` selects the width: `std::uint16_t` for Fletcher-16, `std::uint32_t`
+for Fletcher-32, `std::uint64_t` for Fletcher-64. Other integer types, `int` and `unsigned char` included, do not
+compile rather than pick a width, so write `std::uint32_t{0xF04FC729}` for a literal; `{}` does not compile either,
+name the state type (`fletcher32_state{}`). Fletcher-32 and Fletcher-64 continue correctly only after whole blocks,
+an even length or a multiple of 4: the checksum already counts an unfinished block as padded with zeros, so after such
+a length keep the state instead. Fletcher-16 continues after any length.
 
 ## 5. CPU acceleration
 
