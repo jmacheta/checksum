@@ -276,11 +276,11 @@ long input pays a fixed cost of a few multiplications. All sums wrap modulo 2^64
 
 | Target | Verdict | Why |
 | --- | --- | --- |
-| x86-64 AVX2 | Yes, from 192 B | One 256-bit vector per sum. 29 164 MB/s at 4 KiB with GCC against 19 781 for the SSE2 kernel (1.5×); 30 027 with Clang. |
-| x86-64 SSE2 (baseline) | Yes, from 256 B | Two 128-bit vectors per sum. With GCC as fast as the portable lanes from 512 B; with Clang 19 755 MB/s at 4 KiB against 7 156 for the portable lanes. |
-| AArch64 NEON, little-endian | Yes, from 192 B | A72 at 256 B: 1 747 against 1 539 MB/s with GCC, 1 842 against 1 547 with Clang; at 4 KiB 2 % (GCC) and 21 % (Clang) faster. |
-| 32-bit Arm NEON, little-endian | Yes, from 384 B | A72 in AArch32 at 4 KiB: 2 179 MB/s with GCC against 1 059 for the word loop (2.1×), 2 809 with Clang. The combination of the lanes costs more than on AArch64. |
-| Portable lanes, 64-bit targets | Yes, from 256 B | They overtake the word loop on the A72 at 256 B with GCC and 384 with Clang. |
+| x86-64 AVX2 | Yes, from 128 B | One 256-bit vector per sum. 29 258 MB/s at 4 KiB with GCC against 19 318 for the SSE2 kernel (1.5×); 28 620 with Clang. |
+| x86-64 SSE2 (baseline) | Yes, from 192 B | Two 128-bit vectors per sum. With GCC the portable lanes are within 15 % of it from 1500 B; with Clang 19 246 MB/s at 4 KiB against 8 424 for the portable lanes. |
+| AArch64 NEON, little-endian | Yes, from 192 B | A72 at 256 B: 2 209 MB/s with GCC, as fast as its portable lanes; 2 101 with Clang against 1 500 for its portable lanes. |
+| 32-bit Arm NEON, little-endian | Yes, from 192 B | A72 in AArch32 at 4 KiB: 2 384 MB/s with GCC against 1 069 for the word loop (2.2×), 2 862 with Clang. |
+| Portable lanes, 64-bit targets | Yes, from 256 B | On the A72 they overtake the word loop at 128 B with GCC but only at 256 B with Clang, whose word loop is unrolled. |
 | Portable lanes, 32-bit targets | No | The 64-bit sums of four lanes do not fit the registers: 3× slower than the word loop. Without a kernel the lane code is not even linked. |
 | Big-endian NEON | No | The kernel reads vector lanes as little-endian words; big-endian AArch64 runs the portable lanes. |
 | RISC-V V extension | Not done | No hardware to measure; RV64 runs the portable lanes. |
@@ -288,9 +288,18 @@ long input pays a fixed cost of a few multiplications. All sums wrap modulo 2^64
 
 Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cortex-A72):
 
-- Thresholds are where the lanes overtake the word loop of the same build: AVX2 at 192 B with GCC and Clang; SSE2 at
-  192 B with GCC and 384 with Clang, which is 10 % slower at 256, so 256; NEON at 192 B on AArch64 and 384 on AArch32.
+- Thresholds are where the lanes overtake the word loop of the same build, with GCC and Clang: AVX2 at 128 B; SSE2 at
+  192 B (GCC's SSE2 lanes are slower at 128 and 160); NEON at 192 B on AArch64 and AArch32, where Clang's unrolled word
+  loop wins below (GCC's NEON lanes win from 80 B).
+- `combine()` is written out with constant weights, which become shifts and additions. As a loop over a weight table
+  GCC vectorized it into emulated 64-bit vector multiplications, which cost more than the lanes saved up to 512 B.
+- `compute_loop()` passes its own return value to the long path by reference. A `fletcher4_value` returned by a call is
+  an array local, which `-fstack-protector-strong` (on by default in some distributions) guards with a canary check on
+  every call, short ones included.
 - Words are assembled from four byte loads, which compilers merge into one load where unaligned loads are allowed;
   elsewhere this avoids a call to `memcpy`.
 - The lane loop and the word loop after it sit in a separate non-inlined function, as for the Internet checksum, so
-  inputs below the threshold run without a call.
+  inputs below the threshold run without a call; `fletcher4_compute` has its own copy that starts from the empty state.
+- Against OpenZFS f79c81d (`fletcher_4_native` with its superscalar4, sse2, ssse3, avx2 and aarch64_neon kernels, GCC
+  `-O2`), the library runs at 0.93× the fastest at 20 B and 1.09× at 256 B on x86-64, 0.92× and 1.18× on the A72, and
+  1.0× from 4 KiB on both.
