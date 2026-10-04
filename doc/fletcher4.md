@@ -144,6 +144,8 @@ The figures scale with the clock: the STM32L4A6 at 80 MHz runs the same cycles p
   message stay small. Use a CRC where errors must be detected reliably.
 - **Little-endian words only:** the equivalent of `fletcher_4_native` on a big-endian host needs its words swapped
   first.
+- **No continuation from a stored checksum:** unlike Adler-32 and Fletcher, continuing needs the state, since a
+  checksum does not record an unfinished word.
 - **No verification helper:** compute the checksum and compare it with the stored one.
 - **No RISC-V or big-endian kernels.**
 - Code size has not been measured.

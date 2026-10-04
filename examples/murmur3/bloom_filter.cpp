@@ -15,15 +15,17 @@ namespace {
 class bloom_filter {
 public:
   void insert(std::string_view key) {
+    auto const hash = checksum::murmur3_128_compute(key);
     for(std::size_t index = 0; index < hash_count; ++index) {
-      bits.set(position(key, index));
+      bits.set(position(hash, index));
     }
   }
 
   // False means the key was never inserted; true means it probably was.
   [[nodiscard]] bool may_contain(std::string_view key) const {
+    auto const hash = checksum::murmur3_128_compute(key);
     for(std::size_t index = 0; index < hash_count; ++index) {
-      if(!bits.test(position(key, index))) {
+      if(!bits.test(position(hash, index))) {
         return false;
       }
     }
@@ -34,10 +36,9 @@ private:
   static constexpr std::size_t bit_count = 1024;
   static constexpr std::size_t hash_count = 5;
 
-  // The halves h1 and h2 combine into hash_count positions as h1 + index * h2, double hashing.
-  static std::size_t position(std::string_view key, std::size_t index) {
-    auto const [h1, h2] = checksum::murmur3_128_compute(key);
-    return static_cast<std::size_t>((h1 + (index * h2)) % bit_count);
+  // The halves h1 (low) and h2 (high) combine into hash_count positions as h1 + index * h2, double hashing.
+  static std::size_t position(checksum::hash128 hash, std::size_t index) {
+    return static_cast<std::size_t>((hash.low + (index * hash.high)) % bit_count);
   }
 
   std::bitset<bit_count> bits;

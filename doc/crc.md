@@ -154,7 +154,7 @@ std::uint16_t crc = can.compute(bits, 83);   // bits: std::array<std::byte, 11>
 
 A state passed to `update` or `finalize` must be below 2^width, and `bit_length` must not exceed
 `8 * data.size()`. Both are checked with `assert`. With `NDEBUG` the state is masked and the bit length clamped,
-so a violation gives a wrong CRC but never undefined behavior. During constant evaluation a failed `assert` is a
+so a violation gives a wrong CRC but never undefined behavior. Without `NDEBUG`, a failed `assert` during constant evaluation is a
 compile error.
 
 ## 6. Strategies
