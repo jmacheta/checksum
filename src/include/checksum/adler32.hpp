@@ -38,10 +38,10 @@ template <byte_range Range> [[nodiscard]] constexpr adler32_state adler32_update
 /// The checksum of state.
 [[nodiscard]] constexpr std::uint32_t adler32_finalize(adler32_state state) noexcept;
 
-/// adler32_finalize(adler32_update(adler32_state{}, data)).
+/// adler32_finalize(adler32_update({}, data)).
 [[nodiscard]] constexpr std::uint32_t adler32_compute(std::span<std::byte const> data) noexcept;
 
-/// adler32_finalize(adler32_update(adler32_state{}, data)) for a byte range.
+/// adler32_finalize(adler32_update({}, data)) for a byte range.
 template <byte_range Range> [[nodiscard]] constexpr std::uint32_t adler32_compute(Range &&data) noexcept;
 
 } // namespace checksum
@@ -101,10 +101,10 @@ constexpr std::uint32_t adler32_finalize(adler32_state state) noexcept {
   return (adler32_detail::reduce_once(state.sum2) << 16U) | adler32_detail::reduce_once(state.sum1);
 }
 
-constexpr std::uint32_t adler32_compute(std::span<std::byte const> data) noexcept { return adler32_finalize(adler32_update(adler32_state{}, data)); }
+constexpr std::uint32_t adler32_compute(std::span<std::byte const> data) noexcept { return adler32_finalize(adler32_update({}, data)); }
 
 template <byte_range Range> constexpr std::uint32_t adler32_compute(Range &&data) noexcept {
-  return adler32_finalize(adler32_update(adler32_state{}, std::forward<Range>(data)));
+  return adler32_finalize(adler32_update({}, std::forward<Range>(data)));
 }
 
 } // namespace checksum
