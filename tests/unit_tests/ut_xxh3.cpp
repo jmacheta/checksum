@@ -93,7 +93,7 @@ using namespace std::literals;
 
 static_assert(xxh3_compute<64>(""sv) == 0x2D06800538D394C2U);
 static_assert(xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950U);
-static_assert(xxh3_compute<128>("abc"sv) == xxh3_hash128{.low = 0x78AF5F94892F3950U, .high = 0x06B05AB6733A6185U});
+static_assert(xxh3_compute<128>("abc"sv) == hash128{.low = 0x78AF5F94892F3950U, .high = 0x06B05AB6733A6185U});
 static_assert(xxh3_finalize(xxh3_state<128>{}) == xxh3_128_vectors[0].prefixes[0]);
 // Every length class up to the first medium one.
 static_assert(prefix_mismatches<64>(20) == 0);
@@ -106,9 +106,9 @@ static_assert(chunked<128>(std::span(message).first(prefix_limit), 7, xxh3_128_v
 static_assert(chunked<64>(std::span(message).first(block_sizes[2]), 100, xxh3_64_vectors[1].seed) == xxh3_64_vectors[1].blocks[2]);
 static_assert(edge_seed_mismatches<64>(513) == 0);
 static_assert(edge_seed_mismatches<128>(513) == 0);
-static_assert(xxh3_detail::multiply_portable(~std::uint64_t{0}, ~std::uint64_t{0}) == xxh3_hash128{.low = 1, .high = ~std::uint64_t{1}});
+static_assert(xxh3_detail::multiply_portable(~std::uint64_t{0}, ~std::uint64_t{0}) == hash128{.low = 1, .high = ~std::uint64_t{1}});
 static_assert(xxh3_detail::multiply_portable(0x9E3779B185EBCA87U, 0xC2B2AE3D27D4EB4FU) ==
-              xxh3_hash128{.low = 0xDEF35B010F796CA9U, .high = 0x7854787AA57880A8U});
+              hash128{.low = 0xDEF35B010F796CA9U, .high = 0x7854787AA57880A8U});
 static_assert(xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950U);
 static_assert(xxh3_128_compute(std::span(message).first(241), xxh3_128_vectors[1].seed) == xxh3_128_vectors[1].prefixes[241]);
 static_assert(std::same_as<xxh3_64_state, xxh3_state<64>> && std::same_as<xxh3_128_state, xxh3_state<128>>);

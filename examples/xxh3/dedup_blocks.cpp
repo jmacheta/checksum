@@ -14,11 +14,11 @@ using namespace std::literals;
 
 // The hash is uniformly distributed, so its lower half is a good bucket index.
 struct hash128_hasher {
-  std::size_t operator()(checksum::xxh3_hash128 const &hash) const noexcept { return static_cast<std::size_t>(hash.low); }
+  std::size_t operator()(checksum::hash128 const &hash) const noexcept { return static_cast<std::size_t>(hash.low); }
 };
 
 // The XXH3-128 check value of "abc".
-static_assert(checksum::xxh3_128_compute("abc"sv) == checksum::xxh3_hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
+static_assert(checksum::xxh3_128_compute("abc"sv) == checksum::hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
 
 int main() {
   constexpr std::size_t block_size = 4096;
@@ -33,7 +33,7 @@ int main() {
   }
 
   // Block number of the first copy of each content.
-  std::unordered_map<checksum::xxh3_hash128, std::size_t, hash128_hasher> first_copy;
+  std::unordered_map<checksum::hash128, std::size_t, hash128_hasher> first_copy;
   for(std::size_t block = 0; block < block_count; ++block) {
     std::span<std::byte const> const data = std::span(image).subspan(block * block_size, block_size);
     first_copy.try_emplace(checksum::xxh3_128_compute(data), block);

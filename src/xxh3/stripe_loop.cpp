@@ -21,7 +21,7 @@ void stripe_loop(accumulator_array &accumulators, std::span<std::byte const> dat
 }
 
 std::uint64_t run_time_multiply_fold(std::uint64_t left, std::uint64_t right) noexcept {
-  xxh3_hash128 const product = multiply_portable(left, right);
+  hash128 const product = multiply_portable(left, right);
   return product.low ^ product.high;
 }
 

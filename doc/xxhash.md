@@ -17,7 +17,7 @@ using namespace std::literals;
 // One call, seed 0 or another seed.
 std::uint32_t small = checksum::xxh32_compute(key);
 std::uint64_t hash = checksum::xxh3_64_compute(key, 1234);
-checksum::xxh3_hash128 wide = checksum::xxh3_128_compute(key);
+checksum::hash128 wide = checksum::xxh3_128_compute(key);
 
 // Incremental: a message may be split anywhere.
 checksum::xxh3_64_state state{.seed = 1234};
@@ -30,7 +30,7 @@ static_assert(checksum::xxh32_compute("abc"sv) == 0x32D153FF);
 static_assert(checksum::xxh64_compute("abc"sv) == 0x44BC2CF5AD770999);
 static_assert(checksum::xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950);
 static_assert(checksum::xxh3_128_compute("abc"sv) ==
-              checksum::xxh3_hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
+              checksum::hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
 ```
 
 `examples/xxh3` has complete programs: the XXH3-64 hash of a file read in chunks, deduplication of blocks by their
@@ -78,11 +78,11 @@ a cache keyed by the hash of its input.
 | `xxh3_update(state, data)` | Folds `data` into `state` and returns the new state. |
 | `xxh3_finalize(state)` | The hash of the message folded into `state`; the state is unchanged. |
 | `xxh3_compute<Width>(data, seed = 0)` | `xxh3_finalize(xxh3_update(xxh3_state<Width>{.seed = seed}, data))`. |
-| `xxh3_hash128` | The XXH3-128 hash: `low` and `high`, its lower and upper 64 bits, as `XXH128_hash_t` of the reference. Compares with `==`. |
+| `hash128` | The XXH3-128 hash: `low` and `high`, its lower and upper 64 bits, as `XXH128_hash_t` of the reference. Compares with `==`. |
 | `xxh3_64_state`, `xxh3_128_state` | `xxh3_state<64>` and `xxh3_state<128>`. |
 | `xxh3_64_compute(data, seed = 0)`, `xxh3_128_compute(data, seed = 0)` | `xxh3_compute<64>` and `xxh3_compute<128>`. `xxh3_update` and `xxh3_finalize` take the width from the state. |
 
-`xxh3_state<Width>::value_type` is `std::uint64_t` for Width 64 and `xxh3_hash128` for Width 128. The seed is a
+`xxh3_state<Width>::value_type` is `std::uint64_t` for Width 64 and `hash128` for Width 128. The seed is a
 `std::uint64_t` for both. The hashes always use the default secret; a custom secret cannot be passed.
 
 The state keeps the last 1 to 256 bytes passed in its buffer and folds the rest into the accumulators, so it can

@@ -2,6 +2,7 @@
 #define CHECKSUM_XXH3_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/hash128.hpp>
 #include <checksum/xxhash.hpp>
 
 #include <algorithm>
@@ -25,22 +26,13 @@
 
 namespace checksum {
 
-/// A 128-bit XXH3 hash.
-struct xxh3_hash128 {
-  std::uint64_t low = 0;  ///< The lower 64 bits.
-  std::uint64_t high = 0; ///< The upper 64 bits.
-
-  /// Equal if both halves are.
-  [[nodiscard]] constexpr bool operator==(xxh3_hash128 const &) const noexcept = default;
-};
-
 /// Running XXH3-64 (Width 64) or XXH3-128 (Width 128) hash, 336 bytes. Every value is valid; the default is the empty message with seed 0, and
 /// xxh3_state<Width>{.seed = seed} starts one with another seed.
 template <unsigned Width>
   requires(Width == 64 || Width == 128)
 struct xxh3_state {
-  /// The hash type: std::uint64_t or xxh3_hash128.
-  using value_type = std::conditional_t<Width == 64, std::uint64_t, xxh3_hash128>;
+  /// The hash type: std::uint64_t or hash128.
+  using value_type = std::conditional_t<Width == 64, std::uint64_t, hash128>;
 
   /// Lane accumulators of the folded input: all but the last 1 to 256 bytes, rounded down to a multiple of 256.
   std::array<std::uint64_t, 8> accumulators{0xC2B2AE3DU,         0x9E3779B185EBCA87U, 0xC2B2AE3D27D4EB4FU, 0x165667B19E3779F9U,
@@ -80,7 +72,7 @@ using xxh3_128_state = xxh3_state<128>;
 template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
 /// The XXH3-128 hash of data: xxh3_compute<128>(data, seed).
-template <byte_range Range> [[nodiscard]] constexpr xxh3_hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+template <byte_range Range> [[nodiscard]] constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
 } // namespace checksum
 
@@ -136,10 +128,10 @@ inline constexpr std::array<std::uint64_t, secret_size / 8> default_secret_words
     0x49DAF0B751DD0D17U, 0x9E68D429265516D3U, 0xFCA1477D58BE162BU, 0xCE31D07AD1B8F88FU, 0x280416958F3ACB45U, 0x7E404BBBCAFBD7AFU};
 
 // The full product of two 64-bit values, from four 32-bit products.
-constexpr xxh3_hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept;
+constexpr hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept;
 
 // multiply_portable(), or a native 128-bit multiplication at run time where the compiler has one.
-constexpr xxh3_hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept;
+constexpr hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept;
 
 // The exclusive or of the two Integer words at secret.
 template <class Integer> constexpr Integer secret_xor(std::byte const *secret) noexcept;
@@ -163,14 +155,14 @@ template <class Function> constexpr auto with_secret(std::uint64_t seed, Functio
 constexpr std::uint64_t mix_step(std::byte const *data, std::byte const *secret, std::uint64_t seed) noexcept;
 
 // Mixes two 16-byte chunks into both halves of a 128-bit accumulator.
-constexpr void mix_two_chunks(xxh3_hash128 &accumulator, std::byte const *first, std::byte const *second, std::byte const *secret,
+constexpr void mix_two_chunks(hash128 &accumulator, std::byte const *first, std::byte const *second, std::byte const *secret,
                               std::uint64_t seed) noexcept;
 
 // The hash of 0 to 16 bytes.
 template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte const> data, std::uint64_t seed) noexcept;
 
 // The 128-bit hash of 17 to 240 bytes from its accumulator.
-constexpr xxh3_hash128 finish_medium(xxh3_hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept;
+constexpr hash128 finish_medium(hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept;
 
 // The hash of 17 to 128 bytes.
 template <unsigned Width> constexpr value<Width> hash_medium(std::span<std::byte const> data, std::uint64_t seed) noexcept;
@@ -234,7 +226,7 @@ template <unsigned Width> constexpr void update(xxh3_state<Width> &state, std::s
 
 namespace checksum::xxh3_detail {
 
-constexpr xxh3_hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept {
+constexpr hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept {
   std::uint64_t const low_low = (left & low_half_mask) * (right & low_half_mask);
   std::uint64_t const high_low = (left >> 32U) * (right & low_half_mask);
   std::uint64_t const low_high = (left & low_half_mask) * (right >> 32U);
@@ -243,7 +235,7 @@ constexpr xxh3_hash128 multiply_portable(std::uint64_t left, std::uint64_t right
   return {.low = (cross << 32U) | (low_low & low_half_mask), .high = (high_low >> 32U) + (cross >> 32U) + high_high};
 }
 
-constexpr xxh3_hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept {
+constexpr hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept {
 #ifdef __SIZEOF_INT128__
   if !consteval {
     __extension__ typedef unsigned __int128 wide_type; // NOLINT(modernize-use-using): __extension__ silences -Wpedantic only on a typedef.
@@ -264,7 +256,7 @@ constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) n
     return run_time_multiply_fold(left, right);
   }
 #endif
-  xxh3_hash128 const product = multiply(left, right);
+  hash128 const product = multiply(left, right);
   return product.low ^ product.high;
 }
 
@@ -300,7 +292,7 @@ constexpr std::uint64_t mix_step(std::byte const *data, std::byte const *secret,
                        load<std::uint64_t>(data + 8) ^ (load<std::uint64_t>(secret + 8) - seed));
 }
 
-constexpr void mix_two_chunks(xxh3_hash128 &accumulator, std::byte const *first, std::byte const *second, std::byte const *secret,
+constexpr void mix_two_chunks(hash128 &accumulator, std::byte const *first, std::byte const *second, std::byte const *secret,
                               std::uint64_t seed) noexcept {
   accumulator.low += mix_step(first, secret, seed);
   accumulator.low ^= load<std::uint64_t>(second) + load<std::uint64_t>(second + 8);
@@ -324,11 +316,11 @@ template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte 
       constexpr std::size_t offset = 32;
       std::uint64_t const mixed_first = (secret_xor<std::uint64_t>(secret + offset) - seed) ^ first ^ last;
       std::uint64_t const mixed_last = (secret_xor<std::uint64_t>(secret + offset + 16) + seed) ^ last;
-      xxh3_hash128 product = multiply(mixed_first, primes_64::prime_1);
+      hash128 product = multiply(mixed_first, primes_64::prime_1);
       product.low += (length - 1) << length_shift;
       product.high += mixed_last + ((mixed_last & low_half_mask) * (primes_32::prime_2 - 1));
       product.low ^= std::byteswap(product.high);
-      xxh3_hash128 const result = multiply(product.low, primes_64::prime_2);
+      hash128 const result = multiply(product.low, primes_64::prime_2);
       return {.low = avalanche(result.low), .high = avalanche(result.high + (product.high * primes_64::prime_2))};
     }
   }
@@ -345,7 +337,7 @@ template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte 
       return mixed ^ (mixed >> mix_shifts[1]);
     } else {
       std::uint64_t const mixed = (secret_xor<std::uint64_t>(secret + 16) + modified_seed) ^ (first | (last << 32U));
-      xxh3_hash128 const product = multiply(mixed, primes_64::prime_1 + (length << 2U));
+      hash128 const product = multiply(mixed, primes_64::prime_1 + (length << 2U));
       std::uint64_t const high = product.high + (product.low << 1U);
       std::uint64_t low = product.low ^ (high >> 3U);
       low ^= low >> mix_shifts[0];
@@ -373,7 +365,7 @@ template <unsigned Width> constexpr value<Width> hash_small(std::span<std::byte 
   }
 }
 
-constexpr xxh3_hash128 finish_medium(xxh3_hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept {
+constexpr hash128 finish_medium(hash128 const &accumulator, std::uint64_t length, std::uint64_t seed) noexcept {
   std::uint64_t const high =
       (accumulator.low * primes_64::prime_1) + (accumulator.high * primes_64::prime_4) + ((length - seed) * primes_64::prime_2);
   return {.low = avalanche(accumulator.low + accumulator.high), .high = 0 - avalanche(high)};
@@ -430,7 +422,7 @@ template <unsigned Width> constexpr value<Width> hash_midsize(std::span<std::byt
     accumulator += mix_step(input + length - 16, secret + secret_size_min - midsize_last_offset, seed);
     return avalanche(accumulator);
   } else {
-    xxh3_hash128 accumulator{.low = length * primes_64::prime_1, .high = 0};
+    hash128 accumulator{.low = length * primes_64::prime_1, .high = 0};
     for(std::size_t chunk = 0; chunk < 4; ++chunk) {
       mix_two_chunks(accumulator, input + (32 * chunk), input + (32 * chunk) + 16, secret + (32 * chunk), seed);
     }
@@ -620,7 +612,7 @@ template <byte_range Range> constexpr std::uint64_t xxh3_64_compute(Range &&data
   return xxh3_compute<64>(std::forward<Range>(data), seed);
 }
 
-template <byte_range Range> constexpr xxh3_hash128 xxh3_128_compute(Range &&data, std::uint64_t seed) noexcept {
+template <byte_range Range> constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed) noexcept {
   return xxh3_compute<128>(std::forward<Range>(data), seed);
 }
 
