@@ -41,6 +41,7 @@ words:
 - armv
 - asan
 - autosar
+- avxvnni
 - broadcastsi
 - bugprone
 - buypass
@@ -73,6 +74,7 @@ words:
 - darc
 - datagram
 - dect
+- dpbusd
 - DPDK
 - dtcm
 - eabi
@@ -118,6 +120,7 @@ words:
 - maddubs
 - madler
 - mavx
+- mavxvnni
 - mcpu
 - mcrf
 - memcpy
@@ -148,6 +151,7 @@ words:
 - pclmul
 - pclmulqdq
 - pmaddubsw
+- pmaddwd
 - pmull
 - polys
 - predefines
@@ -179,6 +183,7 @@ words:
 - stdint
 - storeu
 - strequal
+- superscalar
 - taskset
 - teledisk
 - templatize
@@ -212,9 +217,11 @@ words:
 - vmul
 - vmull
 - vmulq
+- VNNI
 - vpadalq
-- VPCLMULQDQ
 - vpaddlq
+- VPCLMULQDQ
+- vpdpbusd
 - vqtbl
 - vreinterpret
 - vreinterpretq
@@ -241,7 +248,3 @@ words:
 - zextsi
 - zmodem
 - znver
-- avxvnni
-- dpbusd
-- vpdpbusd
-- VNNI
