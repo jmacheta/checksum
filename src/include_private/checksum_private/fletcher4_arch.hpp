@@ -6,6 +6,8 @@
 // - lane_kernel_available; if true, lane_kernel()
 // - lane_kernel_minimum_size: shortest input for lane_kernel() (max: never)
 
+#include <checksum/fletcher4.hpp>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
