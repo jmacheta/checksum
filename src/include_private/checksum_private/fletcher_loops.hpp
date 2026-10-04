@@ -11,6 +11,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <span>
 #include <type_traits>
@@ -28,6 +29,12 @@ template <class Sum> struct sum_pair {
 // NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/fletcher and src/adler32.
 namespace {
 
+#if defined(__aarch64__)
+inline constexpr bool narrow_value_sums = true;
+#else
+inline constexpr bool narrow_value_sums = false;
+#endif
+
 // Largest n with (n + 1)(Modulus - 1) + largest_value * n(n + 1) / 2 <= the maximum of Integer: sums below Modulus stay within
 // Integer while they add n values of at most largest_value, sum2 after each.
 template <class Integer, std::uint64_t Modulus> constexpr std::size_t values_per_reduction(std::uint64_t largest_value) noexcept;
@@ -43,6 +50,10 @@ template <std::uint64_t Modulus, class Word> Word reduce_chunk(Word value) noexc
 // The little-endian Value of at most 32 bits at data. Compilers merge the bytes into one load where unaligned loads are allowed,
 // and elsewhere load single bytes instead of calling memcpy.
 template <class Value> Value load(std::byte const *data) noexcept;
+
+// A sum_pair, adler32_state or fletcher_state with these sums and any other member 0. GCC returns a small aggregate by storing
+// its members one by one and reloading them as one word, which stalls store forwarding; a copy of one integer does not.
+template <class State> State make_state(std::uint64_t sum1, std::uint64_t sum2) noexcept;
 
 // The loops take and return a sum_pair or an adler32_state, which has the same members: sums below 2 * Modulus in, below
 // Modulus out.
@@ -127,6 +138,24 @@ template <class Value> Value load(std::byte const *data) noexcept {
   }
 }
 
+template <class State> State make_state(std::uint64_t sum1, std::uint64_t sum2) noexcept {
+  using sum_type = decltype(State::sum1);
+  constexpr unsigned bits = std::numeric_limits<sum_type>::digits;
+  if constexpr(sizeof(State) <= sizeof(std::size_t) && (std::endian::native == std::endian::little || std::endian::native == std::endian::big)) {
+    // The bytes of State from one integer: sum1 at the lowest address, then sum2, the rest 0.
+    static_assert(offsetof(State, sum1) == 0 && offsetof(State, sum2) == sizeof(sum_type));
+    constexpr std::uint64_t mask = (std::uint64_t{1} << bits) - 1;
+    std::uint64_t const low_first = (sum1 & mask) | ((sum2 & mask) << bits);
+    std::uint64_t const high_first = ((sum1 & mask) << (64 - bits)) | ((sum2 & mask) << (64 - (2 * bits)));
+    std::uint64_t const word = std::endian::native == std::endian::little ? low_first : high_first;
+    State state;
+    std::memcpy(static_cast<void *>(&state), &word, sizeof(State));
+    return state;
+  } else {
+    return {.sum1 = static_cast<sum_type>(sum1), .sum2 = static_cast<sum_type>(sum2)};
+  }
+}
+
 template <class Kernel, class Value, std::uint64_t Modulus, class State>
 [[gnu::always_inline]] inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept {
   constexpr unsigned bits = std::numeric_limits<Value>::digits;
@@ -179,8 +208,10 @@ template <class Kernel, class Value, std::uint64_t Modulus, class State>
 
 template <class Value, std::uint64_t Modulus, class State>
 [[gnu::always_inline]] inline State sum_portable(State state, std::span<std::byte const> data) noexcept {
-  // The widest integer the target adds natively, or 64 bits for 32-bit values.
-  using accumulator = std::conditional_t<sizeof(Value) == 4, std::uint64_t, std::size_t>;
+  // The widest integer the target adds natively, or 64 bits for 32-bit values. AArch64 sums 16-bit values in 32 bits:
+  // Fletcher-32 at 20 bytes ran 6 % faster on a Cortex-A72 (a reduction every 360 values costs little), but 9 % slower on x86-64.
+  using accumulator =
+      std::conditional_t<sizeof(Value) == 4, std::uint64_t, std::conditional_t<sizeof(Value) == 2 && narrow_value_sums, std::uint32_t, std::size_t>>;
   // 32-bit targets sum 16-bit values as 32-bit words, two values each; 64-bit targets keep the 4-value formula on native words.
   constexpr bool sums_words = sizeof(Value) == 2 && std::numeric_limits<std::size_t>::digits == 32;
   constexpr std::size_t size = sizeof(Value);
@@ -232,7 +263,11 @@ template <class Value, std::uint64_t Modulus, class State>
     } else {
       // Four values at a time: sum1 has one addition per group in its dependency chain instead of four. With 64-bit sums on a
       // 32-bit target the multiplications cost more than the chain, so the values are added one by one.
-      for(; count >= 4; count -= 4, position += 4 * size) {
+      // 64-bit targets bound the loop by its end, which made Fletcher-32 at 20 bytes faster on x86-64; on a Cortex-M4 that cost
+      // Fletcher-64 3 % at 4 KiB, so 32-bit targets count the values.
+      constexpr bool bounded_by_end = std::numeric_limits<std::size_t>::digits == 64;
+      std::byte const *const end = position + ((count / 4) * 4 * size);
+      for(; bounded_by_end ? position != end : count >= 4; position += 4 * size, count -= bounded_by_end ? 0 : 4) {
         accumulator const first = load<Value>(position);
         accumulator const second = load<Value>(position + size);
         accumulator const third = load<Value>(position + (2 * size));
@@ -251,15 +286,38 @@ template <class Value, std::uint64_t Modulus, class State>
           sum1 += first + second + third + fourth;
         }
       }
+      count %= 4;
+      if constexpr(std::numeric_limits<std::size_t>::digits == 64) {
+        if((count & 2U) != 0) {
+          accumulator const first = load<Value>(position);
+          accumulator const second = load<Value>(position + size);
+          sum2 += (2 * sum1) + (2 * first) + second;
+          sum1 += first + second;
+          position += 2 * size;
+        }
+        if((count & 1U) != 0) {
+          sum1 += load<Value>(position);
+          sum2 += sum1;
+          position += size;
+        }
+        count = 0;
+      }
     }
     for(; count != 0; --count, position += size) {
       sum1 += load<Value>(position);
       sum2 += sum1;
     }
-    sum1 = reduce<Modulus>(sum1);
-    sum2 = reduce<Modulus>(sum2);
+    if constexpr(sizeof(accumulator) == sizeof(std::uint64_t) && sizeof(std::size_t) == sizeof(std::uint64_t) && std::has_single_bit(Modulus + 1)) {
+      // A constant % of a 64-bit sum is a multiplication on 64-bit targets: no branches, which the fold loop mispredicted on
+      // the A72 when the number of folds changed with the input size. 32-bit targets would call a division function.
+      sum1 %= Modulus;
+      sum2 %= Modulus;
+    } else {
+      sum1 = reduce<Modulus>(sum1);
+      sum2 = reduce<Modulus>(sum2);
+    }
   }
-  return {.sum1 = static_cast<decltype(state.sum1)>(sum1), .sum2 = static_cast<decltype(state.sum2)>(sum2)};
+  return make_state<State>(sum1, sum2);
 }
 
 template <class Value, std::uint64_t Modulus, class State>

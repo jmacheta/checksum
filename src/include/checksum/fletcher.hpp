@@ -107,10 +107,18 @@ template <unsigned Width> constexpr integer<Width> reduce_once(integer<Width> va
 // Folds data byte by byte; the constant-evaluation loop, also used at run time for the bytes of an unfinished block.
 template <unsigned Width> constexpr fletcher_state<Width> update_bytes(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
 
+// The state of Fletcher-16 and Fletcher-32 as one integer, sum1, sum2 and block_offset from the low bits in Width/2 bits each,
+// so that compilers pass it in a register; Fletcher-64 passes the state itself.
+template <unsigned Width>
+using state_word = std::conditional_t<Width == 16, std::uint32_t, std::conditional_t<Width == 32, std::uint64_t, fletcher_state<64>>>;
+
+template <unsigned Width> constexpr state_word<Width> to_word(fletcher_state<Width> state) noexcept;
+template <unsigned Width> constexpr fletcher_state<Width> from_word(state_word<Width> word) noexcept;
+
 // The same fold at run time, defined in src/fletcher/sum_loop.cpp.
-fletcher_state<16> sum_loop(fletcher_state<16> state, std::span<std::byte const> data) noexcept;
-fletcher_state<32> sum_loop(fletcher_state<32> state, std::span<std::byte const> data) noexcept;
-fletcher_state<64> sum_loop(fletcher_state<64> state, std::span<std::byte const> data) noexcept;
+state_word<16> sum_loop(state_word<16> state, std::span<std::byte const> data) noexcept;
+state_word<32> sum_loop(state_word<32> state, std::span<std::byte const> data) noexcept;
+state_word<64> sum_loop(state_word<64> state, std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::fletcher_detail
 
@@ -121,6 +129,28 @@ namespace checksum::fletcher_detail {
 
 template <unsigned Width> constexpr integer<Width> reduce_once(integer<Width> value) noexcept {
   return value >= modulus<Width> ? static_cast<integer<Width>>(value - modulus<Width>) : value;
+}
+
+template <unsigned Width> constexpr state_word<Width> to_word(fletcher_state<Width> state) noexcept {
+  if constexpr(Width == 64) {
+    return state;
+  } else {
+    constexpr unsigned bits = Width / 2;
+    return static_cast<state_word<Width>>(state.sum1 | (state_word<Width>{state.sum2} << bits) |
+                                          (state_word<Width>{state.block_offset} << (2 * bits)));
+  }
+}
+
+template <unsigned Width> constexpr fletcher_state<Width> from_word(state_word<Width> word) noexcept {
+  if constexpr(Width == 64) {
+    return word;
+  } else {
+    using sum_type = fletcher_state<Width>::sum_type;
+    constexpr unsigned bits = Width / 2;
+    return {.sum1 = static_cast<sum_type>(word),
+            .sum2 = static_cast<sum_type>(word >> bits),
+            .block_offset = static_cast<std::uint8_t>(word >> (2 * bits))};
+  }
 }
 
 template <unsigned Width> constexpr fletcher_state<Width> update_bytes(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
@@ -146,7 +176,7 @@ template <unsigned Width> constexpr fletcher_state<Width> fletcher_update(fletch
   if consteval {
     return fletcher_detail::update_bytes(state, data);
   } else {
-    return fletcher_detail::sum_loop(state, data);
+    return fletcher_detail::from_word<Width>(fletcher_detail::sum_loop(fletcher_detail::to_word(state), data));
   }
 }
 
