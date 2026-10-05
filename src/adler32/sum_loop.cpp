@@ -13,7 +13,7 @@ adler32_state sum_loop(adler32_state state, std::span<std::byte const> data) noe
   if(fletcher_detail::runs_kernel<std::uint8_t>(data.size())) {
     return fletcher_detail::sum_long<std::uint8_t, modulus>(state, data);
   }
-  return fletcher_detail::sum_portable<std::uint8_t, modulus>(state, data);
+  return fletcher_detail::sum_portable<std::uint8_t, modulus, fletcher_detail::kernel_minimum<std::uint8_t>>(state, data);
 }
 
 } // namespace checksum::adler32_detail
