@@ -198,6 +198,22 @@ sizes moves by up to 25 % with where the code lands in flash. Against xxHash v0.
 byte at 4 KiB), XXH64 is faster (3.40 against 3.88), XXH3-64 and XXH3-128 are 4-5 % slower (3.00 against 2.89, 3.11
 against 2.96), and XXH32 is 12-14 % slower (1.59 against 1.40; 9.9 against 12.9 MB/s at 20 B).
 
+### 5.4 Cortex-M33: nRF54L15 at 128 MHz
+
+nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
+instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
+64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. MB/s, and cycles per byte at 4 KiB:
+
+| Hash | 20 B | 64 B | 256 B | 1500 B | 4 KiB | Cycles per byte |
+| --- | --- | --- | --- | --- | --- | --- |
+| XXH32 | 21.7 | 51.2 | 81.9 | 97.2 | 100.8 | 1.27 |
+| XXH64 | 15.8 | 16.9 | 30.2 | 38.1 | 40.1 | 3.19 |
+| XXH3-64 | 18.6 | 34.3 | 30.3 | 44.4 | 48.5 | 2.64 |
+| XXH3-128 | 10.9 | 23.9 | 22.8 | 39.8 | 46.4 | 2.76 |
+
+The Cortex-M33 runs the same code 6-20 % faster per cycle than the Cortex-M4; from an odd address every hash takes
+about 0.25 cycles per byte more.
+
 ## 6. Limitations
 
 - **Not cryptographic:** none of these hashes resists inputs crafted to collide, even with a secret seed. Do not use
@@ -209,4 +225,5 @@ against 2.96), and XXH32 is 12-14 % slower (1.59 against 1.40; 9.9 against 12.9 
 - **No kernels for XXH32 and XXH64** (section 4.1), and no XXH3 kernel for Cortex-M, big-endian targets or AVX-512.
 - **Messages of 4 GiB and more** were checked against the reference by hand (XXH32 and XXH64, one-shot and streamed);
   no unit test covers them.
-- Code size: Cortex-M4, GCC 14.3: the library object with the out-of-line loops of all four hashes takes 3 648 (XXH32/XXH64 2 672, XXH3 976) B of code at `-O2` and 2 296 (1 720, 576) B at `-Os`; the inline short paths of the header add to each caller.
+- Code size: Cortex-M4, GCC 14.3: the out-of-line loops take 3 648 B of code at `-O2` (XXH32/XXH64 2 672, XXH3 976)
+  and 2 296 B at `-Os` (1 720, 576); the inline short paths of the header add to each caller.

@@ -73,7 +73,9 @@ an addition of their previous values, and in MurmurHash3_x64_128 the second lane
 block. Blocks cannot be processed in parallel, so vector instructions have nothing to work on. The block loop is
 compiled once per width in `src/murmur3/block_loop.cpp`; MurmurHash3_x64_128 inputs under 256 bytes fold inline
 instead, which saves the call, and the one-shot MurmurHash3_x86_32 runs a function there that keeps its lane in a
-register.
+register. On 32-bit Arm without NEON (Cortex-M, small in-order A-profile cores) MurmurHash3_x86_32 takes four blocks
+per iteration: their multiplications do not depend on the lane, so an in-order core runs them while the earlier blocks
+update it. That made it 1.66× faster at 4 KiB on a Cortex-M33; out-of-order cores already overlap the blocks.
 
 MurmurHash3_x64_128 needs 64-bit multiplications, which 32-bit targets build from several 32-bit ones. On 32-bit
 targets MurmurHash3_x86_32 is the faster of the two; on 64-bit targets MurmurHash3_x64_128 is at least as fast at 20
@@ -104,7 +106,16 @@ On AArch64 MurmurHash3_x86_32 runs 0.95 to 1.0× as fast as SMHasher's MurmurHas
 
 GCC 14.3, `-O2`, code in flash and data in RAM, measured with the cycle counter. At 4 KiB MurmurHash3_x86_32 takes
 3.03 cycles per byte (26 MB/s at 80 MHz) and MurmurHash3_x64_128 4.43 (18 MB/s); at 20 bytes they reach 9.6 and
-6.8 MB/s. Both chips run the same cycles per byte, so the figures scale with the clock.
+6.8 MB/s. Both chips run the same cycles per byte, so the figures scale with the clock. These were measured before
+MurmurHash3_x86_32 took four blocks per iteration, which has not been measured on a Cortex-M4.
+
+### 5.4 Cortex-M33: nRF54L15 at 128 MHz
+
+nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
+instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
+64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. At 4 KiB MurmurHash3_x86_32 takes 2.27 cycles per byte
+(56.4 MB/s; 3.77 with one block per iteration) and MurmurHash3_x64_128 4.30 (29.7 MB/s); at 20 bytes they reach 19.4
+and 10.2 MB/s. Two x64_128 blocks per iteration were 16 % slower: their 64-bit values do not fit the registers.
 
 ## 6. Limitations
 
@@ -113,4 +124,5 @@ GCC 14.3, `-O2`, code in flash and data in RAM, measured with the cycle counter.
 - **Two variants only:** MurmurHash3_x86_128 is not provided.
 - **Not an error check:** unlike a CRC, it guarantees the detection of no class of errors, burst errors included.
 - No CPU acceleration (section 4).
-- Code size: Cortex-M4, GCC 14.3: the library object with the out-of-line loops of all both variants takes 580 B of code at `-O2` and 504 B at `-Os`; the inline short paths of the header add to each caller.
+- Code size: Cortex-M4, GCC 14.3: the block loops of both variants and the one-shot x86_32 function take 900 B of code
+  at `-O2` and 748 B at `-Os`; the inline short paths of the header add to each caller.

@@ -311,6 +311,24 @@ Fed byte by byte, the peripheral is about as fast as `crc_lut_sliced` in RAM on 
 Every call configures the unit, and for a reflected CRC the example reverses the state bitwise in software, which
 dominates short inputs (CRC-32/ISO-HDLC at 16 B).
 
+### 8.5 Cortex-M33 (nRF54L15, 128 MHz)
+
+GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the instruction cache on. MB/s at 16 B / 1 KiB with the engine in
+RRAM (`crc_engine_for`, read-only data) and copied to RAM.
+
+| CRC | none | nibble | byte | sliced | braided |
+| --- | --- | --- | --- | --- | --- |
+| CRC-32/ISO-HDLC, RRAM | 2.3 / 2.4 | 6.8 / 7.5 | 11.1 / 12.8 | 13.2 / 18.5 | 13.6 / 13.1 |
+| CRC-32/ISO-HDLC, RAM | 2.3 / 2.4 | 6.6 / 7.5 | 10.5 / 12.8 | 14.2 / 25.9 | 14.0 / 23.4 |
+| CRC-32/BZIP2, RAM | 2.3 / 2.4 | 6.8 / 8.0 | 10.1 / 12.7 | 13.3 / 25.2 | 13.3 / 23.7 |
+| CRC-16/XMODEM, RAM | 2.0 / 2.1 | 6.1 / 7.1 | 9.1 / 11.6 | 11.9 / 25.1 | 11.9 / 23.2 |
+| CRC-8/SMBUS, RAM | 2.2 / 2.4 | 6.1 / 7.1 | 14.5 / 21.2 | 13.7 / 28.8 | 13.6 / 24.0 |
+
+The instruction cache does not hold data, so table lookups in RRAM wait for it: in RAM `crc_lut_sliced` is 1.2-1.4×
+and `crc_lut_braided` 1.2-1.9× faster at 1 KiB. Per cycle the sliced loop in RAM matches the nRF52840 (4.9 cycles per
+byte for CRC-32 against 5.2). The chip has no general-purpose CRC unit: the CRC logic of its radio and NFC peripherals
+covers only their own frames.
+
 ## 9. Limitations
 
 - **Not thread-safe.** Objects are unsynchronized values. A `const` engine can be shared between threads, since

@@ -163,7 +163,27 @@ same cycles per byte, so the figures scale with the clock. Below 192 bytes both 
 take 346 cycles against 273 for the kernel at 192. The kernel breaks even at 120-160 bytes, depending on the start
 address, so the threshold could move lower.
 
-### 6.4 Code size
+### 6.4 Cortex-M33: nRF54L15 at 128 MHz
+
+nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
+instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
+64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. MB/s:
+
+| Input | Portable | `ldm` |
+| --- | --- | --- |
+| 20 B | 26.4 | 27.2 |
+| 64 B | 57.7 | 58.1 |
+| 256 B | 101.8 | 118.7 |
+| 1500 B | 129.7 | 184.3 |
+| 4 KiB | 133.7 | 205.1 |
+| 1500 B, offset 2 | 103.5 | 181.6 |
+| 4 KiB, offset 2 | 106.0 | 201.6 |
+
+At 4 KiB the kernel takes 0.62 cycles per byte against 0.96 for the portable loop, 1.55× faster. From an aligned
+address it breaks even at about 96 bytes, but at 64 bytes from an odd or 2-modulo-4 address it is 30 % slower than
+the portable loop, so the 192-byte threshold stays.
+
+### 6.5 Code size
 
 `sum_loop` and its helpers, the whole run-time code, GCC with `-ffunction-sections`. A kernel build holds the portable
 loop twice: once for short inputs, once after the kernel.

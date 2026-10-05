@@ -84,7 +84,7 @@ run in vector registers where a kernel exists, else in portable code:
 | AArch64, little-endian | NEON, two 128-bit vectors per sum, from 192 B |
 | 32-bit Arm with NEON, little-endian | NEON, from 192 B |
 | other 64-bit targets (RISC-V, big-endian AArch64), or `CHECKSUM_ACCELERATION=OFF` on a 64-bit target | Portable lanes, from 256 B |
-| other 32-bit targets (Cortex-M, 32-bit Arm without NEON, big-endian), or `CHECKSUM_ACCELERATION=OFF` on a 32-bit target | Word loop only |
+| other 32-bit targets (Cortex-M, 32-bit Arm without NEON, big-endian), or `CHECKSUM_ACCELERATION=OFF` on a 32-bit target | Word loop only; two words per iteration on 32-bit Arm without NEON |
 
 The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. Constant
 evaluation always runs a byte-by-byte loop with the same result. On 32-bit targets the 64-bit sums of four portable
@@ -142,7 +142,22 @@ Cortex-M cores run the word loop. nRF52840 at 64 MHz, GCC 14.3 `-O2`, code in fl
 | Aligned | 7.4 | 12.5 | 16.4 | 17.9 | 18.2 | 3.53 |
 | Odd address | 7.0 | 11.4 | 14.5 | 15.7 | 15.9 | 4.03 |
 
-The figures scale with the clock: the STM32L4A6 at 80 MHz runs the same cycles per byte.
+The figures scale with the clock: the STM32L4A6 at 80 MHz runs the same cycles per byte. They were measured before
+the word loop took two words per iteration on 32-bit Arm without NEON, which has not been measured on a Cortex-M4.
+
+### 6.4 Cortex-M33: nRF54L15 at 128 MHz
+
+nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
+instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
+64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. MB/s:
+
+| Start | 20 B | 64 B | 256 B | 1500 B | 4 KiB | Cycles per byte at 4 KiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| Aligned | 12.8 | 25.4 | 38.5 | 45.0 | 45.9 | 2.79 |
+| Odd address | 12.5 | 24.2 | 35.8 | 41.3 | 42.2 | 3.04 |
+
+Two words per iteration halve the loop overhead around the carry chains of the 64-bit sums: 1.36× at 4 KiB against
+one word (3.78 cycles per byte); four words per iteration were slower than two.
 
 ## 7. Limitations
 
@@ -157,4 +172,5 @@ The figures scale with the clock: the STM32L4A6 at 80 MHz runs the same cycles p
 - **Inputs of 4 GiB and more are not tested:** their correctness rests on the lane combination, which is exact modulo
   2^64 for any word count. Each preset tests only its own path against the reference vectors; no build compares a
   kernel with the portable lanes directly.
-- Code size: Cortex-M4, GCC 14.3: the library object with the out-of-line loops of all lanes takes 460 B of code at `-O2` and 424 B at `-Os`; the inline short paths of the header add to each caller.
+- Code size: Cortex-M4, GCC 14.3: the out-of-line word loop and its callers take 616 B of code at `-O2` and 654 B at
+  `-Os`; the inline short paths of the header add to each caller.

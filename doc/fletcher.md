@@ -177,6 +177,28 @@ The kernel is 2.0× faster at 4 KiB and 1.6× at 256 bytes. On this core the wid
 Fletcher-64 at 1.80 cycles per byte is the fastest of the three, and Fletcher-32 and Fletcher-64 are slower from an
 odd address, where their word loads are unaligned.
 
+### 6.4 Cortex-M33: nRF54L15 at 128 MHz
+
+nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
+instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
+64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. Cycles per byte at 4 KiB:
+
+| Checksum | Portable | DSP kernel | Kernel build, start address odd |
+| --- | --- | --- | --- |
+| Fletcher-16 | 4.53 | 2.67 | 2.69 |
+| Fletcher-32 | 2.05 | (portable) | 2.30 |
+| Fletcher-64 | 1.54 | (portable) | 1.79 |
+
+Fletcher-16, MB/s:
+
+| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
+| --- | --- | --- | --- | --- | --- |
+| Portable | 13.8 | 21.1 | 26.2 | 28.0 | 28.3 |
+| DSP kernel | 14.2 | 22.1 | 37.5 | 45.9 | 47.9 |
+
+The kernel is 1.7× faster at 4 KiB and 1.4× at 256 bytes. As on the Cortex-M4 it pays from 64 bytes: at 48 and 63
+bytes it would be 4-8 % slower than the portable loop.
+
 ## 7. Limitations
 
 - **Weaker error detection than a CRC:** a Fletcher checksum cannot tell a block of zeros from a block of ones. Use a
@@ -187,4 +209,5 @@ odd address, where their word loads are unaligned.
 - **No RISC-V or big-endian kernels**, and no Fletcher-64 kernel without AVX2 on x86-64.
 - **Untested reduction bound:** on 64-bit targets the portable Fletcher-16 loop reduces after 380 368 695 bytes, a span
   no test reaches; the Fletcher-32 bound is crossed by a 48 MiB test.
-- Code size: Cortex-M4, GCC 14.3: the library object with the out-of-line loops of all three widths takes 2 024 B of code at `-O2` and 1 802 B at `-Os`; the inline short paths of the header add to each caller.
+- Code size: Cortex-M4, GCC 14.3: the out-of-line loops of the three widths take 2 024 B of code at `-O2` and 1 802 B
+  at `-Os`; the inline short paths of the header add to each caller.

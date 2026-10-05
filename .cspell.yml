@@ -60,6 +60,7 @@ words:
 - consteval
 - constexpr
 - cpmaddpackage
+- CRACEN
 - crc
 - crccheck
 - crcs
@@ -174,6 +175,7 @@ words:
 - rocksoft
 - rodata
 - rohc
+- RRAM
 - rtti
 - sdlc
 - semiregular
