@@ -75,7 +75,8 @@ compiled once per width in `src/murmur3/block_loop.cpp`; MurmurHash3_x64_128 inp
 instead, which saves the call, and the one-shot MurmurHash3_x86_32 runs a function there that keeps its lane in a
 register. On 32-bit Arm without NEON (Cortex-M, small in-order A-profile cores) MurmurHash3_x86_32 takes four blocks
 per iteration: their multiplications do not depend on the lane, so an in-order core runs them while the earlier blocks
-update it. That made it 1.66× faster at 4 KiB on a Cortex-M33; out-of-order cores already overlap the blocks.
+update it. That made it 1.66× faster at 4 KiB on a Cortex-M33 and 1.20× on a Cortex-M4; out-of-order cores already overlap the
+blocks.
 
 MurmurHash3_x64_128 needs 64-bit multiplications, which 32-bit targets build from several 32-bit ones. On 32-bit
 targets MurmurHash3_x86_32 is the faster of the two; on 64-bit targets MurmurHash3_x64_128 is at least as fast at 20
@@ -104,10 +105,11 @@ On AArch64 MurmurHash3_x86_32 runs 0.95 to 1.0× as fast as SMHasher's MurmurHas
 
 ### 5.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 
-GCC 14.3, `-O2`, code in flash and data in RAM, measured with the cycle counter. At 4 KiB MurmurHash3_x86_32 takes
-3.03 cycles per byte (26 MB/s at 80 MHz) and MurmurHash3_x64_128 4.43 (18 MB/s); at 20 bytes they reach 9.6 and
-6.8 MB/s. Both chips run the same cycles per byte, so the figures scale with the clock. These were measured before
-MurmurHash3_x86_32 took four blocks per iteration, which has not been measured on a Cortex-M4.
+GCC 14.3, `-O2`, code in flash aligned to 16 bytes and data in RAM, measured with the cycle counter (best of 5 calls)
+on the nRF52840. At 4 KiB MurmurHash3_x86_32 takes 2.52 cycles per byte (31.7 MB/s at 80 MHz; 3.02 with one block
+per iteration, 1.20× slower) and MurmurHash3_x64_128 4.44 (18.0 MB/s); at 20 bytes they reach 10.9 and 5.5 MB/s at
+80 MHz. Both chips run the same cycles per byte, so the figures scale with the clock. Without the alignment, code
+placement in flash moves these loops by up to 17 %.
 
 ### 5.4 Cortex-M33: nRF54L15 at 128 MHz
 

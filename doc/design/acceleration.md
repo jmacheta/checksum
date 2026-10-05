@@ -251,8 +251,8 @@ On 32-bit Arm without NEON (Cortex-M, small in-order A-profile cores) x86_32 tak
 in-order core runs the multiplications of the next blocks while the lane chain of the earlier ones completes: on a
 Cortex-M33 (nRF54L15) 2.27 cycles per byte at 4 KiB against 3.77, 1.06× at 20 B; two blocks were 1.50×. x86-64 lost
 2-4 % from 4 KiB that way, so out-of-order targets keep one block per iteration. Two x64_128 blocks per iteration
-were 16 % slower on the Cortex-M33: their 64-bit values do not fit the registers. The Cortex-M4 has not been measured
-since.
+were 16 % slower on the Cortex-M33: their 64-bit values do not fit the registers. On a Cortex-M4 (nRF52840, code
+aligned to 16 bytes) four x86_32 blocks give 2.52 cycles per byte against 3.02, 1.20×, and 0.98× at 20 B.
 
 ## XXH32 and XXH64
 
@@ -328,7 +328,7 @@ long input pays a fixed cost of a few multiplications. All sums wrap modulo 2^64
 | 32-bit Arm NEON, little-endian | Yes, from 192 B | A72 in AArch32 at 4 KiB: 2 384 MB/s with GCC against 1 069 for the word loop (2.2×), 2 862 with Clang. |
 | Portable lanes, 64-bit targets | Yes, from 256 B | On the A72 they overtake the word loop at 128 B with GCC; with Clang, whose word loop is unrolled, they stay below it (1 500 MB/s at 256 B against 1 813 for the word loop at 128 B). |
 | Portable lanes, 32-bit targets | No | The 64-bit sums of four lanes do not fit the registers: 3× slower than the word loop. Without a kernel the lane code is not even linked. |
-| Word loop, two words per iteration on 32-bit Arm without NEON | Yes | In-order cores pay a loop step per word around the four carry chains: on a Cortex-M33 (nRF54L15) 2.79 cycles per byte at 4 KiB against 3.78 with one word (1.36×); four words were 1.30×. Other targets keep one word per iteration (unchanged code); the Cortex-M4 has not been measured since. |
+| Word loop, two words per iteration on 32-bit Arm without NEON | Yes | In-order cores pay a loop step per word around the four carry chains: on a Cortex-M33 (nRF54L15) 2.79 cycles per byte at 4 KiB against 3.78 with one word (1.36×); four words were 1.30×. Cortex-M4 (nRF52840): 3.17 against 3.54, 1.12×. Other targets keep one word per iteration (unchanged code). |
 | Big-endian NEON | No | The kernel reads vector lanes as little-endian words; big-endian AArch64 runs the portable lanes. |
 | RISC-V V extension | Not done | No hardware to measure; RV64 runs the portable lanes. |
 | x86-64 AVX-512 | Not measured | No AVX-512 hardware available. |

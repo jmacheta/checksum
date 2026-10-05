@@ -135,15 +135,16 @@ kernels) the AArch64 GCC build runs at 0.92× at 20 bytes, 1.18× at 256 bytes a
 
 ### 6.3 Cortex-M4
 
-Cortex-M cores run the word loop. nRF52840 at 64 MHz, GCC 14.3 `-O2`, code in flash, measured with the cycle counter, MB/s:
+Cortex-M cores run the word loop, two words per iteration. nRF52840 at 64 MHz, GCC 14.3 `-O2`, code in flash aligned to
+16 bytes, measured with the cycle counter (best of 5 calls), MB/s:
 
 | Start | 20 B | 64 B | 256 B | 1500 B | 4 KiB | Cycles per byte at 4 KiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| Aligned | 7.4 | 12.5 | 16.4 | 17.9 | 18.2 | 3.53 |
-| Odd address | 7.0 | 11.4 | 14.5 | 15.7 | 15.9 | 4.03 |
+| Aligned | 5.5 | 10.9 | 16.8 | 19.8 | 20.2 | 3.17 |
+| Odd address | 5.2 | 10.1 | 14.9 | 17.1 | 17.4 | 3.67 |
 
-The figures scale with the clock: the STM32L4A6 at 80 MHz runs the same cycles per byte. They were measured before
-the word loop took two words per iteration on 32-bit Arm without NEON, which has not been measured on a Cortex-M4.
+With one word per iteration the loop took 3.54 cycles per byte (4.04 from an odd address): two words are 1.12× faster
+at 4 KiB, 1.08× at 256 bytes. The figures scale with the clock: the STM32L4A6 at 80 MHz runs the same cycles per byte.
 
 ### 6.4 Cortex-M33: nRF54L15 at 128 MHz
 
