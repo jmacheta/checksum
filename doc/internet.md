@@ -88,7 +88,7 @@ adds native-order words and swaps the bytes of the result once.
 | AArch64, little-endian (NEON is always there) | NEON pairwise add-accumulate (`uadalp`) of 32-bit words into 64-bit lanes | 512 B |
 | 32-bit Arm with NEON, little-endian | the same NEON kernel | 192 B |
 | 32-bit Arm without NEON, Thumb-2 or Arm state, e.g. Cortex-M3/M4/M7/M33 or ARMv7-A without NEON | `ldm` + `adcs` carry chain in inline assembly, 32 bytes per iteration, any start address | 192 B |
-| RISC-V RV64 with the V extension (`-march=rv64gcv`), any vector length | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
+| RISC-V RV64 with the V extension (`-march=rv64gcv`) or Zve64x, any vector length | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
 | everything else (Thumb-1 code such as Cortex-M0/M0+/M23, big-endian NEON, RV64 without V), or `CHECKSUM_ACCELERATION=OFF` | portable loop | always |
 
 The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. AArch64 and
@@ -178,7 +178,8 @@ loop twice: once for short inputs, once after the kernel.
 
 RV64 without fast unaligned access loads each word byte by byte, which makes its unrolled portable loop large.
 
-RISC-V has not been measured on hardware; the vector kernel is tested in QEMU with vector lengths of 128-1024 bits.
+RISC-V has not been measured on hardware. The preset tests the vector kernel at QEMU's default vector length of 128
+bits; 256-1024 bits were tested by hand, and 64 bits (Zve64x) only by reasoning, since QEMU 10.2 user mode crashes there.
 
 ## 7. Limitations
 

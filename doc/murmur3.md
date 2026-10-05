@@ -98,7 +98,7 @@ GCC 14.3, `-O2`, one core. MB/s (10⁶ bytes per second):
 | x64_128, AArch32 | 278 | 408 | 536 | 595 | 604 | 599 |
 
 On AArch64 MurmurHash3_x86_32 runs 0.95 to 1.0× as fast as SMHasher's MurmurHash3.cpp at every size, with `-O2` or
-`-O2 -mcpu=cortex-a72`.
+`-O2 -mcpu=cortex-a72`. In AArch32 it is 0.71× at 20 B, 0.81× at 64 B and 0.97× from 1500 B.
 
 ### 5.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 
@@ -112,4 +112,5 @@ GCC 14.3, `-O2`, code in flash and data in RAM, measured with the cycle counter.
   for message authentication or to protect hash tables from hostile keys.
 - **Two variants only:** MurmurHash3_x86_128 is not provided.
 - **Not an error check:** unlike a CRC, it guarantees the detection of no class of errors, burst errors included.
-- No CPU acceleration (section 4). Code size has not been measured.
+- No CPU acceleration (section 4).
+- Code size: Cortex-M4, GCC 14.3: the library object with the out-of-line loops of all both variants takes 580 B of code at `-O2` and 504 B at `-Os`; the inline short paths of the header add to each caller.

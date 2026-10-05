@@ -213,7 +213,7 @@ no run-time CPU detection, so the library must be compiled with the flags of the
 | x86-64 with VPCLMULQDQ and AVX2 | `-march=icelake-client`, `alderlake`, `znver3`, `native` | Inputs ≥ 256 B also fold 256 B per iteration. |
 | x86-64 with SSE4.2 | `-msse4.2`, `-march=x86-64-v2` | The `crc32` instruction for CRC-32C; with PCLMULQDQ also available, CRC-32C inputs ≥ 25 B fold instead. |
 | AArch64 / AArch32 with the CRC extension | `-march=armv8-a+crc` | The CRC32 instructions for CRC-32 and CRC-32C. |
-| Little-endian AArch64 with PMULL | `-march=armv8-a+crc+crypto` | Folding for every other parameter set. |
+| Little-endian AArch64 with PMULL | `-march=armv8-a+crc+crypto` | Folding for every other parameter set; with `+sha3` (Neoverse V1/V2, Apple M1 and later) each fold uses one `EOR3`. |
 | RV64, little-endian, with Zbc | `-march=rv64gc_zbc` | Folding with `clmul` / `clmulh`. |
 
 Notes:
@@ -264,6 +264,11 @@ accelerated. MB/s at 16 B / 64 B / 4 KiB.
 | CRC-64/XZ, sliced / braided | | 537 / 623 / 655, 526 / 623 / 827 |
 | CRC-16/KERMIT, sliced / braided | | 472 / 537 / 569, 451 / 526 / 698 |
 | any width, byte | | 215 / 215 / 215 |
+
+Against zlib-ng and Intel ISA-L built with the same flags (`-O2 -mcpu=cortex-a72+crc`), CRC-32 runs at 1.20× the
+faster of the two at 20 B, 0.94× at 256 B and 0.97-1.00× from 4 KiB; CRC-32C at 1.00-1.13× of ISA-L and Google
+crc32c. Without PMULL, CRC-64/XZ runs the sliced loop at 1.9-4.5× ISA-L's byte table. At 1 MiB every implementation
+drops to about 6 000 MB/s against about 10 900 at 4 KiB, because the input no longer fits in the cache.
 
 ### 8.3 Cortex-M4 (nRF52840, 64 MHz)
 

@@ -154,4 +154,7 @@ The figures scale with the clock: the STM32L4A6 at 80 MHz runs the same cycles p
   checksum does not record an unfinished word.
 - **No verification helper:** compute the checksum and compare it with the stored one.
 - **No RISC-V or big-endian kernels.**
-- Code size has not been measured.
+- **Inputs of 4 GiB and more are not tested:** their correctness rests on the lane combination, which is exact modulo
+  2^64 for any word count. Each preset tests only its own path against the reference vectors; no build compares a
+  kernel with the portable lanes directly.
+- Code size: Cortex-M4, GCC 14.3: the library object with the out-of-line loops of all lanes takes 460 B of code at `-O2` and 424 B at `-Os`; the inline short paths of the header add to each caller.

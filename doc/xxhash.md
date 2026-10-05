@@ -194,7 +194,9 @@ cycles per byte at 4 KiB:
 | XXH3-128 | 8.5 | 16.7 | 19.2 | 11.2 | 10.7 | 21.7 | 25.7 | 3.11 |
 
 On this core XXH32 is the fastest at every size, about twice as fast as the others from 256 bytes. Speed at short
-sizes moves by up to 25 % with where the code lands in flash.
+sizes moves by up to 25 % with where the code lands in flash. Against xxHash v0.8.4 built the same way (cycles per
+byte at 4 KiB), XXH64 is faster (3.40 against 3.88), XXH3-64 and XXH3-128 are 4-5 % slower (3.00 against 2.89, 3.11
+against 2.96), and XXH32 is 12-14 % slower (1.59 against 1.40; 9.9 against 12.9 MB/s at 20 B).
 
 ## 6. Limitations
 
@@ -205,4 +207,6 @@ sizes moves by up to 25 % with where the code lands in flash.
 - **Not an error check:** unlike a CRC, they guarantee the detection of no class of errors, burst errors included.
 - **Streaming in small pieces is slow for XXH3** (section 3): the state is passed by value.
 - **No kernels for XXH32 and XXH64** (section 4.1), and no XXH3 kernel for Cortex-M, big-endian targets or AVX-512.
-- Code size has not been measured.
+- **Messages of 4 GiB and more** were checked against the reference by hand (XXH32 and XXH64, one-shot and streamed);
+  no unit test covers them.
+- Code size: Cortex-M4, GCC 14.3: the library object with the out-of-line loops of all four hashes takes 3 648 (XXH32/XXH64 2 672, XXH3 976) B of code at `-O2` and 2 296 (1 720, 576) B at `-Os`; the inline short paths of the header add to each caller.

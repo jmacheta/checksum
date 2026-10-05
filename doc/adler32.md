@@ -99,7 +99,7 @@ kernel runs (MB/s, GCC 16 and Clang 21):
 
 | Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| GCC | 3 781 | 11 570 | 35 225 | 56 789 | 84 504 | 88 630 |
+| GCC | 4 074 | 11 570 | 35 225 | 56 789 | 84 504 | 88 630 |
 | Clang | 3 746 | 11 655 | 36 649 | 57 952 | 85 027 | 89 914 |
 
 In a separate comparison harness, against zlib-ng (develop, its AVX-VNNI kernel, same flags) the library runs 0.98×
@@ -140,4 +140,6 @@ The kernel is 2.0× faster at 4 KiB and 1.6× at 256 bytes.
 - **No combination** of two checksums (`adler32_combine` in zlib).
 - **No verification helper:** compute the checksum and compare it with the stored one.
 - **No RISC-V or big-endian kernels.**
-- Code size has not been measured.
+- **Untested reduction bound:** on 64-bit targets the portable loop reduces after 380 368 439 bytes, a span no test
+  reaches (the longest test is 600 KiB).
+- Code size: Cortex-M4, GCC 14.3: the library object with the out-of-line loops of all sizes takes 820 B of code at `-O2` and 662 B at `-Os`; the inline short paths of the header add to each caller.
