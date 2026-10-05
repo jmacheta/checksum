@@ -9,7 +9,9 @@
   without the error.
 - Benchmarks: Google Benchmark, `tests/benchmarks`, configured only with `CHECKSUM_BENCHMARKS` (the `native-*-bench`
   presets). The test presets and CI neither build nor run them; in a bench build `ctest` runs one smoke test per
-  benchmark executable.
+  benchmark executable. They hash the same buffer in independent calls, which the CPU overlaps, so short-input
+  figures are throughput, not latency: MurmurHash3_x86_32 at 64 B runs 4 930 MB/s that way and 3 130 when each call
+  depends on the previous hash (equal at 1 MiB).
 - Write tests alongside the component they exercise.
 
 ## What to run
@@ -21,6 +23,7 @@
 | Preconditions, exceptions, RTTI | also `native-gcc-no-exceptions`; the unit tests include one executable built with `NDEBUG` |
 | Architecture headers or the table loops | also `x86_64-gcc-pclmul`, `native-gcc-portable` and the cross presets of `cmake/emulator_presets.json` (QEMU user mode) |
 | The x86-64 AVX-VNNI Fletcher/Adler-32 kernel | also a local build with `-march=native` on a CPU with AVX-VNNI (no preset or CI job covers it) |
+| The SSSE3 Fletcher/Adler-32 weighting, the SSE4.2 `crc32` path without PCLMULQDQ, the Arm-state `ldm` kernel, RVV vector lengths | also a local build with `-mssse3`, `-march=x86-64-v2`, `-marm` added to `cross-arm-portable`, or QEMU `-cpu max,vlen=256` (no preset covers them) |
 
 Run benchmarks and the full cross matrix only when the change needs them, filtered to what changed; they are slow.
 

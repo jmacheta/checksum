@@ -63,8 +63,9 @@ template <class State> State make_state(std::uint64_t sum1, std::uint64_t sum2) 
 template <class Kernel, class Value, std::uint64_t Modulus, class State>
 [[gnu::always_inline]] inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept;
 
-// The portable loop over the whole Values of data.
-template <class Value, std::uint64_t Modulus, class State>
+// The portable loop over the whole Values of data, which is shorter than Limit bytes. On 64-bit targets, if no input of that
+// length can overflow the sums, it is one run without reducing them first: no loop over runs and no stack frame.
+template <class Value, std::uint64_t Modulus, std::size_t Limit = std::numeric_limits<std::size_t>::max(), class State>
 [[gnu::always_inline]] inline State sum_portable(State state, std::span<std::byte const> data) noexcept;
 
 // The CPU kernel, then the portable loop over what it left. Not inlined, so that short inputs run sum_portable() without a call.
@@ -79,6 +80,9 @@ template <class Value, std::uint64_t Modulus, class State>
 // Whether size bytes go to sum_long(): from the minimum size of the kernel, if there is one. Callers branch on it themselves,
 // so that the call of sum_long() stays a tail call.
 template <class Value> constexpr bool runs_kernel(std::size_t size) noexcept;
+
+// The shortest input for sum_long(): inputs below it run sum_portable() with this Limit.
+template <class Value> inline constexpr std::size_t kernel_minimum = kernel<std::numeric_limits<Value>::digits>::minimum_size;
 
 template <class Integer, std::uint64_t Modulus> constexpr std::size_t values_per_reduction(std::uint64_t largest_value) noexcept {
   constexpr std::uint64_t maximum = std::numeric_limits<Integer>::max();
@@ -206,7 +210,7 @@ template <class Kernel, class Value, std::uint64_t Modulus, class State>
   return size;
 }
 
-template <class Value, std::uint64_t Modulus, class State>
+template <class Value, std::uint64_t Modulus, std::size_t Limit, class State>
 [[gnu::always_inline]] inline State sum_portable(State state, std::span<std::byte const> data) noexcept {
   // The widest integer the target adds natively, or 64 bits for 32-bit values. AArch64 sums 16-bit values in 32 bits:
   // Fletcher-32 at 20 bytes ran 7 % faster on a Cortex-A72 (a reduction every 360 values costs little), but 9 % slower on x86-64.
@@ -217,14 +221,18 @@ template <class Value, std::uint64_t Modulus, class State>
   constexpr std::size_t size = sizeof(Value);
   constexpr std::size_t run = values_per_reduction<accumulator, Modulus>(std::numeric_limits<Value>::max());
   static_assert(run >= 8);
+  // Sums below 2 * Modulus count as below Modulus + 1 for the bound; one run also reduces the sums of empty data. 32-bit
+  // targets keep the loop, tuned on a Cortex-M4.
+  constexpr bool one_run = std::numeric_limits<std::size_t>::digits == 64 &&
+                           (Limit - 1) / size <= values_per_reduction<accumulator, (2 * Modulus) + 1>(std::numeric_limits<Value>::max());
   // In a run of w words, previous is at most 2M * w(w - 1) / 2.
   static_assert(!sums_words || Modulus * (run / 2) * ((run / 2) - 1) <= std::numeric_limits<std::uint32_t>::max());
-  auto sum1 = static_cast<accumulator>(state.sum1 >= Modulus ? state.sum1 - Modulus : state.sum1);
-  auto sum2 = static_cast<accumulator>(state.sum2 >= Modulus ? state.sum2 - Modulus : state.sum2);
+  auto sum1 = static_cast<accumulator>(!one_run && state.sum1 >= Modulus ? state.sum1 - Modulus : state.sum1);
+  auto sum2 = static_cast<accumulator>(!one_run && state.sum2 >= Modulus ? state.sum2 - Modulus : state.sum2);
   std::byte const *position = data.data();
   std::size_t values = data.size() / size;
-  while(values != 0) {
-    std::size_t count = std::min(values, run);
+  while(one_run || values != 0) {
+    std::size_t count = one_run ? values : std::min(values, run);
     values -= count;
     if constexpr(sums_words) {
       // One value first if that aligns the words. A word adds 2 * sum1 + 2 * first half + second half to sum2, so per word
@@ -316,6 +324,9 @@ template <class Value, std::uint64_t Modulus, class State>
       sum1 = reduce<Modulus>(sum1);
       sum2 = reduce<Modulus>(sum2);
     }
+    if constexpr(one_run) {
+      break;
+    }
   }
   return make_state<State>(sum1, sum2);
 }
@@ -342,8 +353,7 @@ template <class Value, std::uint64_t Modulus, class State>
 }
 
 template <class Value> constexpr bool runs_kernel(std::size_t size) noexcept {
-  using value_kernel = kernel<std::numeric_limits<Value>::digits>;
-  return value_kernel::available && size >= value_kernel::minimum_size;
+  return kernel<std::numeric_limits<Value>::digits>::available && size >= kernel_minimum<Value>;
 }
 
 } // namespace

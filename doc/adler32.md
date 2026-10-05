@@ -99,7 +99,7 @@ kernel runs (MB/s, GCC 16 and Clang 21):
 
 | Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| GCC | 3 781 | 11 570 | 35 225 | 56 789 | 84 504 | 88 630 |
+| GCC | 4 074 | 11 570 | 35 225 | 56 789 | 84 504 | 88 630 |
 | Clang | 3 746 | 11 655 | 36 649 | 57 952 | 85 027 | 89 914 |
 
 In a separate comparison harness, against zlib-ng (develop, its AVX-VNNI kernel, same flags) the library runs 0.98×
@@ -133,6 +133,18 @@ the figures scale with the clock. STM32L4A6, MB/s:
 
 The kernel is 2.0× faster at 4 KiB and 1.6× at 256 bytes.
 
+### 6.4 Cortex-M33: nRF54L15 at 128 MHz
+
+nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
+instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
+64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. At 4 KiB the portable loop takes 4.53 cycles per byte
+and the DSP kernel 2.67 (2.68 from an odd address), 1.7× faster. MB/s:
+
+| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
+| --- | --- | --- | --- | --- | --- |
+| Portable | 13.8 | 21.0 | 26.1 | 28.0 | 28.3 |
+| DSP kernel | 13.8 | 22.8 | 38.0 | 46.0 | 47.9 |
+
 ## 7. Limitations
 
 - **Weak on short messages:** with few bytes `sum1` stays far below 65521, so most of the 32 bits are unused. Use a CRC
@@ -140,4 +152,7 @@ The kernel is 2.0× faster at 4 KiB and 1.6× at 256 bytes.
 - **No combination** of two checksums (`adler32_combine` in zlib).
 - **No verification helper:** compute the checksum and compare it with the stored one.
 - **No RISC-V or big-endian kernels.**
-- Code size has not been measured.
+- **Untested reduction bound:** on 64-bit targets the portable loop reduces after 380 368 439 bytes, a span no test
+  reaches (the longest test is 600 KiB).
+- Code size: Cortex-M4, GCC 14.3: the out-of-line loop with the DSP kernel takes 820 B of code at `-O2` and 662 B at
+  `-Os`; the inline short paths of the header add to each caller.

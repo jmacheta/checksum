@@ -130,13 +130,14 @@ Clang's portable loop is 2.1-2.3× slower than GCC's. With `-march=native` (AVX-
 
 | Checksum | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| Fletcher-16 | 3 402 | 10 461 | 32 186 | 55 934 | 78 507 | 76 821 |
-| Fletcher-32 | 4 234 | 8 187 | 20 612 | 40 062 | 50 327 | 51 876 |
-| Fletcher-64 | 4 358 | 10 300 | 19 442 | 37 377 | 49 912 | 56 686 |
+| Fletcher-16 | 4 136 | 11 095 | 32 186 | 55 934 | 78 507 | 76 821 |
+| Fletcher-32 | 5 402 | 9 228 | 20 612 | 40 062 | 50 327 | 51 876 |
+| Fletcher-64 | 5 292 | 11 626 | 19 442 | 37 377 | 49 912 | 56 686 |
 
-At 20 bytes the plain deferred-modulo loop of the Wikipedia article (`-O2 -march=native`, same harness) runs 3 360 MB/s
-for Fletcher-16 and 5 700 for Fletcher-32: 1.0× and 0.74× for the library, which needs the state and its unfinished
-block on top.
+At 20 bytes the plain deferred-modulo loop of the Wikipedia article (`-O2 -march=native`, in a separate harness) runs
+5 990 MB/s for Fletcher-32 against 5 630 for the library, 0.94×, which needs the state and its unfinished block on top.
+With Clang 21 both sides it is 0.83× at 20 B and 0.80× at 64 B: Clang compiles that loop faster than GCC (6 370 and
+10 970 MB/s), and the library from 128 B on runs the kernel.
 
 ### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
 
@@ -151,8 +152,8 @@ GCC 14.3, `-O2`, AArch64 `-march=armv8-a`, one core. GiB/s at 64 B / 256 B / 150
 At 4 KiB NEON is 4.7× (AArch32) to 7.2× (AArch64, 64 bytes per iteration) faster for Fletcher-16, 2.8-2.9× for
 Fletcher-32, and 1.47× (AArch64) or 3.1× (AArch32) for Fletcher-64, whose 64-bit portable loop is already fast on
 AArch64. Below the thresholds both builds run the portable loop; the differences there come from code layout. At 20
-bytes AArch64 Fletcher-32 runs 690 MB/s with `-mcpu=cortex-a72`, 0.85× the Wikipedia loop (813), and 654 MB/s with
-`-march=armv8-a`, 0.79× (823).
+bytes AArch64 Fletcher-32 runs 732 MB/s with `-mcpu=cortex-a72`, 0.94× the Wikipedia loop (776), and 732 MB/s with
+`-march=armv8-a`, 0.88× (833).
 
 ### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
 
@@ -176,6 +177,28 @@ The kernel is 2.0× faster at 4 KiB and 1.6× at 256 bytes. On this core the wid
 Fletcher-64 at 1.80 cycles per byte is the fastest of the three, and Fletcher-32 and Fletcher-64 are slower from an
 odd address, where their word loads are unaligned.
 
+### 6.4 Cortex-M33: nRF54L15 at 128 MHz
+
+nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
+instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
+64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. Cycles per byte at 4 KiB:
+
+| Checksum | Portable | DSP kernel | Kernel build, start address odd |
+| --- | --- | --- | --- |
+| Fletcher-16 | 4.53 | 2.67 | 2.69 |
+| Fletcher-32 | 2.05 | (portable) | 2.30 |
+| Fletcher-64 | 1.54 | (portable) | 1.79 |
+
+Fletcher-16, MB/s:
+
+| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
+| --- | --- | --- | --- | --- | --- |
+| Portable | 13.8 | 21.1 | 26.2 | 28.0 | 28.3 |
+| DSP kernel | 14.2 | 22.1 | 37.5 | 45.9 | 47.9 |
+
+The kernel is 1.7× faster at 4 KiB and 1.4× at 256 bytes. As on the Cortex-M4 it pays from 64 bytes: at 48 and 63
+bytes it would be 4-8 % slower than the portable loop.
+
 ## 7. Limitations
 
 - **Weaker error detection than a CRC:** a Fletcher checksum cannot tell a block of zeros from a block of ones. Use a
@@ -184,4 +207,7 @@ odd address, where their word loads are unaligned.
   swapped first.
 - **No verification helper:** compute the checksum and compare it with the received one.
 - **No RISC-V or big-endian kernels**, and no Fletcher-64 kernel without AVX2 on x86-64.
-- Code size has not been measured.
+- **Untested reduction bound:** on 64-bit targets the portable Fletcher-16 loop reduces after 380 368 695 bytes, a span
+  no test reaches; the Fletcher-32 bound is crossed by a 48 MiB test.
+- Code size: Cortex-M4, GCC 14.3: the out-of-line loops of the three widths take 2 024 B of code at `-O2` and 1 802 B
+  at `-Os`; the inline short paths of the header add to each caller.

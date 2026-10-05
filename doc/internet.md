@@ -88,7 +88,7 @@ adds native-order words and swaps the bytes of the result once.
 | AArch64, little-endian (NEON is always there) | NEON pairwise add-accumulate (`uadalp`) of 32-bit words into 64-bit lanes | 512 B |
 | 32-bit Arm with NEON, little-endian | the same NEON kernel | 192 B |
 | 32-bit Arm without NEON, Thumb-2 or Arm state, e.g. Cortex-M3/M4/M7/M33 or ARMv7-A without NEON | `ldm` + `adcs` carry chain in inline assembly, 32 bytes per iteration, any start address | 192 B |
-| RISC-V RV64 with the V extension (`-march=rv64gcv`), any vector length | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
+| RISC-V RV64 with the V extension (`-march=rv64gcv`) or Zve64x, any vector length | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
 | everything else (Thumb-1 code such as Cortex-M0/M0+/M23, big-endian NEON, RV64 without V), or `CHECKSUM_ACCELERATION=OFF` | portable loop | always |
 
 The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. AArch64 and
@@ -163,7 +163,27 @@ same cycles per byte, so the figures scale with the clock. Below 192 bytes both 
 take 346 cycles against 273 for the kernel at 192. The kernel breaks even at 120-160 bytes, depending on the start
 address, so the threshold could move lower.
 
-### 6.4 Code size
+### 6.4 Cortex-M33: nRF54L15 at 128 MHz
+
+nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
+instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
+64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. MB/s:
+
+| Input | Portable | `ldm` |
+| --- | --- | --- |
+| 20 B | 26.4 | 27.2 |
+| 64 B | 57.7 | 58.1 |
+| 256 B | 101.8 | 118.7 |
+| 1500 B | 129.7 | 184.3 |
+| 4 KiB | 133.7 | 205.1 |
+| 1500 B, offset 2 | 103.5 | 181.6 |
+| 4 KiB, offset 2 | 106.0 | 201.6 |
+
+At 4 KiB the kernel takes 0.62 cycles per byte against 0.96 for the portable loop, 1.55× faster. From an aligned
+address it breaks even at about 96 bytes, but at 64 bytes from an odd or 2-modulo-4 address it is 30 % slower than
+the portable loop, so the 192-byte threshold stays.
+
+### 6.5 Code size
 
 `sum_loop` and its helpers, the whole run-time code, GCC with `-ffunction-sections`. A kernel build holds the portable
 loop twice: once for short inputs, once after the kernel.
@@ -178,7 +198,8 @@ loop twice: once for short inputs, once after the kernel.
 
 RV64 without fast unaligned access loads each word byte by byte, which makes its unrolled portable loop large.
 
-RISC-V has not been measured on hardware; the vector kernel is tested in QEMU with vector lengths of 128-1024 bits.
+RISC-V has not been measured on hardware. The preset tests the vector kernel at QEMU's default vector length of 128
+bits; 256-1024 bits were tested by hand, and 64 bits (Zve64x) only by reasoning, since QEMU 10.2 user mode crashes there.
 
 ## 7. Limitations
 

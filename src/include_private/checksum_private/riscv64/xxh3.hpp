@@ -10,7 +10,6 @@
 
 #include <riscv_vector.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 

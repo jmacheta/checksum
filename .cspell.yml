@@ -60,6 +60,7 @@ words:
 - consteval
 - constexpr
 - cpmaddpackage
+- CRACEN
 - crc
 - crccheck
 - crcs
@@ -78,6 +79,7 @@ words:
 - DPDK
 - dtcm
 - eabi
+- elen
 - endforeach
 - endfunction
 - endmacro
@@ -119,10 +121,12 @@ words:
 - macheta
 - maddubs
 - madler
+- marm
 - mavx
 - mavxvnni
 - mcpu
 - mcrf
+- mdspan
 - memcpy
 - mfpu
 - microcontroller
@@ -132,6 +136,7 @@ words:
 - modbus
 - mpclmul
 - msse
+- mssse
 - msvc
 - ndebug
 - Neoverse
@@ -170,6 +175,7 @@ words:
 - rocksoft
 - rodata
 - rohc
+- RRAM
 - rtti
 - sdlc
 - semiregular

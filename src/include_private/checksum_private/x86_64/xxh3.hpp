@@ -12,7 +12,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 
 namespace checksum::xxh3_detail {
 

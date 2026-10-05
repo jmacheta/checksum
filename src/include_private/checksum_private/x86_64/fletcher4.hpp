@@ -11,7 +11,6 @@
 #include <immintrin.h>
 
 #include <cstddef>
-#include <cstdint>
 
 namespace checksum::fletcher4_detail {
 

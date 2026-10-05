@@ -213,7 +213,7 @@ no run-time CPU detection, so the library must be compiled with the flags of the
 | x86-64 with VPCLMULQDQ and AVX2 | `-march=icelake-client`, `alderlake`, `znver3`, `native` | Inputs ≥ 256 B also fold 256 B per iteration. |
 | x86-64 with SSE4.2 | `-msse4.2`, `-march=x86-64-v2` | The `crc32` instruction for CRC-32C; with PCLMULQDQ also available, CRC-32C inputs ≥ 25 B fold instead. |
 | AArch64 / AArch32 with the CRC extension | `-march=armv8-a+crc` | The CRC32 instructions for CRC-32 and CRC-32C. |
-| Little-endian AArch64 with PMULL | `-march=armv8-a+crc+crypto` | Folding for every other parameter set. |
+| Little-endian AArch64 with PMULL | `-march=armv8-a+crc+crypto` | Folding for every other parameter set; with `+sha3` (Neoverse V1/V2, Apple M1 and later) each fold uses one `EOR3`. |
 | RV64, little-endian, with Zbc | `-march=rv64gc_zbc` | Folding with `clmul` / `clmulh`. |
 
 Notes:
@@ -265,6 +265,11 @@ accelerated. MB/s at 16 B / 64 B / 4 KiB.
 | CRC-16/KERMIT, sliced / braided | | 472 / 537 / 569, 451 / 526 / 698 |
 | any width, byte | | 215 / 215 / 215 |
 
+Against zlib-ng and Intel ISA-L built with the same flags (`-O2 -mcpu=cortex-a72+crc`), CRC-32 runs at 1.20× the
+faster of the two at 20 B, 0.94× at 256 B and 0.97-1.00× from 4 KiB; CRC-32C at 1.00-1.13× of ISA-L and Google
+crc32c. Without PMULL, CRC-64/XZ runs the sliced loop at 1.9-4.5× ISA-L's byte table. At 1 MiB every implementation
+drops to about 6 000 MB/s against about 10 900 at 4 KiB, because the input no longer fits in the cache.
+
 ### 8.3 Cortex-M4 (nRF52840, 64 MHz)
 
 GCC 14 `-O2`, instruction cache on, MB/s at 1 KiB with the engine in flash / in RAM. ARMv7E-M has no CRC or
@@ -305,6 +310,24 @@ the built-in strategies with the engine in RAM. MB/s at 16 B / 1 KiB.
 Fed byte by byte, the peripheral is about as fast as `crc_lut_sliced` in RAM on long messages, but needs no table.
 Every call configures the unit, and for a reflected CRC the example reverses the state bitwise in software, which
 dominates short inputs (CRC-32/ISO-HDLC at 16 B).
+
+### 8.5 Cortex-M33 (nRF54L15, 128 MHz)
+
+GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the instruction cache on. MB/s at 16 B / 1 KiB with the engine in
+RRAM (`crc_engine_for`, read-only data) and copied to RAM.
+
+| CRC | none | nibble | byte | sliced | braided |
+| --- | --- | --- | --- | --- | --- |
+| CRC-32/ISO-HDLC, RRAM | 2.3 / 2.4 | 6.8 / 7.5 | 11.1 / 12.8 | 13.2 / 18.5 | 13.6 / 13.1 |
+| CRC-32/ISO-HDLC, RAM | 2.3 / 2.4 | 6.6 / 7.5 | 10.5 / 12.8 | 14.2 / 25.9 | 14.0 / 23.4 |
+| CRC-32/BZIP2, RAM | 2.3 / 2.4 | 6.8 / 8.0 | 10.1 / 12.7 | 13.3 / 25.2 | 13.3 / 23.7 |
+| CRC-16/XMODEM, RAM | 2.0 / 2.1 | 6.1 / 7.1 | 9.1 / 11.6 | 11.9 / 25.1 | 11.9 / 23.2 |
+| CRC-8/SMBUS, RAM | 2.2 / 2.4 | 6.1 / 7.1 | 14.5 / 21.2 | 13.7 / 28.8 | 13.6 / 24.0 |
+
+The instruction cache does not hold data, so table lookups in RRAM wait for it: in RAM `crc_lut_sliced` is 1.2-1.4×
+and `crc_lut_braided` 1.2-1.9× faster at 1 KiB. Per cycle the sliced loop in RAM matches the nRF52840 (4.9 cycles per
+byte for CRC-32 against 5.2). The chip has no general-purpose CRC unit: the CRC logic of its radio and NFC peripherals
+covers only their own frames.
 
 ## 9. Limitations
 
