@@ -1,10 +1,7 @@
 # CPU acceleration
 
-How algorithms use CPU instructions and which architectures are worth it, per algorithm. Measured figures are in the
-user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#6-performance),
-[Fletcher](../fletcher.md#6-performance), [Adler-32](../adler32.md#6-performance),
-[MurmurHash3](../murmur3.md#5-performance), [xxHash](../xxhash.md#5-performance),
-[fletcher4](../fletcher4.md#6-performance)).
+How algorithms use CPU instructions and which architectures are worth it, per algorithm. Measured figures are in
+[performance.md](../performance.md).
 
 ## Rules
 
@@ -25,8 +22,7 @@ user guides ([CRC](../crc.md#8-performance), [Internet checksum](../internet.md#
   that has it. Constant evaluation always runs the portable code. No preset builds these paths, which were checked by
   hand only: the SSSE3 weighting of the Fletcher-16/Adler-32 kernel without AVX2 (`-mssse3`), the SSE4.2 `crc32`
   path without PCLMULQDQ (`-march=x86-64-v2`), the Arm-state (`-marm`) build of the `ldm` + `adcs` Internet checksum
-  kernel, the big-endian AArch64 branches without an `aarch64_be` toolchain, and RVV at vector lengths other than
-  QEMU's default of 128 bits.
+  kernel, and RVV at vector lengths other than QEMU's default of 128 bits.
 - **Measure before adding.** A kernel stays only if it beats the portable loops on real hardware at the sizes where
   it runs; thresholds come from measurements.
 
@@ -172,7 +168,7 @@ choice between them are written once, in `fletcher_loops.hpp`, for both families
 
 The portable loops are the baseline. They reduce only when an overflow could otherwise happen (every 380 million bytes
 on 64-bit targets for Fletcher-16 and Adler-32) and add four blocks per step, so a byte loop still runs 7 300 MB/s on
-x86-64 at 4 KiB with GCC, but only 0.84 GiB/s on a Cortex-A72 and 5.3 cycles per byte on a Cortex-M4.
+x86-64 at 4 KiB with GCC, but only 900 MB/s on a Cortex-A72 and 15 MB/s on an 80 MHz Cortex-M4.
 
 | Target | Verdict | Why |
 | --- | --- | --- |
@@ -283,7 +279,7 @@ halves of data XOR secret, plus the neighbor lane's data, and a scramble after e
 | x86-64 SSE2 (baseline) | Yes, every stripe loop | GCC 16: 21 992 MB/s at 1 MiB against 13 809 for the portable loop (1.6×), 1.5× at 256 B; Clang 21: 32 658 against 20 107. The reference `xxhash.h` 0.8.4 runs 23 179 with SSE2 and 9 175 scalar. |
 | x86-64 AVX2 | Yes, every stripe loop | GCC 16: 48 994 MB/s at 1 MiB (3.5× the portable loop), 2.6× at 256 B; Clang 21: 46 907. The reference runs 47 996. |
 | x86-64 AVX-512 | Not measured | No AVX-512 hardware available. |
-| AArch64 NEON, all eight lanes | No | Cortex-A72: slower than the portable loop from 256 B on, 2.21 against 2.57 GiB/s at 256 B and 3.64 against 3.93 at 4 KiB. |
+| AArch64 NEON, all eight lanes | No | Cortex-A72: slower than the portable loop from 256 B on, 2 370 against 2 760 MB/s at 256 B and 3 910 against 4 220 at 4 KiB. |
 | AArch64 NEON, four lanes in NEON and four scalar | Yes, every stripe loop | A72, GCC `-O2`: 2 643 against 2 238 MB/s at 256 B, 4 704 against 3 771 at 4 KiB (1.25×); at `-O3` it ties the portable loop at 256 B and is 2 % faster at 4 KiB. Six NEON lanes and two scalar ones (the reference's split) ran 4 374 MB/s at 4 KiB and 3 807 at 1 MiB against 4 719 and 4 029; all eight in NEON were slower too. |
 | 32-bit Arm NEON, little-endian | Yes, every stripe loop | A72 in AArch32, GCC `-O2`: 1 544 against 921 MB/s at 256 B, 2 807 against 1 341 at 4 KiB (2.1×), where the portable loop builds 64-bit additions from 32-bit ones. |
 | Big-endian NEON | No | The kernels read vector lanes as little-endian values; big-endian targets run the portable loop. |
@@ -307,7 +303,7 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
   that folds stripes. In streaming that is each update that folds the buffer: 25 % slower than seed 0 in 256-byte
   pieces, 6 % in 4 KiB pieces.
 - The streaming update works in place; `xxh3_update` copies the 336-byte state in and out once per call. In 64-byte
-  pieces that gives 2.4 GiB/s against 9.3 for an in-place update with the SSE2 kernel, about 4×; from 4 KiB pieces the
+  pieces that gives about 2 600 MB/s against 10 000 for an in-place update with the SSE2 kernel, about 4×; from 4 KiB pieces the
   copy is negligible. The `byte_range` overload folds all its chunks into one state without copying it.
 - The accumulate step is spelled out per lane: as a loop, GCC kept the accumulators in memory. The last stripe of the
   message runs in the same loop as the others.

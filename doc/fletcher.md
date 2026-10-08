@@ -112,92 +112,20 @@ evaluation always runs a byte-by-byte loop with the same result. The DSP kernel 
 aligned address, so the start address hardly matters. Adler-32 uses the same byte kernels. The measurements behind
 each choice are in [design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
 
-## 6. Performance
+## 6. Performance guidelines
 
-### 6.1 x86-64: Core Ultra 7 155H
+Measured figures are in [performance.md](performance.md#fletcher-16--32-and--64).
 
-MB/s (10⁶ bytes per second) at 4 KiB, GCC 16 and Clang 21, one pinned core, the better median of two runs.
-Portable is the library without kernels, SSE2 the default x86-64 flags, AVX2 a build with AVX2 enabled.
-
-| Checksum | GCC portable | GCC SSE2 | GCC AVX2 | Clang portable | Clang AVX2 |
-| --- | --- | --- | --- | --- | --- |
-| Fletcher-16 | 7 373 | 22 955 | 54 620 | 3 183 | 56 748 |
-| Fletcher-32 | 14 419 | 21 918 | 53 037 | 6 436 | 52 933 |
-| Fletcher-64 | 27 485 | | 51 094 | 12 977 | 53 681 |
-
-The AVX2 kernels are 7.4× (Fletcher-16), 3.7× (Fletcher-32) and 1.9× (Fletcher-64) faster than the GCC portable loop.
-Clang's portable loop is 2.1-2.3× slower than GCC's. With `-march=native` (AVX-VNNI), GCC 16, MB/s:
-
-| Checksum | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
-| --- | --- | --- | --- | --- | --- | --- |
-| Fletcher-16 | 4 136 | 11 095 | 32 186 | 55 934 | 78 507 | 76 821 |
-| Fletcher-32 | 5 402 | 9 228 | 20 612 | 40 062 | 50 327 | 51 876 |
-| Fletcher-64 | 5 292 | 11 626 | 19 442 | 37 377 | 49 912 | 56 686 |
-
-At 20 bytes the plain deferred-modulo loop of the Wikipedia article (`-O2 -march=native`, in a separate harness) runs
-5 990 MB/s for Fletcher-32 against 5 630 for the library, 0.94×, which needs the state and its unfinished block on top.
-With Clang 21 both sides it is 0.83× at 20 B and 0.80× at 64 B: Clang compiles that loop faster than GCC (6 370 and
-10 970 MB/s), and the library from 128 B on runs the kernel.
-
-### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
-
-GCC 14.3, `-O2`, AArch64 `-march=armv8-a`, one core. GiB/s at 64 B / 256 B / 1500 B / 4 KiB, start address aligned.
-
-| Checksum | AArch64 portable | AArch64 NEON | AArch32 portable | AArch32 NEON |
-| --- | --- | --- | --- | --- |
-| Fletcher-16 | 0.66 / 0.77 / 0.84 / 0.85 | 1.02 / 2.42 / 4.92 / 6.11 | 0.57 / 0.78 / 0.90 / 0.91 | 0.98 / 2.40 / 3.71 / 4.31 |
-| Fletcher-32 | 1.20 / 1.63 / 1.67 / 1.72 | 1.10 / 2.66 / 4.41 / 4.90 | 0.86 / 1.44 / 1.60 / 1.65 | 0.85 / 2.45 / 4.18 / 4.76 |
-| Fletcher-64 | 1.50 / 2.70 / 3.37 / 3.57 | 1.55 / 2.91 / 4.46 / 5.22 | 0.92 / 1.39 / 1.57 / 1.67 | 0.88 / 2.33 / 4.27 / 5.12 |
-
-At 4 KiB NEON is 4.7× (AArch32) to 7.2× (AArch64, 64 bytes per iteration) faster for Fletcher-16, 2.8-2.9× for
-Fletcher-32, and 1.47× (AArch64) or 3.1× (AArch32) for Fletcher-64, whose 64-bit portable loop is already fast on
-AArch64. Below the thresholds both builds run the portable loop; the differences there come from code layout. At 20
-bytes AArch64 Fletcher-32 runs 732 MB/s with `-mcpu=cortex-a72`, 0.94× the Wikipedia loop (776), and 732 MB/s with
-`-march=armv8-a`, 0.88× (833).
-
-### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
-
-GCC 14.3, `-O2`, code in flash and data in RAM, measured with the cycle counter. Both chips run the same cycles per
-byte, so the figures scale with the clock. Cycles per byte at 4 KiB:
-
-| Checksum | Portable | DSP kernel | Kernel build, start address odd |
-| --- | --- | --- | --- |
-| Fletcher-16 | 5.30 | 2.69 | 2.71 |
-| Fletcher-32 | 2.11 | (portable) | 2.61 |
-| Fletcher-64 | 1.80 | (portable) | 2.30 |
-
-Fletcher-16 on the STM32L4A6, MB/s:
-
-| Input | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Portable | 5.9 | 10.2 | 12.2 | 13.0 | 13.5 | 14.9 | 15.1 |
-| DSP kernel | 5.9 | 12.1 | 17.3 | 20.2 | 22.1 | 28.2 | 29.8 |
-
-The kernel is 2.0× faster at 4 KiB and 1.6× at 256 bytes. On this core the wider sums are cheaper per byte:
-Fletcher-64 at 1.80 cycles per byte is the fastest of the three, and Fletcher-32 and Fletcher-64 are slower from an
-odd address, where their word loads are unaligned.
-
-### 6.4 Cortex-M33: nRF54L15 at 128 MHz
-
-nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
-instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
-64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. Cycles per byte at 4 KiB:
-
-| Checksum | Portable | DSP kernel | Kernel build, start address odd |
-| --- | --- | --- | --- |
-| Fletcher-16 | 4.53 | 2.67 | 2.69 |
-| Fletcher-32 | 2.05 | (portable) | 2.30 |
-| Fletcher-64 | 1.54 | (portable) | 1.79 |
-
-Fletcher-16, MB/s:
-
-| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- | --- |
-| Portable | 13.8 | 21.1 | 26.2 | 28.0 | 28.3 |
-| DSP kernel | 14.2 | 22.1 | 37.5 | 45.9 | 47.9 |
-
-The kernel is 1.7× faster at 4 KiB and 1.4× at 256 bytes. As on the Cortex-M4 it pays from 64 bytes: at 48 and 63
-bytes it would be 4-8 % slower than the portable loop.
+- **Kernels start at a minimum size** of one `fletcher_update` call (section 5): 64 B for Fletcher-16, 128 B for
+  Fletcher-32, 256-384 B for Fletcher-64. Pass data in chunks of at least that size, and preferably a few KiB.
+- **On x86-64, enable AVX2.** The default SSE2 build has no Fletcher-64 kernel, and AVX2 is 2.4× faster than SSE2 for
+  Fletcher-16 and Fletcher-32 at 4 KiB.
+- **On Cortex-M, wider is faster.** Fletcher-64 runs 44 MB/s and Fletcher-32 38 MB/s at 4 KiB on an 80 MHz
+  Cortex-M4, against 30 MB/s for Fletcher-16 with its DSP kernel. If the protocol lets you choose, choose the wider
+  one.
+- **On Cortex-M, align buffers for Fletcher-32 and Fletcher-64:** their word loads are 11-22 % slower from an odd
+  address. Fletcher-16 does not care.
+- **Keep acceleration on with Clang:** its portable loop on x86-64 is 2.1-2.3× slower than GCC's.
 
 ## 7. Limitations
 
@@ -205,9 +133,3 @@ bytes it would be 4-8 % slower than the portable loop.
   CRC where errors must be detected reliably.
 - **Little-endian words only:** a protocol that reads Fletcher-32 or Fletcher-64 blocks big-endian needs its bytes
   swapped first.
-- **No verification helper:** compute the checksum and compare it with the received one.
-- **No RISC-V or big-endian kernels**, and no Fletcher-64 kernel without AVX2 on x86-64.
-- **Untested reduction bound:** on 64-bit targets the portable Fletcher-16 loop reduces after 380 368 695 bytes, a span
-  no test reaches; the Fletcher-32 bound is crossed by a 48 MiB test.
-- Code size: Cortex-M4, GCC 14.3: the out-of-line loops of the three widths take 2 024 B of code at `-O2` and 1 802 B
-  at `-Os`; the inline short paths of the header add to each caller.

@@ -65,6 +65,7 @@ words:
 - crccheck
 - crcs
 - crosscompiling
+- cssnr
 - cstdint
 - csum
 - ctest
