@@ -89,70 +89,20 @@ The kernel is selected at compile time from the compiler flags; there is no run-
 evaluation always runs a byte-by-byte loop with the same result. The measurements behind each choice are in
 [design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
 
-## 6. Performance
+## 6. Performance guidelines
 
-### 6.1 x86-64: Core Ultra 7 155H
+Measured figures are in [performance.md](performance.md#adler-32).
 
-GCC 16, 4 KiB, one pinned core, the better median of two runs: 7 309 MB/s (10⁶ bytes per second) for the portable
-loop, 22 964 MB/s with SSE2 and 58 088 MB/s with the AVX2 kernel, 7.9× faster. With `-march=native` the AVX-VNNI
-kernel runs (MB/s, GCC 16 and Clang 21):
-
-| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
-| --- | --- | --- | --- | --- | --- | --- |
-| GCC | 4 074 | 11 570 | 35 225 | 56 789 | 84 504 | 88 630 |
-| Clang | 3 746 | 11 655 | 36 649 | 57 952 | 85 027 | 89 914 |
-
-In a separate comparison harness, against zlib-ng (develop, its AVX-VNNI kernel, same flags) the library runs 0.98×
-at 20 B, 0.78× at 64 B, 0.91× at 256 B and 1.13-1.17× from 4 KiB; the AVX2 kernel reached 0.71-0.83× there.
-
-### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
-
-GCC 14.3, `-O2`, AArch64 `-march=armv8-a`, one core, start address aligned. GiB/s:
-
-| Build | 64 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- |
-| AArch64 portable | 0.69 | 0.77 | 0.83 | 0.84 |
-| AArch64 NEON | 1.15 | 2.60 | 5.01 | 6.16 |
-| AArch32 portable | 0.66 | 0.77 | 0.85 | 0.87 |
-| AArch32 NEON | 0.95 | 2.42 | 3.75 | 4.30 |
-
-NEON is 5.0-7.3× faster at 4 KiB and 1.4-1.7× at 64 bytes. On AArch64, from 320 bytes the kernel sums 64 bytes per
-iteration: 0.96-0.99× zlib-ng and ISA-L from 1500 B in the comparison harness, where 16 bytes per iteration reached
-0.72-0.79×.
-
-### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
-
-GCC 14.3, `-O2`, code in flash and data in RAM, measured with the cycle counter. At 4 KiB the portable loop takes
-5.29 cycles per byte and the DSP kernel 2.68 (2.70 from an odd address). Both chips run the same cycles per byte, so
-the figures scale with the clock. STM32L4A6, MB/s:
-
-| Input | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Portable | 6.6 | 10.7 | 12.6 | 13.4 | 13.8 | 14.9 | 15.1 |
-| DSP kernel | 6.8 | 12.9 | 18.1 | 20.9 | 22.7 | 28.5 | 29.8 |
-
-The kernel is 2.0× faster at 4 KiB and 1.6× at 256 bytes.
-
-### 6.4 Cortex-M33: nRF54L15 at 128 MHz
-
-nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
-instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
-64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. At 4 KiB the portable loop takes 4.53 cycles per byte
-and the DSP kernel 2.67 (2.68 from an odd address), 1.7× faster. MB/s:
-
-| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- | --- |
-| Portable | 13.8 | 21.0 | 26.1 | 28.0 | 28.3 |
-| DSP kernel | 13.8 | 22.8 | 38.0 | 46.0 | 47.9 |
+- **Kernels start at 64 bytes** of one `adler32_update` call; shorter pieces run the portable loop. Pass data in
+  chunks of at least 64 bytes, and preferably a few KiB.
+- **On x86-64, compile for the CPU.** At 4 KiB the default SSE2 build runs about 23 000 MB/s, AVX2 about 58 000, and
+  AVX-VNNI (`-march=native` on Alder Lake, Meteor Lake and later) about 85 000, 1.13-1.17× zlib-ng.
+- **On AArch64**, the NEON kernel switches to 64 bytes per iteration from 320 B, and
+  from 1500 B reaches 0.96-0.99× of zlib-ng and ISA-L.
+- **On Cortex-M4/M7/M33**, the DSP kernel comes with the usual `-mcpu` flags and is 2× faster than the portable loop
+  at 4 KiB, from any start address.
 
 ## 7. Limitations
 
 - **Weak on short messages:** with few bytes `sum1` stays far below 65521, so most of the 32 bits are unused. Use a CRC
   for short messages where errors must be detected reliably.
-- **No combination** of two checksums (`adler32_combine` in zlib).
-- **No verification helper:** compute the checksum and compare it with the stored one.
-- **No RISC-V or big-endian kernels.**
-- **Untested reduction bound:** on 64-bit targets the portable loop reduces after 380 368 439 bytes, a span no test
-  reaches (the longest test is 600 KiB).
-- Code size: Cortex-M4, GCC 14.3: the out-of-line loop with the DSP kernel takes 820 B of code at `-O2` and 662 B at
-  `-Os`; the inline short paths of the header add to each caller.

@@ -91,74 +91,17 @@ evaluation always runs a byte-by-byte loop with the same result. On 32-bit targe
 lanes do not fit the registers and ran 3× slower than the word loop, so those targets never use them. The measurements
 behind each choice are in [design/acceleration.md](design/acceleration.md#fletcher4).
 
-## 6. Performance
+## 6. Performance guidelines
 
-### 6.1 x86-64: Core Ultra 7 155H
+Measured figures are in [performance.md](performance.md#fletcher4).
 
-MB/s (10⁶ bytes per second), `-O2`, one core, each call timed in a loop over the same buffer. Portable is the library with
-`CHECKSUM_ACCELERATION=OFF` (portable lanes from 256 B), SSE2 the default x86-64 flags, AVX2 `-march=native`.
-
-| Build | 20 B | 64 B | 128 B | 256 B | 512 B | 1500 B | 4 KiB | 1 MiB |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GCC portable | 4 269 | 8 114 | 9 378 | 9 725 | 13 357 | 15 640 | 16 917 | 17 497 |
-| GCC SSE2 | 4 402 | 8 233 | 9 756 | 13 545 | 16 092 | 17 811 | 19 318 | 19 703 |
-| GCC AVX2 | 4 715 | 9 440 | 12 863 | 18 875 | 21 258 | 26 384 | 29 258 | 30 817 |
-| Clang portable | 3 665 | 8 977 | 10 443 | 5 591 | 6 096 | 7 818 | 8 424 | 8 757 |
-| Clang SSE2 | 4 293 | 8 886 | 10 437 | 13 512 | 16 259 | 17 679 | 19 246 | 19 416 |
-| Clang AVX2 | 3 716 | 9 120 | 11 612 | 16 941 | 22 186 | 26 171 | 28 620 | 29 653 |
-
-Below the thresholds every build runs the word loop; differences of up to 10 % there come from code placement, which
-moves with the link order. AVX2 is 1.5× the SSE2 kernel at 4 KiB. With GCC the portable lanes are within 15 % of the
-SSE2 kernel from 1500 bytes; with Clang they reach about 45 % of it, which matters only for a build with `CHECKSUM_ACCELERATION=OFF`.
-
-Against the OpenZFS kernels (`fletcher_4_native` of OpenZFS f79c81d with its superscalar4, sse2, ssse3 and avx2 kernels,
-all built with GCC `-O2 -march=native`), the AVX2 build runs at 0.93× the fastest at 20 bytes, 1.09× at 256 bytes and
-1.0× from 1500 bytes.
-
-### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
-
-GCC 14.3 and Clang 21, `-O2 -mcpu=cortex-a72`, one core. MB/s:
-
-| Build | 20 B | 64 B | 128 B | 256 B | 512 B | 1500 B | 4 KiB | 1 MiB |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| AArch64 GCC portable | 803 | 1 343 | 1 526 | 2 228 | 2 432 | 2 797 | 3 026 | 2 766 |
-| AArch64 GCC NEON | 803 | 1 337 | 1 531 | 2 209 | 2 450 | 2 827 | 3 024 | 2 757 |
-| AArch64 Clang portable | 756 | 1 462 | 1 813 | 1 500 | 1 494 | 1 619 | 1 672 | 1 617 |
-| AArch64 Clang NEON | 761 | 1 465 | 1 809 | 2 101 | 2 443 | 2 740 | 2 889 | 2 638 |
-| AArch32 GCC word loop | 484 | 778 | 839 | 931 | 1 001 | 1 053 | 1 069 | 1 027 |
-| AArch32 GCC NEON | 375 | 678 | 769 | 1 126 | 1 504 | 2 046 | 2 384 | 2 408 |
-| AArch32 Clang NEON | 325 | 622 | 785 | 1 354 | 1 788 | 2 460 | 2 862 | 2 815 |
-
-On AArch64 with GCC the portable lanes are as fast as NEON; with Clang NEON is 1.4× them at 256 bytes and 1.7× at
-4 KiB. On AArch32 NEON is 2.2× the word loop at 4 KiB with GCC. Against OpenZFS (GCC, its superscalar4 and aarch64_neon
-kernels) the AArch64 GCC build runs at 0.92× at 20 bytes, 1.18× at 256 bytes and 1.0× from 4 KiB.
-
-### 6.3 Cortex-M4
-
-Cortex-M cores run the word loop, two words per iteration. nRF52840 at 64 MHz, GCC 14.3 `-O2`, code in flash aligned to
-16 bytes, measured with the cycle counter (best of 5 calls), MB/s:
-
-| Start | 20 B | 64 B | 256 B | 1500 B | 4 KiB | Cycles per byte at 4 KiB |
-| --- | --- | --- | --- | --- | --- | --- |
-| Aligned | 5.5 | 10.9 | 16.8 | 19.8 | 20.2 | 3.17 |
-| Odd address | 5.2 | 10.1 | 14.9 | 17.1 | 17.4 | 3.67 |
-
-With one word per iteration the loop took 3.54 cycles per byte (4.04 from an odd address): two words are 1.12× faster
-at 4 KiB, 1.08× at 256 bytes. The figures scale with the clock: the STM32L4A6 at 80 MHz runs the same cycles per byte.
-
-### 6.4 Cortex-M33: nRF54L15 at 128 MHz
-
-nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
-instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
-64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. MB/s:
-
-| Start | 20 B | 64 B | 256 B | 1500 B | 4 KiB | Cycles per byte at 4 KiB |
-| --- | --- | --- | --- | --- | --- | --- |
-| Aligned | 12.8 | 25.4 | 38.5 | 45.0 | 45.9 | 2.79 |
-| Odd address | 12.5 | 24.2 | 35.8 | 41.3 | 42.2 | 3.04 |
-
-Two words per iteration halve the loop overhead around the carry chains of the 64-bit sums: 1.36× at 4 KiB against
-one word (3.78 cycles per byte); four words per iteration were slower than two.
+- **Lanes start at a minimum size** of one `fletcher4_update` call (section 5): 128 B with AVX2, 192 B with SSE2 or
+  NEON, 256 B for the portable lanes. ZFS blocks are larger, so they always run the lanes; with AVX2 a 4 KiB block
+  hashes at about 29 000 MB/s, on par with OpenZFS.
+- **Keep acceleration on, especially with Clang:** its portable lanes reach only about 45 % of the SSE2 kernel on
+  x86-64, and 60 % of NEON on AArch64. With GCC the portable lanes are close to the kernels.
+- **On 32-bit targets without NEON**, including Cortex-M, the word loop runs about 20 MB/s at 64 MHz on a Cortex-M4.
+  Aligned buffers are 16 % faster than odd start addresses.
 
 ## 7. Limitations
 
@@ -168,10 +111,3 @@ one word (3.78 cycles per byte); four words per iteration were slower than two.
   first.
 - **No continuation from a stored checksum:** unlike Adler-32 and Fletcher, continuing needs the state, since a
   checksum does not record an unfinished word.
-- **No verification helper:** compute the checksum and compare it with the stored one.
-- **No RISC-V or big-endian kernels.**
-- **Inputs of 4 GiB and more are not tested:** their correctness rests on the lane combination, which is exact modulo
-  2^64 for any word count. Each preset tests only its own path against the reference vectors; no build compares a
-  kernel with the portable lanes directly.
-- Code size: Cortex-M4, GCC 14.3: the out-of-line word loop and its callers take 616 B of code at `-O2` and 654 B at
-  `-Os`; the inline short paths of the header add to each caller.

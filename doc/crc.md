@@ -178,7 +178,7 @@ an MCU stack.
 Choosing:
 
 - **Flash- or RAM-constrained MCU:** `crc_lut_none` or `crc_lut_nibble`.
-- **MCU with spare memory:** `crc_lut_byte`, or `crc_lut_sliced` for the best speed (section 8.3). A copy of the
+- **MCU with spare memory:** `crc_lut_byte`, or `crc_lut_sliced` for the best speed (section 8). A copy of the
   engine in RAM is about 1.5× faster than one in flash on a Cortex-M4.
 - **Desktop and server CPUs:** `crc_lut_sliced`. With acceleration it is the fastest strategy everywhere. Without it,
   `crc_lut_braided` is about twice as fast from 128 B on, on out-of-order cores.
@@ -229,121 +229,34 @@ Notes:
 
 The design and the measurements behind each kernel are in [design/acceleration.md](design/acceleration.md).
 
-## 8. Performance
+## 8. Performance guidelines
 
-Throughput of `compute` on a buffer already in cache, in MB/s (10^6 bytes per second) on every platform. `-O2`,
-one pinned core; the benchmarks are in `tests/benchmarks` (presets `native-gcc-bench`, `native-clang-bench` and
-their `-portable` variants). Portable = built with `CHECKSUM_ACCELERATION=OFF` or for a CPU without the
-instructions of section 7.
+Measured figures for every strategy and platform are in [performance.md](performance.md#crc).
 
-### 8.1 x86-64 (Intel Core Ultra 7 155H)
+- **Choose the strategy by memory first** (section 6). Each step from `crc_lut_none` to `crc_lut_sliced` is 1.5× to
+  several times faster than the one below it, and costs more table memory.
+- **Compile for the target CPU.** `crc_lut_sliced` and `crc_lut_braided` use the instructions of section 7 only if
+  the compiler flags enable them. The kernels take over at these sizes:
+  - carry-less folding (PCLMULQDQ, PMULL, Zbc): every parameter set, from 16 B;
+  - VPCLMULQDQ with AVX2: 256 B per iteration, from 256 B;
+  - the CRC instructions of Arm (`+crc`): CRC-32 and CRC-32C;
+  - SSE4.2 `crc32`: CRC-32C, folding from 25 B when PCLMULQDQ is also enabled.
 
-GCC 16. Accelerated = `-march=native` (PCLMULQDQ, VPCLMULQDQ, AVX2, SSE4.2). MB/s at 16 B / 256 B / 4 KiB / 1 MiB;
-`none`, `nibble` and `byte` at 4 KiB, where they have reached their steady speed.
-
-| CRC | none | nibble | byte | sliced, portable | braided, portable | sliced, accelerated |
-| --- | --- | --- | --- | --- | --- | --- |
-| CRC-8/SMBUS | 180 | 252 | 797 | 3814 / 3540 / 3091 / 3019 | 3705 / 4940 / 5976 / 6045 | 10564 / 49017 / 71769 / 74200 |
-| CRC-16/XMODEM | 176 | 245 | 781 | 4099 / 3012 / 2579 / 2589 | 3664 / 4703 / 5884 / 6009 | 10573 / 48774 / 72463 / 71670 |
-| CRC-32/ISO-HDLC | 137 | 289 | 673 | 4663 / 3657 / 2923 / 2896 | 4332 / 5345 / 6685 / 6556 | 9754 / 52967 / 74320 / 75889 |
-| CRC-64/XZ | 137 | 287 | 661 | 4758 / 2761 / 2501 / 2424 | 4456 / 5192 / 6710 / 6485 | 10291 / 53467 / 73653 / 75693 |
-
-The accelerated `crc_lut_braided` is within 6 % of the accelerated `crc_lut_sliced`. Clang gives the same picture.
-Against Intel ISA-L (hand-written AVX2 VPCLMULQDQ assembly), the accelerated CRC-32, CRC-32C and CRC-64/XZ run at
-0.89-1.45× its speed from 20 B to 1 MiB with GCC 16, and 0.95-1.01× at 256 B.
-
-### 8.2 Cortex-A72 (Raspberry Pi 4, 1.5 GHz)
-
-GCC 14, `-march=armv8-a+crc`: this core has the CRC extension but no PMULL, so only CRC-32 and CRC-32C are
-accelerated. MB/s at 16 B / 64 B / 4 KiB.
-
-| CRC, strategy | accelerated | portable |
-| --- | --- | --- |
-| CRC-32/ISO-HDLC, sliced | 1256 / 3812 / 11167 | 569 / 634 / 655 |
-| CRC-32/ISO-HDLC, braided | 1138 / 3286 / 11060 | 494 / 623 / 848 |
-| CRC-64/XZ, sliced / braided | | 537 / 623 / 655, 526 / 623 / 827 |
-| CRC-16/KERMIT, sliced / braided | | 472 / 537 / 569, 451 / 526 / 698 |
-| any width, byte | | 215 / 215 / 215 |
-
-Against zlib-ng and Intel ISA-L built with the same flags (`-O2 -mcpu=cortex-a72+crc`), CRC-32 runs at 1.20× the
-faster of the two at 20 B, 0.94× at 256 B and 0.97-1.00× from 4 KiB; CRC-32C at 1.00-1.13× of ISA-L and Google
-crc32c. Without PMULL, CRC-64/XZ runs the sliced loop at 1.9-4.5× ISA-L's byte table. At 1 MiB every implementation
-drops to about 6 000 MB/s against about 10 900 at 4 KiB, because the input no longer fits in the cache.
-
-### 8.3 Cortex-M4 (nRF52840, 64 MHz)
-
-GCC 14 `-O2`, instruction cache on, MB/s at 1 KiB with the engine in flash / in RAM. ARMv7E-M has no CRC or
-carry-less multiplication instructions, so every build is portable.
-
-| CRC | none | nibble | byte | sliced | braided |
-| --- | --- | --- | --- | --- | --- |
-| CRC-32/ISO-HDLC | 1.14 | 2.95 / 3.75 | 4.92 / 6.36 | 7.77 / 12.3 | 7.05 / 10.5 |
-| CRC-32/BZIP2 | 1.33 | 3.22 / 4.24 | 5.31 / 7.06 | 7.42 / 11.2 | 6.96 / 10.6 |
-| CRC-16/XMODEM | 1.00 | 3.10 / 3.75 | 4.92 / 6.35 | 7.31 / 10.9 | 7.07 / 10.8 |
-| CRC-8/SMBUS | 1.00 | 3.42 / 3.54 | 5.86 / 9.04 | 8.00 / 12.6 | 6.76 / 10.5 |
-
-`crc_lut_sliced` is the fastest strategy on this core; `crc_lut_braided` is slower and twice the size. Code
-placement in flash changes the table loops by several percent.
-
-Footprint (`-ffunction-sections -fdata-sections --gc-sections`, a program computing one CRC with `crc_engine_for`):
-code added over an empty program / engine in `.rodata`, bytes.
-
-| CRC | none | nibble | byte | sliced | braided |
-| --- | --- | --- | --- | --- | --- |
-| CRC-32/ISO-HDLC | 100 / 32 | 104 / 96 | 80 / 1056 | 252 / 8400 | 1116 / 16592 |
-| CRC-16/XMODEM | 104 / 16 | 104 / 48 | 76 / 528 | 252 / 4288 | 1212 / 8384 |
-| CRC-8/SMBUS | 101 / 11 | 101 / 27 | 97 / 267 | 252 / 2240 | 1068 / 4288 |
-| CRC-64/XZ | 116 / 64 | 140 / 192 | 100 / 2112 | 380 / 16608 | 1868 / 32992 |
-
-### 8.4 Cortex-M4 with a CRC peripheral (STM32L4A6, 80 MHz)
-
-The STM32 CRC unit driven by a custom strategy like `examples/crc/hardware_strategy.cpp` (8-bit writes), next to
-the built-in strategies with the engine in RAM. MB/s at 16 B / 1 KiB.
-
-| CRC | CRC unit | `crc_lut_sliced` | `crc_lut_byte` |
-| --- | --- | --- | --- |
-| CRC-32/MPEG-2 | 9.7 / 15.8 | 6.5 / 14.0 | 5.9 / 8.8 |
-| CRC-32/ISO-HDLC | 3.3 / 15.1 | 7.1 / 15.3 | 5.7 / 8.0 |
-| CRC-16/XMODEM | 9.7 / 15.8 | 6.3 / 13.7 | 5.4 / 7.9 |
-| CRC-8/SMBUS | 9.7 / 15.8 | 6.8 / 15.7 | 6.7 / 11.3 |
-
-Fed byte by byte, the peripheral is about as fast as `crc_lut_sliced` in RAM on long messages, but needs no table.
-Every call configures the unit, and for a reflected CRC the example reverses the state bitwise in software, which
-dominates short inputs (CRC-32/ISO-HDLC at 16 B).
-
-### 8.5 Cortex-M33 (nRF54L15, 128 MHz)
-
-GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the instruction cache on. MB/s at 16 B / 1 KiB with the engine in
-RRAM (`crc_engine_for`, read-only data) and copied to RAM.
-
-| CRC | none | nibble | byte | sliced | braided |
-| --- | --- | --- | --- | --- | --- |
-| CRC-32/ISO-HDLC, RRAM | 2.3 / 2.4 | 6.8 / 7.5 | 11.1 / 12.8 | 13.2 / 18.5 | 13.6 / 13.1 |
-| CRC-32/ISO-HDLC, RAM | 2.3 / 2.4 | 6.6 / 7.5 | 10.5 / 12.8 | 14.2 / 25.9 | 14.0 / 23.4 |
-| CRC-32/BZIP2, RAM | 2.3 / 2.4 | 6.8 / 8.0 | 10.1 / 12.7 | 13.3 / 25.2 | 13.3 / 23.7 |
-| CRC-16/XMODEM, RAM | 2.0 / 2.1 | 6.1 / 7.1 | 9.1 / 11.6 | 11.9 / 25.1 | 11.9 / 23.2 |
-| CRC-8/SMBUS, RAM | 2.2 / 2.4 | 6.1 / 7.1 | 14.5 / 21.2 | 13.7 / 28.8 | 13.6 / 24.0 |
-
-The instruction cache does not hold data, so table lookups in RRAM wait for it: in RAM `crc_lut_sliced` is 1.2-1.4×
-and `crc_lut_braided` 1.2-1.9× faster at 1 KiB. Per cycle the sliced loop in RAM matches the nRF52840 (4.9 cycles per
-byte for CRC-32 against 5.2). The chip has no general-purpose CRC unit: the CRC logic of its radio and NFC peripherals
-covers only their own frames.
+  On x86-64 CRC-32 then runs at about 75 000 MB/s from 4 KiB, against about 3 000 MB/s for the portable sliced loop.
+- **Without acceleration on a desktop CPU**, `crc_lut_braided` is about twice as fast as `crc_lut_sliced` from
+  128 B on. On in-order cores such as Cortex-M it is slower and twice the size.
+- **On a microcontroller, keep the engine in RAM** if it fits. Table lookups from flash wait for the memory: a copy
+  of the engine in RAM is about 1.5× faster on a Cortex-M4, and `crc_lut_sliced` 1.2-1.4× faster on the nRF54L15,
+  whose instruction cache holds no data. Engines take kilobytes, so use a static object, not the stack.
+- **A CRC peripheral** driven by a custom strategy (section 6.1) runs as fast as `crc_lut_sliced` in RAM on long
+  messages on an STM32L4A6, with no table. Its per-call setup, and the software bit reversal of a reflected CRC,
+  make it slower on short messages.
+- **Compile-time CRCs of large inputs are slow:** constant evaluation runs the byte-table loop at best.
 
 ## 9. Limitations
 
-- **Not thread-safe.** Objects are unsynchronized values. A `const` engine can be shared between threads, since
-  computations only read it; an accumulator cannot.
 - **Widths 1..64** only, and only polynomials with an x^0 term.
+- **Initial values are direct**: the register content before the first message bit, never the "augmented" form.
 - **No run-time CPU detection.** Acceleration is fixed by the compiler flags of the library build; a binary built
   with `-march=native` does not run on older CPUs.
-- **No CRC combination** (`crc32_combine`), no residue or frame-verification helpers (compare `compute` of the
-  frame with the received CRC), no writing CRCs into buffers.
-- **Initial values are direct**: the register content before the first message bit, never the "augmented" form.
-- **Polynomials** are written in Koopman notation or converted from the normal form; there is no reversed or
-  reciprocal notation, no text parser and no formatting.
-- **Constant evaluation** of large inputs is slow: it runs the byte-table loop at best. Tables of every built-in
-  strategy fit the default `constexpr` limits of GCC and Clang.
-- **Large engines** (`crc_lut_sliced`, `crc_lut_braided`) take kilobytes; keep them in static storage.
-- Big-endian AArch64 has no PMULL folding. The RISC-V Zbc kernel and the AArch64 PMULL kernel are tested in QEMU
-  but not measured on hardware.
-- No C API.
+- **Not thread-safe.** A `const` engine can be shared between threads; an accumulator cannot.

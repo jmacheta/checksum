@@ -82,49 +82,19 @@ MurmurHash3_x64_128 needs 64-bit multiplications, which 32-bit targets build fro
 targets MurmurHash3_x86_32 is the faster of the two; on 64-bit targets MurmurHash3_x64_128 is at least as fast at 20
 bytes and faster from 64 bytes.
 
-## 5. Performance
+## 5. Performance guidelines
 
-### 5.1 x86-64: Core Ultra 7 155H
+Measured figures are in [performance.md](performance.md#murmurhash3).
 
-GCC, `-O2 -march=native`: MurmurHash3_x86_32 runs 5 850 MB/s at 20 bytes and 4 499 at 1 MiB, MurmurHash3_x64_128
-6 140 and 10 006. Both are at least as fast as SMHasher's MurmurHash3.cpp with the same flags.
-
-### 5.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
-
-GCC 14.3, `-O2`, one core. MB/s (10⁶ bytes per second):
-
-| Hash, mode | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
-| --- | --- | --- | --- | --- | --- | --- |
-| x86_32, AArch64 | 720 | 981 | 1 084 | 1 169 | 1 182 | 1 143 |
-| x64_128, AArch64 | 646 | 1 081 | 1 430 | 1 634 | 1 672 | 1 619 |
-| x86_32, AArch32 | 618 | 902 | 1 066 | 1 167 | 1 180 | 1 098 |
-| x64_128, AArch32 | 278 | 408 | 536 | 595 | 604 | 599 |
-
-On AArch64 MurmurHash3_x86_32 runs 0.95 to 1.0× as fast as SMHasher's MurmurHash3.cpp at every size, with `-O2` or
-`-O2 -mcpu=cortex-a72`. In AArch32 it is 0.71× at 20 B, 0.81× at 64 B and 0.97× from 1500 B.
-
-### 5.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
-
-GCC 14.3, `-O2`, code in flash aligned to 16 bytes and data in RAM, measured with the cycle counter (best of 5 calls)
-on the nRF52840. At 4 KiB MurmurHash3_x86_32 takes 2.52 cycles per byte (31.7 MB/s at 80 MHz; 3.02 with one block
-per iteration, 1.20× slower) and MurmurHash3_x64_128 4.44 (18.0 MB/s); at 20 bytes they reach 10.9 and 5.5 MB/s at
-80 MHz. Both chips run the same cycles per byte, so the figures scale with the clock. Without the alignment, code
-placement in flash moves these loops by up to 17 %.
-
-### 5.4 Cortex-M33: nRF54L15 at 128 MHz
-
-nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
-instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
-64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. At 4 KiB MurmurHash3_x86_32 takes 2.27 cycles per byte
-(56.4 MB/s; 3.77 with one block per iteration) and MurmurHash3_x64_128 4.30 (29.7 MB/s); at 20 bytes they reach 19.4
-and 10.2 MB/s. Two x64_128 blocks per iteration were 16 % slower: their 64-bit values do not fit the registers.
+- **Pick the variant for the CPU:** MurmurHash3_x64_128 on 64-bit CPUs, where it is at least as fast at 20 bytes and
+  faster from 64 bytes; MurmurHash3_x86_32 on 32-bit ones, where x64_128 builds its 64-bit multiplications from 32-bit
+  ones.
+- **For new designs, prefer xxHash** ([xxhash.md](xxhash.md)) unless you need MurmurHash3 values: XXH3 is about
+  5× faster on x86-64 at 1 MiB, and XXH32 1.6× faster than MurmurHash3_x86_32 on a Cortex-M4.
 
 ## 6. Limitations
 
 - **Not cryptographic:** MurmurHash3 does not resist inputs crafted to collide, even with a secret seed. Do not use it
   for message authentication or to protect hash tables from hostile keys.
-- **Two variants only:** MurmurHash3_x86_128 is not provided.
 - **Not an error check:** unlike a CRC, it guarantees the detection of no class of errors, burst errors included.
-- No CPU acceleration (section 4).
-- Code size: Cortex-M4, GCC 14.3: the block loops of both variants and the one-shot x86_32 function take 900 B of code
-  at `-O2` and 748 B at `-Os`; the inline short paths of the header add to each caller.
+- **Two variants only:** MurmurHash3_x86_128 is not provided.

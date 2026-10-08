@@ -96,116 +96,21 @@ Cortex-M3/M4/M7/M33 builds get their kernel from their usual `-march` or `-mcpu`
 byte-by-byte loop with the same result. Which other architectures are worth a kernel is discussed in
 [design/acceleration.md](design/acceleration.md).
 
-## 6. Performance
+## 6. Performance guidelines
 
-All figures are in MB/s (10⁶ bytes per second) and are medians of 5 runs of `checksum_bench_internet` on one core.
+Measured figures are in [performance.md](performance.md#internet-checksum).
 
-### 6.1 x86-64: Core Ultra 7 155H, `-O2`
-
-AVX2 is with `-march=native`; portable is with `CHECKSUM_ACCELERATION=OFF` and default flags.
-
-| Input | GCC 16 portable | GCC 16 AVX2 | Clang 21 portable | Clang 21 AVX2 |
-| --- | --- | --- | --- | --- |
-| 20 B (IPv4 header) | 8 198 | 8 193 | 7 564 | 7 573 |
-| 64 B | 25 213 | 24 161 | 24 291 | 23 353 |
-| 256 B | 46 748 | 46 352 | 45 065 | 45 027 |
-| 1500 B (Ethernet payload) | 53 538 | 74 313 | 52 868 | 81 358 |
-| 4 KiB | 55 492 | 82 858 | 56 057 | 95 187 |
-| 1 MiB | 59 974 | 71 025 | 60 008 | 88 316 |
-
-Below 512 bytes both builds run the portable loop; the differences come from `-march=native` and code layout. From
-1500 bytes the AVX2 kernel is 1.4-1.7× faster up to 4 KiB, and 1.2× (GCC) or 1.5× (Clang) at 1 MiB.
-
-Against Linux v7.3-rc5 `csum_partial` and DPDK `rte_raw_cksum`, built with the same GCC 16 `-O2 -march=native` and
-called the same way, this build runs at 0.97× the faster of the two at 256 B, 0.98× at 64 B, 1.14× at 20 B and
-1.35-1.76× from 1500 B.
-
-### 6.2 Cortex-A72: Raspberry Pi 4, 1.5 GHz
-
-GCC 14.3, `-O2`, static binaries on one core. Portable is with `CHECKSUM_ACCELERATION=OFF`. AArch64 is
-`-march=armv8-a`; in 32-bit mode, NEON is `-march=armv8-a+crc -mfpu=neon-fp-armv8`, and `ldm` is `-mfpu=vfpv3-d16`
-(no NEON).
-
-| Input | AArch64 portable | AArch64 NEON | AArch32 portable | AArch32 NEON | AArch32 `ldm` |
-| --- | --- | --- | --- | --- | --- |
-| 20 B | 1 190 | 1 144 | 899 | 842 | 837 |
-| 64 B | 2 974 | 2 758 | 1 779 | 1 730 | 1 730 |
-| 256 B | 5 682 | 5 437 | 2 819 | 4 426 | 3 536 |
-| 1500 B | 7 288 | 11 204 | 3 186 | 9 409 | 4 838 |
-| 4 KiB | 7 527 | 13 620 | 3 309 | 11 777 | 5 413 |
-| 1 MiB | 5 454 | 6 975 | 3 032 | 6 777 | 4 679 |
-
-The 64-bit portable loop is already fast, so the NEON kernel starts at 512 bytes and is 1.5-1.8× faster at
-1500 B-4 KiB (1.28× at 1 MiB). In 32-bit mode the kernels start at 192 bytes: NEON is 3.6× and `ldm` 1.6× faster at
-4 KiB. Below the thresholds every build runs the portable loop, and the differences there come from code layout.
-
-In the comparison harness, whose figures are lower than this table's, AArch64 takes 957 MB/s at 20 B, 1.10× Linux
-v7.3-rc5 `do_csum`, which reads whole 8-byte words and masks off the bytes past the end.
-
-### 6.3 Cortex-M4: nRF52840 at 64 MHz, STM32L4A6 at 80 MHz
-
-GCC 14.3, `-O2`, code in flash and data in RAM; the cycle counter gives the best of 5 calls. Offset is the start
-address modulo 4: 2 is typical for an IP header behind a 14-byte Ethernet header.
-
-| Input | nRF52840 portable | nRF52840 `ldm` | STM32L4A6 portable | STM32L4A6 `ldm` |
-| --- | --- | --- | --- | --- |
-| 20 B | 10.8 | 10.5 | 13.4 | 13.1 |
-| 64 B | 23.3 | 22.6 | 29.1 | 28.3 |
-| 256 B | 39.4 | 52.0 | 49.2 | 65.0 |
-| 1500 B | 48.9 | 82.6 | 61.1 | 103.4 |
-| 4 KiB | 50.3 | 92.6 | 62.8 | 115.7 |
-| 1500 B, offset 2 | 41.0 | 81.1 | 51.3 | 101.9 |
-| 4 KiB, offset 1 | 36.1 | 90.2 | 45.1 | 112.8 |
-
-Per byte at 4 KiB, the kernel takes 0.69 cycles against 1.27 for the portable loop: 1.8× faster, 1.3× at 256 bytes,
-and up to 2.5× from odd or 2-modulo-4 addresses, where the portable loop's unaligned loads cost more. Both chips run the
-same cycles per byte, so the figures scale with the clock. Below 192 bytes both builds run the portable loop: 191 bytes
-take 346 cycles against 273 for the kernel at 192. The kernel breaks even at 120-160 bytes, depending on the start
-address, so the threshold could move lower.
-
-### 6.4 Cortex-M33: nRF54L15 at 128 MHz
-
-nRF54L15 (Cortex-M33 with DSP and FPU) at 128 MHz, GCC 14.3 `-O2 -mcpu=cortex-m33`, code in RRAM with the 8 KiB
-instruction cache on, data in RAM, measured with the cycle counter (best of 5 calls). The cycles per byte are the same at
-64 MHz; with the instruction cache off, fetching code from RRAM makes every loop 3-4× slower. MB/s:
-
-| Input | Portable | `ldm` |
-| --- | --- | --- |
-| 20 B | 26.4 | 27.2 |
-| 64 B | 57.7 | 58.1 |
-| 256 B | 101.8 | 118.7 |
-| 1500 B | 129.7 | 184.3 |
-| 4 KiB | 133.7 | 205.1 |
-| 1500 B, offset 2 | 103.5 | 181.6 |
-| 4 KiB, offset 2 | 106.0 | 201.6 |
-
-At 4 KiB the kernel takes 0.62 cycles per byte against 0.96 for the portable loop, 1.55× faster. From an aligned
-address it breaks even at about 96 bytes, but at 64 bytes from an odd or 2-modulo-4 address it is 30 % slower than
-the portable loop, so the 192-byte threshold stays.
-
-### 6.5 Code size
-
-`sum_loop` and its helpers, the whole run-time code, GCC with `-ffunction-sections`. A kernel build holds the portable
-loop twice: once for short inputs, once after the kernel.
-
-| Target | Portable | With kernel |
-| --- | --- | --- |
-| Cortex-M4, `-Os` | 284 B | 920 B |
-| Cortex-M4, `-O2` | 356 B | 1 104 B |
-| x86-64, `-O2` (AVX2 with `-mavx2`) | 385 B | 985 B |
-| AArch64, `-O2` | 484 B | 1 076 B |
-| RISC-V RV64, `-O2` (V with `-march=rv64gcv`) | 1 620 B | 1 402 B |
-
-RV64 without fast unaligned access loads each word byte by byte, which makes its unrolled portable loop large.
-
-RISC-V has not been measured on hardware. The preset tests the vector kernel at QEMU's default vector length of 128
-bits; 256-1024 bits were tested by hand, and 64 bits (Zve64x) only by reasoning, since QEMU 10.2 user mode crashes there.
+- **Kernels start at a minimum size** (section 5): 512 B on x86-64 and AArch64, 192 B on 32-bit Arm, 64 B on RISC-V.
+  Packet headers are shorter and always run the portable loop, which is already fast: about 8 000 MB/s for a 20-byte
+  IPv4 header on x86-64.
+- **On x86-64, enable AVX2** (`-mavx2` or a `-march` that includes it): from 1500 B it makes the checksum 1.4-1.7×
+  faster. AArch64 and Cortex-M3/M4/M7/M33 get their kernel from their usual flags.
+- **On Cortex-M, the start address matters for the portable loop only.** It is up to 2.5× slower than the kernel from
+  an odd or 2-modulo-4 address, typical for an IP header behind a 14-byte Ethernet header. The kernel runs at the
+  same speed from any address.
+- **Flash budget:** a kernel adds 590-750 bytes of code on Arm and x86-64. `CHECKSUM_ACCELERATION=OFF` keeps the
+  portable loop alone.
 
 ## 7. Limitations
 
-- **No in-place update helper:** RFC 1624 updates a checksum after one 16-bit-aligned field changes. The public API
-  already does it: continue from the old checksum with the bitwise complement of the old field, then with the new
-  field, as `examples/internet/ttl_decrement.cpp` does.
 - **UDP zero:** the UDP rule of sending 0xFFFF instead of a computed 0 is protocol logic and stays in the caller.
-- **No verification helper:** to verify a packet, compute over it, checksum included, and compare the result with 0.
-- **Code size:** a build with a kernel adds 590-750 bytes on Arm and x86-64; `CHECKSUM_ACCELERATION=OFF` keeps the portable loop alone.
