@@ -11,6 +11,10 @@
 #include <limits>
 #include <span>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 namespace checksum::internet_detail {
 
 namespace {
@@ -24,14 +28,16 @@ static_assert(std::endian::native == std::endian::little || std::endian::native 
 inline constexpr std::size_t word_size = sizeof(word);
 
 // GCC and Clang turn __builtin_addcll into an adc chain on x86-64; GCC 14 on Arm materializes every carry instead.
-#if defined(__x86_64__) && defined(__has_builtin)
+#if defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
+#define CHECKSUM_USE_ADDC_CHAIN 1
+#elif defined(__x86_64__) && defined(__has_builtin)
 #if __has_builtin(__builtin_addcll)
-inline constexpr bool carry_flag_chain = true;
+#define CHECKSUM_USE_ADDC_CHAIN 1
 #else
-inline constexpr bool carry_flag_chain = false;
+#define CHECKSUM_USE_ADDC_CHAIN 0
 #endif
 #else
-inline constexpr bool carry_flag_chain = false;
+#define CHECKSUM_USE_ADDC_CHAIN 0
 #endif
 
 template <class Integer> Integer load(std::byte const *data) noexcept {
@@ -56,32 +62,59 @@ template <std::size_t Count> [[gnu::always_inline]] inline void add_words(word &
 // The sum in native byte order to big-endian order.
 std::uint16_t to_big_endian(std::uint16_t sum) noexcept;
 
+inline word add_cll(word lhs, word rhs, unsigned char carry_in, unsigned char &carry_out) noexcept {
+#if defined(_MSC_VER) && defined(_M_X64)
+  unsigned __int64 result;
+  carry_out = _addcarry_u64(carry_in, lhs, rhs, &result);
+  return static_cast<word>(result);
+#elif defined(_MSC_VER) && defined(_M_IX86)
+  unsigned int result;
+  carry_out = _addcarry_u32(carry_in, lhs, rhs, &result);
+  return static_cast<word>(result);
+#elif CHECKSUM_USE_ADDC_CHAIN
+  unsigned long long carry = 0;
+  auto const result = __builtin_addcll(static_cast<unsigned long long>(lhs), static_cast<unsigned long long>(rhs), carry_in, &carry);
+  carry_out = static_cast<unsigned char>(carry);
+  return static_cast<word>(result);
+#else
+  word const partial = lhs + rhs;
+  word const result = partial + static_cast<word>(carry_in);
+  carry_out = static_cast<unsigned char>((partial < lhs) || (result < partial));
+  return result;
+#endif
+}
+
 void add_with_carry(word &sum, word &carries, word value) noexcept {
-  if constexpr(carry_flag_chain) {
-    unsigned long long carry = 0;
-    sum = __builtin_addcll(sum, value, 0, &carry);
-    sum += carry;
-  } else {
-    sum += value;
-    carries += sum < value ? 1U : 0U;
-  }
+  unsigned char carry = 0;
+  sum = add_cll(sum, value, 0, carry);
+#if CHECKSUM_USE_ADDC_CHAIN
+  sum += carry;
+#else
+  carries += carry;
+#endif
 }
 
 template <std::size_t Count> [[gnu::always_inline]] inline void add_words(word &sum, word &carries, std::byte const *data) noexcept {
-  if constexpr(carry_flag_chain) {
-    // The carry is added back at once: a chain that starts without one leaves a sum below 2^64 - 1 if it carries out.
-    unsigned long long carry = 0;
+#if CHECKSUM_USE_ADDC_CHAIN
+  // The carry is added back at once: a chain that starts without one leaves the sum below its maximum if it carries out.
+  unsigned char carry_in = 0;
+  unsigned char carry_out = 0;
+#if defined(__GNUC__) && !defined(_MSC_VER)
 #pragma GCC unroll 8
-    for(std::size_t index = 0; index < Count; ++index) {
-      sum = __builtin_addcll(sum, load<word>(data + (index * word_size)), carry, &carry);
-    }
-    sum += carry;
-  } else {
-#pragma GCC unroll 8
-    for(std::size_t index = 0; index < Count; ++index) {
-      add_with_carry(sum, carries, load<word>(data + (index * word_size)));
-    }
+#endif
+  for(std::size_t index = 0; index < Count; ++index) {
+    sum = add_cll(sum, load<word>(data + (index * word_size)), carry_in, carry_out);
+    carry_in = carry_out;
   }
+  sum += carry_in;
+#else
+#if defined(__GNUC__) && !defined(_MSC_VER)
+#pragma GCC unroll 8
+#endif
+  for(std::size_t index = 0; index < Count; ++index) {
+    add_with_carry(sum, carries, load<word>(data + (index * word_size)));
+  }
+#endif
 }
 
 [[gnu::always_inline]] inline std::uint16_t sum_words(std::span<std::byte const> data, std::uint64_t blocks) noexcept {
@@ -165,3 +198,5 @@ std::uint16_t sum_loop(std::span<std::byte const> data) noexcept {
 }
 
 } // namespace checksum::internet_detail
+
+#undef CHECKSUM_USE_ADDC_CHAIN
