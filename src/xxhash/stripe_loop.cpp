@@ -22,10 +22,12 @@ template <unsigned Width> word<Width> run_time_hash(std::span<std::byte const> d
   if constexpr(Width == 64) {
     // Hides how the lanes were computed: GCC otherwise merges the last multiplication of each stripe with the first one of converge(),
     // which keeps two values per lane in the stripe loop and made XXH64 7 % slower at 1 to 2 KiB on x86-64.
+#if defined(__GNUC__) && !defined(_MSC_VER)
     asm("" : "+r"(lanes[0]));
     asm("" : "+r"(lanes[1]));
     asm("" : "+r"(lanes[2]));
     asm("" : "+r"(lanes[3]));
+#endif
   }
   return finish<Width>(converge<Width>(lanes), seed, data.size(), data.subspan(whole));
 }
