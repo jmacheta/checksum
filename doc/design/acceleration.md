@@ -8,8 +8,13 @@ How algorithms use CPU instructions and which architectures are worth it, per al
 - **Compile time only.** Each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`, `fletcher_arch.hpp`, `xxh3_arch.hpp`,
   `fletcher4_arch.hpp`) selects one directory per architecture (`x86_64/`, `arm/`, `riscv64/`, `generic/`) and includes its header from there. That header checks the macros the compiler predefines for the flags of each translation unit
   (`__PCLMUL__`, `__ARM_FEATURE_CRC32`, `__riscv_vector`, ...); without them it uses no kernel, mostly by including the
-  generic one. The generic directory also covers `CHECKSUM_ACCELERATION=OFF`. No run-time CPU detection, no target attributes, no static state; the build never
-  adds instruction-set flags.
+  generic one. The generic directory also covers `CHECKSUM_ACCELERATION=OFF`. No target attributes, no static state.
+  The only instruction-set flags the build adds are those of an instruction-set preset (`checksum/isa.hpp`), each to
+  its own source file, compiled only where the architecture and compiler support it.
+- **Run-time selection is optional and sits on top.** A strategy such as `internet_loop_for<isa_x86_avx2>` names a
+  preset at compile time; the `isa_id` overloads and `detect_isa()` only choose between the variants a build compiled,
+  fall back to the default loop when the CPU lacks the instruction set, and live in their own sources, so programs
+  that do not use them link none of that code. Only the Internet checksum has presets so far.
 - **One interface per algorithm.** Every architecture header defines the same constants (`*_available`, size
   thresholds) and, where they are true, the same functions; callers use them only in `if constexpr` branches.
   Intrinsics appear nowhere else.

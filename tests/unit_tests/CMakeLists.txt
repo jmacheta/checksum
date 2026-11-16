@@ -15,6 +15,9 @@ target_sources(
           ut_fletcher.cpp
           ut_fletcher4.cpp
           ut_internet.cpp
+          ut_internet_runtime.cpp
+          ut_internet_strategy.cpp
+          ut_isa.cpp
           ut_murmur3.cpp
           ut_xxh3.cpp
           ut_xxhash.cpp

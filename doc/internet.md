@@ -47,8 +47,10 @@ complement arithmetic, each carry out of bit 15 added back into bit 0, and the c
 | `internet_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum`, a `std::uint16_t`, and returns the new checksum. That message must have an even length. |
 | `internet_finalize(state)` | The checksum: `~state.sum`. |
 | `internet_compute(data)` | `internet_finalize(internet_update({}, data))`. |
+| `internet_compute<Strategy>(data)`, `internet_update<Strategy>(...)` | Runs the loop of a strategy: `internet_loop` (the default: what the build's compiler flags enable) or `internet_loop_for<Isa>` for an instruction-set preset from `checksum/isa.hpp`, e.g. `checksum::isa_x86_avx2`. See section 5. |
+| `internet_compute(data, isa_id)`, `internet_update(..., isa_id)` | Chooses the loop at run time by an `isa_id` from `checksum/isa.hpp`, e.g. the one `detect_isa()` returns. See section 5. |
 
-All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`,
+All functions are `noexcept`, and all but the `isa_id` overloads are `constexpr`. `data` is a `std::span<std::byte const>` or any range of `std::byte`,
 `char`, `unsigned char`, `signed char` or `char8_t`, as for the other algorithms. Contiguous ranges are passed
 on as one span and other ranges in 64-byte chunks. Arrays of `char` are rejected, so the `'\0'` of a string literal
 is never summed: pass text as `std::string_view`.
@@ -91,7 +93,24 @@ adds native-order words and swaps the bytes of the result once.
 | RISC-V RV64 with the V extension (`-march=rv64gcv`) or Zve64x, any vector length | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
 | everything else (Thumb-1 code such as Cortex-M0/M0+/M23, big-endian NEON, RV64 without V), or `CHECKSUM_ACCELERATION=OFF` | portable loop | always |
 
-The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. AArch64 and
+**Choosing an instruction set independently of the build flags.** A strategy names the loop to run:
+`internet_compute<checksum::internet_loop_for<checksum::isa_x86_avx2>>(data)` runs the AVX2 kernel even in a build
+without `-mavx2`. The library compiles that variant into its own object with `-mavx2` on x86-64 with GCC or Clang
+(`CHECKSUM_ACCELERATION=ON`); a build or architecture that did not compile it rejects the strategy with a compile
+error, not a link error. Strategies give bit-identical results, the default strategy `internet_loop` behaves exactly
+as before, and constant evaluation always runs the portable loop.
+
+**Selecting the loop at run time.** An `isa_id` from `checksum/isa.hpp` chooses the loop at call time:
+`internet_compute(data, checksum::detect_isa())` runs the best variant this build compiled and this CPU supports,
+`internet_compute(data, checksum::isa_id::none)` runs the loop of `internet_loop` (the build's compiler flags decide
+whether that is a kernel or the portable loop), and `isa_id::x86_avx2` asks for AVX2 specifically. An `isa_id` that
+this build did not compile, that the running CPU does not support, or that names no variant at all runs the loop of
+`internet_loop` as well. Results never differ, and the selection never adds instructions beyond those the build's own
+flags already require. `detect_isa()` keeps no state; the detection and selection code is linked only into programs
+that call it.
+
+The kernel is selected at compile time from the compiler flags or the strategy, or at run time by an `isa_id`, only
+ever between the variants this build compiled. AArch64 and
 Cortex-M3/M4/M7/M33 builds get their kernel from their usual `-march` or `-mcpu` alone. Constant evaluation always runs a
 byte-by-byte loop with the same result. Which other architectures are worth a kernel is discussed in
 [design/acceleration.md](design/acceleration.md).
