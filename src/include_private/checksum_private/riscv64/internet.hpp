@@ -1,12 +1,11 @@
 #ifndef CHECKSUM_PRIVATE_RISCV64_INTERNET_HPP
 #define CHECKSUM_PRIVATE_RISCV64_INTERNET_HPP
 
-// RISC-V vector kernel of the Internet checksum (V extension, little-endian RV64), for any vector length. Included only by
-// internet_arch.hpp.
+// RISC-V vector kernel of the Internet checksum (V extension, little-endian RV64), for the riscv_v preset and any vector
+// length. Included only by internet_arch.hpp.
 
-#if !defined(__riscv_vector) || __riscv_v_elen < 64
-#include <checksum_private/generic/internet.hpp>
-#else
+#include <checksum/isa.hpp>
+#include <checksum_private/presets.hpp>
 
 #include <riscv_vector.h>
 
@@ -16,17 +15,20 @@
 
 namespace checksum::internet_detail {
 
-inline constexpr bool block_sum_available = true;
+template <isa Isa> inline constexpr bool block_sum_available = isa_detail::includes(Isa, isa::riscv_v);
 
 // Not measured on hardware: one strip-mined pass costs a few instructions, so the kernel starts at 64 bytes.
-inline constexpr std::size_t block_sum_minimum_size = 64;
+template <isa Isa> inline constexpr std::size_t block_sum_minimum_size = 64;
 
 // Each 64-bit lane takes one 32-bit word per iteration, and up to 2^13 lanes (VLEN 65536) are reduced together: passes of
 // 2^18 iterations keep the reduction below 2^63.
 inline constexpr std::size_t rvv_pass_iterations = std::size_t{1} << 18U;
 
-// All whole 32-bit words, widened and added into 64-bit lanes (vwaddu.wv), then reduced (vredsum).
-inline block_total block_sum(std::span<std::byte const> data) noexcept {
+// All whole 32-bit words, widened and added into 64-bit lanes (vwaddu.wv), then reduced (vredsum). Not block_sum() itself:
+// GCC takes the target attribute from the first declaration, which internet_arch.hpp gives without it.
+template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] block_total vector_sum(std::span<std::byte const> data) noexcept;
+
+template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] block_total vector_sum(std::span<std::byte const> data) noexcept {
   std::size_t const message_size = data.size();
   auto const *position = reinterpret_cast<std::uint8_t const *>(data.data());
   std::size_t words = data.size() / 4;
@@ -48,8 +50,8 @@ inline block_total block_sum(std::span<std::byte const> data) noexcept {
   return {.sum = total, .size = message_size - data.size()};
 }
 
-} // namespace checksum::internet_detail
+template <isa Isa> block_total block_sum(std::span<std::byte const> data) noexcept { return vector_sum<Isa>(data); }
 
-#endif
+} // namespace checksum::internet_detail
 
 #endif // CHECKSUM_PRIVATE_RISCV64_INTERNET_HPP

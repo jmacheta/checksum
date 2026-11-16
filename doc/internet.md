@@ -47,10 +47,9 @@ complement arithmetic, each carry out of bit 15 added back into bit 0, and the c
 | `internet_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum`, a `std::uint16_t`, and returns the new checksum. That message must have an even length. |
 | `internet_finalize(state)` | The checksum: `~state.sum`. |
 | `internet_compute(data)` | `internet_finalize(internet_update({}, data))`. |
-| `internet_compute<Strategy>(data)`, `internet_update<Strategy>(...)` | Runs the loop of a strategy: `internet_loop` (the default: what the build's compiler flags enable) or `internet_loop_for<Isa>` for an instruction-set preset from `checksum/isa.hpp`, e.g. `checksum::isa_x86_avx2`. See section 5. |
-| `internet_compute(data, isa_id)`, `internet_update(..., isa_id)` | Chooses the loop at run time by an `isa_id` from `checksum/isa.hpp`, e.g. the one `detect_isa()` returns. See section 5. |
+| `internet_compute<Isa>(data)`, `internet_update<Isa>(...)` | Runs the loop compiled for the instruction-set preset `Isa` from `checksum/isa.hpp`, e.g. `checksum::isa::x86_avx2`; the default is `isa::generic`. See section 5. |
 
-All functions are `noexcept`, and all but the `isa_id` overloads are `constexpr`. `data` is a `std::span<std::byte const>` or any range of `std::byte`,
+All functions are `noexcept` and `constexpr`. `data` is a `std::span<std::byte const>` or any range of `std::byte`,
 `char`, `unsigned char`, `signed char` or `char8_t`, as for the other algorithms. Contiguous ranges are passed
 on as one span and other ranges in 64-byte chunks. Arrays of `char` are rejected, so the `'\0'` of a string literal
 is never summed: pass text as `std::string_view`.
@@ -84,36 +83,24 @@ masked off, so no load reaches past the message. It runs at every optimization l
 on the target's byte order. The order in which bytes are added does not change a one's complement sum, so the loop
 adds native-order words and swaps the bytes of the result once.
 
-| Target and flags | Kernel | Used from |
+| Preset | Kernel | Used from |
 | --- | --- | --- |
-| x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | 64-byte blocks: 32-bit halves summed into 64-bit vector lanes | 512 B |
-| AArch64, little-endian (NEON is always there) | NEON pairwise add-accumulate (`uadalp`) of 32-bit words into 64-bit lanes | 512 B |
-| 32-bit Arm with NEON, little-endian | the same NEON kernel | 192 B |
-| 32-bit Arm without NEON, Thumb-2 or Arm state, e.g. Cortex-M3/M4/M7/M33 or ARMv7-A without NEON | `ldm` + `adcs` carry chain in inline assembly, 32 bytes per iteration, any start address | 192 B |
-| RISC-V RV64 with the V extension (`-march=rv64gcv`) or Zve64x, any vector length | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
-| everything else (Thumb-1 code such as Cortex-M0/M0+/M23, big-endian NEON, RV64 without V), or `CHECKSUM_ACCELERATION=OFF` | portable loop | always |
+| `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | 64-byte blocks: 32-bit halves summed into 64-bit vector lanes | 512 B |
+| every preset of little-endian AArch64, `isa::generic` included (NEON is always there) | NEON pairwise add-accumulate (`uadalp`) of 32-bit words into 64-bit lanes | 512 B |
+| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | the same NEON kernel | 192 B |
+| `isa::thumb2`, `thumb2_dsp` (and the NEON presets on big-endian 32-bit Arm), e.g. Cortex-M3/M4/M7/M33 or ARMv7-A without NEON | `ldm` + `adcs` carry chain in inline assembly, 32 bytes per iteration, any start address | 192 B |
+| `isa::riscv_v` (RV64, any vector length) | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
+| everything else: `isa::generic` on other targets, `x86_pclmul`, `riscv_zbc`, big-endian AArch64 | portable loop | always |
 
-**Choosing an instruction set independently of the build flags.** A strategy names the loop to run:
-`internet_compute<checksum::internet_loop_for<checksum::isa_x86_avx2>>(data)` runs the AVX2 kernel even in a build
-without `-mavx2`. The library compiles that variant into its own object with `-mavx2` on x86-64 with GCC or Clang
-(`CHECKSUM_ACCELERATION=ON`); a build or architecture that did not compile it rejects the strategy with a compile
-error, not a link error. Strategies give bit-identical results, the default strategy `internet_loop` behaves exactly
-as before, and constant evaluation always runs the portable loop.
-
-**Selecting the loop at run time.** An `isa_id` from `checksum/isa.hpp` chooses the loop at call time:
-`internet_compute(data, checksum::detect_isa())` runs the best variant this build compiled and this CPU supports,
-`internet_compute(data, checksum::isa_id::none)` runs the loop of `internet_loop` (the build's compiler flags decide
-whether that is a kernel or the portable loop), and `isa_id::x86_avx2` asks for AVX2 specifically. An `isa_id` that
-this build did not compile, that the running CPU does not support, or that names no variant at all runs the loop of
-`internet_loop` as well. Results never differ, and the selection never adds instructions beyond those the build's own
-flags already require. `detect_isa()` keeps no state; the detection and selection code is linked only into programs
-that call it.
-
-The kernel is selected at compile time from the compiler flags or the strategy, or at run time by an `isa_id`, only
-ever between the variants this build compiled. AArch64 and
-Cortex-M3/M4/M7/M33 builds get their kernel from their usual `-march` or `-mcpu` alone. Constant evaluation always runs a
-byte-by-byte loop with the same result. Which other architectures are worth a kernel is discussed in
-[design/acceleration.md](design/acceleration.md).
+**Choosing a preset.** `internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 kernel whatever the build's
+compiler flags; flags such as `-mavx2` or `-march=native` select no kernel by themselves. The library compiles the loop
+once for every preset that `isa_available()` accepts on the target architecture and compiler, each into its own object,
+so a static link pulls in only the presets a program names. A preset without a kernel still runs the portable loop
+compiled for its instruction set. Naming a preset that `isa_available()` rejects is a compile error, not a link error.
+Presets give bit-identical results, and constant evaluation runs a byte-by-byte loop with the same result whatever the
+preset. The library does not check the CPU: call a preset only where the CPU has its instructions. On 32-bit Arm the
+presets need GCC and a build that already compiles Thumb-2 code, so a Cortex-M0 build has only `isa::generic`. Which
+other architectures are worth a kernel is discussed in [design/acceleration.md](design/acceleration.md).
 
 ## 6. Performance guidelines
 
@@ -122,13 +109,13 @@ Measured figures are in [performance.md](performance.md#internet-checksum).
 - **Kernels start at a minimum size** (section 5): 512 B on x86-64 and AArch64, 192 B on 32-bit Arm, 64 B on RISC-V.
   Packet headers are shorter and always run the portable loop, which is already fast: about 8 000 MB/s for a 20-byte
   IPv4 header on x86-64.
-- **On x86-64, enable AVX2** (`-mavx2` or a `-march` that includes it): from 1500 B it makes the checksum 1.4-1.7×
-  faster. AArch64 and Cortex-M3/M4/M7/M33 get their kernel from their usual flags.
+- **On x86-64, use `isa::x86_avx2`** on CPUs with AVX2: from 1500 B it makes the checksum 1.4-1.7× faster. AArch64
+  gets its kernel with `isa::generic`, Cortex-M3/M4/M7/M33 with `isa::thumb2`.
 - **On Cortex-M, the start address matters for the portable loop only.** It is up to 2.5× slower than the kernel from
   an odd or 2-modulo-4 address, typical for an IP header behind a 14-byte Ethernet header. The kernel runs at the
   same speed from any address.
-- **Flash budget:** a kernel adds 590-750 bytes of code on Arm and x86-64. `CHECKSUM_ACCELERATION=OFF` keeps the
-  portable loop alone.
+- **Flash budget:** a kernel adds 590-750 bytes of code on Arm and x86-64. `isa::generic` links the portable loop
+  alone, except on AArch64.
 
 ## 7. Limitations
 

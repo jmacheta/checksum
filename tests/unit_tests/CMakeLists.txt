@@ -15,8 +15,7 @@ target_sources(
           ut_fletcher.cpp
           ut_fletcher4.cpp
           ut_internet.cpp
-          ut_internet_runtime.cpp
-          ut_internet_strategy.cpp
+          ut_internet_presets.cpp
           ut_isa.cpp
           ut_murmur3.cpp
           ut_xxh3.cpp
@@ -30,6 +29,7 @@ target_sources(
           include/crc_reference_vectors.hpp
           include/crc_test_support.hpp
           include/fletcher4_reference_vectors.hpp
+          include/isa_test_support.hpp
           include/murmur3_reference_vectors.hpp
           include/xxh3_reference_vectors.hpp
           include/xxhash_reference_vectors.hpp

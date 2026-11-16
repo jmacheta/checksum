@@ -3,6 +3,7 @@
 set(compile_fail_tests
     "accumulator_from_temporary@deleted (function|constructor)" "engine_rejected_parameters@bad_optional_access"
     "invalid_parameters@bad_optional_access" "precondition_in_constant_evaluation@(__assert_fail|_wassert)" "string_literal_update@byte_range"
+    "unavailable_preset@isa_available\\(\\) rejects it"
 )
 
 foreach (test IN LISTS compile_fail_tests)

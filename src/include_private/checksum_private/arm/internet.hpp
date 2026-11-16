@@ -1,13 +1,11 @@
 #ifndef CHECKSUM_PRIVATE_ARM_INTERNET_HPP
 #define CHECKSUM_PRIVATE_ARM_INTERNET_HPP
 
-// Arm kernels of the Internet checksum: NEON pairwise add-accumulate on little-endian AArch64 and AArch32, else an ldm +
-// adcs chain on 32-bit Arm (Thumb-2 or Arm state, e.g. Cortex-M3/M4/M7/M33). Included only by internet_arch.hpp.
+// Arm kernels of the Internet checksum: NEON pairwise add-accumulate on little-endian AArch64 for every preset and on
+// little-endian 32-bit Arm from thumb2_neon on, else an ldm + adcs chain on 32-bit Arm from thumb2 on. Included only by
+// internet_arch.hpp.
 
-#if !(defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__) &&                                                                           \
-    !(defined(__arm__) && !defined(__ARM_NEON) && (!defined(__thumb__) || defined(__thumb2__)))
-#include <checksum_private/generic/internet.hpp>
-#else
+#include <checksum/isa.hpp>
 
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -22,25 +20,42 @@
 
 namespace checksum::internet_detail {
 
-inline constexpr bool block_sum_available = true;
-
-#if defined(__ARM_NEON)
-
-// Above where the kernel overtakes the portable loop on a Cortex-A72, about 370 bytes in AArch64 and 110 in AArch32:
-// the 64-bit loop is fast, the 32-bit one is not.
 #if defined(__aarch64__)
-inline constexpr std::size_t block_sum_minimum_size = 512;
+inline constexpr bool arm64_target = true;
 #else
-inline constexpr std::size_t block_sum_minimum_size = 192;
+inline constexpr bool arm64_target = false;
 #endif
+
+// NEON lanes are read as little-endian words; the presets of 32-bit Arm compile Thumb-2 code.
+template <isa Isa>
+inline constexpr bool neon_kernel = std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
+template <isa Isa> inline constexpr bool ldm_kernel = !arm64_target && !neon_kernel<Isa> && isa_detail::includes(Isa, isa::thumb2);
+
+template <isa Isa> inline constexpr bool block_sum_available = neon_kernel<Isa> || ldm_kernel<Isa>;
+
+// The NEON kernel is above where it overtakes the portable loop on a Cortex-A72, about 370 bytes in AArch64 and 110 in
+// AArch32: the 64-bit loop is fast, the 32-bit one is not. The ldm kernel is faster from 192 bytes on a Cortex-M4.
+template <isa Isa> inline constexpr std::size_t block_sum_minimum_size = arm64_target ? 512 : 192;
 
 inline constexpr std::size_t neon_block_size = 64;
 
 // Each 64-bit lane takes two 32-bit words per block: passes of 2^26 blocks keep the lanes and their merged sum below 2^61.
 inline constexpr std::size_t neon_pass_blocks = std::size_t{1} << 26U;
 
-// 64-byte blocks of 32-bit words, added pairwise into four vectors of 64-bit lanes (uadalp).
-inline block_total block_sum(std::span<std::byte const> data) noexcept {
+inline constexpr std::size_t ldm_block_size = 32;
+
+// 64-byte blocks of 32-bit words, added pairwise into four vectors of 64-bit lanes (uadalp). Defined where NEON is enabled.
+template <isa Isa> block_total neon_sum(std::span<std::byte const> data) noexcept;
+
+// 32-byte blocks from an even address (aligned to 4 bytes first): two ldm of four words, eight adcs. Thumb-2 only.
+template <isa Isa> block_total ldm_sum(std::span<std::byte const> data) noexcept;
+
+// A byte at an even offset: the first byte of a native 16-bit word.
+template <isa Isa> std::uint64_t first_byte_value(std::byte value) noexcept;
+
+#if defined(__ARM_NEON)
+
+template <isa Isa> block_total neon_sum(std::span<std::byte const> data) noexcept {
   std::size_t const message_size = data.size();
   std::uint64_t total = 0;
   while(data.size() >= neon_block_size) {
@@ -64,20 +79,11 @@ inline block_total block_sum(std::span<std::byte const> data) noexcept {
   return {.sum = total, .size = message_size - data.size()};
 }
 
-#else
+#endif
 
-// From 192 bytes the kernel is faster than the portable loop on a Cortex-M4, from any start address.
-inline constexpr std::size_t block_sum_minimum_size = 192;
+#if defined(__arm__)
 
-inline constexpr std::size_t ldm_block_size = 32;
-
-// 32-byte blocks from an even address (aligned to 4 bytes first): two ldm of four words, eight adcs.
-inline block_total ldm_sum(std::span<std::byte const> data) noexcept;
-
-// A byte at an even offset: the first byte of a native 16-bit word.
-inline std::uint64_t first_byte_value(std::byte value) noexcept;
-
-inline block_total ldm_sum(std::span<std::byte const> data) noexcept {
+template <isa Isa> block_total ldm_sum(std::span<std::byte const> data) noexcept {
   std::size_t const message_size = data.size();
   std::byte const *position = data.data();
   std::uint64_t total = 0;
@@ -117,28 +123,30 @@ inline block_total ldm_sum(std::span<std::byte const> data) noexcept {
   return {.sum = total, .size = message_size - data.size()};
 }
 
-inline std::uint64_t first_byte_value(std::byte value) noexcept {
+#endif
+
+template <isa Isa> std::uint64_t first_byte_value(std::byte value) noexcept {
   return std::to_integer<std::uint64_t>(value) << (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ ? 0U : 8U);
 }
 
-// From an odd address, the words that start at the next byte are this message's shifted by one byte, so their sum is
-// byte-swapped. One more byte after them keeps the size taken even.
-inline block_total block_sum(std::span<std::byte const> data) noexcept {
-  if((reinterpret_cast<std::uintptr_t>(data.data()) & 1U) == 0) {
-    return ldm_sum(data);
+// The ldm kernel from an odd address: the words that start at the next byte are this message's shifted by one byte, so
+// their sum is byte-swapped. One more byte after them keeps the size taken even.
+template <isa Isa> block_total block_sum(std::span<std::byte const> data) noexcept {
+  if constexpr(neon_kernel<Isa>) {
+    return neon_sum<Isa>(data);
+  } else {
+    if((reinterpret_cast<std::uintptr_t>(data.data()) & 1U) == 0) {
+      return ldm_sum<Isa>(data);
+    }
+    block_total shifted = ldm_sum<Isa>(data.subspan(1));
+    if(shifted.size + 1 < data.size()) {
+      shifted.sum += first_byte_value<Isa>(data[shifted.size + 1]);
+      ++shifted.size;
+    }
+    return {.sum = first_byte_value<Isa>(data[0]) + std::byteswap(fold(shifted.sum)), .size = shifted.size + 1};
   }
-  block_total shifted = ldm_sum(data.subspan(1));
-  if(shifted.size + 1 < data.size()) {
-    shifted.sum += first_byte_value(data[shifted.size + 1]);
-    ++shifted.size;
-  }
-  return {.sum = first_byte_value(data[0]) + std::byteswap(fold(shifted.sum)), .size = shifted.size + 1};
 }
 
-#endif
-
 } // namespace checksum::internet_detail
-
-#endif
 
 #endif // CHECKSUM_PRIVATE_ARM_INTERNET_HPP

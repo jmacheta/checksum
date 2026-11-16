@@ -8,13 +8,16 @@ How algorithms use CPU instructions and which architectures are worth it, per al
 - **Compile time only.** Each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`, `fletcher_arch.hpp`, `xxh3_arch.hpp`,
   `fletcher4_arch.hpp`) selects one directory per architecture (`x86_64/`, `arm/`, `riscv64/`, `generic/`) and includes its header from there. That header checks the macros the compiler predefines for the flags of each translation unit
   (`__PCLMUL__`, `__ARM_FEATURE_CRC32`, `__riscv_vector`, ...); without them it uses no kernel, mostly by including the
-  generic one. The generic directory also covers `CHECKSUM_ACCELERATION=OFF`. No target attributes, no static state.
-  The only instruction-set flags the build adds are those of an instruction-set preset (`checksum/isa.hpp`), each to
-  its own source file, compiled only where the architecture and compiler support it.
-- **Run-time selection is optional and sits on top.** A strategy such as `internet_loop_for<isa_x86_avx2>` names a
-  preset at compile time; the `isa_id` overloads and `detect_isa()` only choose between the variants a build compiled,
-  fall back to the default loop when the CPU lacks the instruction set, and live in their own sources, so programs
-  that do not use them link none of that code. Only the Internet checksum has presets so far.
+  generic one. The generic directory also covers `CHECKSUM_ACCELERATION=OFF`. No static state. The Internet checksum
+  is the exception, see the next rule.
+- **Instruction-set presets (Internet checksum so far).** Every function takes an `isa` preset (`checksum/isa.hpp`) as
+  a template parameter, `isa::generic` by default. The architecture header selects kernels with `if constexpr` on the
+  preset, never on compiler macros, and every helper is a template on the preset, so each preset's copy has its own
+  name. Each preset has its own source, `src/internet/sum_loop_<preset>.cpp`, which builds only where
+  `checksum_private/presets.hpp` gives the preset target options and compiles the loops under a target pragma
+  (`target_begin.hpp`, `target_end.hpp`) after every std header. `isa_available()` rejects the other presets with a
+  `static_assert`. The build system adds no flags. GCC on RISC-V has no target pragma, so the RVV kernel carries its
+  own target attribute.
 - **One interface per algorithm.** Every architecture header defines the same constants (`*_available`, size
   thresholds) and, where they are true, the same functions; callers use them only in `if constexpr` branches.
   Intrinsics appear nowhere else.
@@ -26,8 +29,7 @@ How algorithms use CPU instructions and which architectures are worth it, per al
   architecture; the x86-64 AVX-VNNI kernel, which QEMU cannot run, is tested locally with `-march=native` on a CPU
   that has it. Constant evaluation always runs the portable code. No preset builds these paths, which were checked by
   hand only: the SSSE3 weighting of the Fletcher-16/Adler-32 kernel without AVX2 (`-mssse3`), the SSE4.2 `crc32`
-  path without PCLMULQDQ (`-march=x86-64-v2`), the Arm-state (`-marm`) build of the `ldm` + `adcs` Internet checksum
-  kernel, and RVV at vector lengths other than QEMU's default of 128 bits.
+  path without PCLMULQDQ (`-march=x86-64-v2`), and RVV at vector lengths other than QEMU's default of 128 bits.
 - **Measure before adding.** A kernel stays only if it beats the portable loops on real hardware at the sizes where
   it runs; thresholds come from measurements.
 
@@ -116,7 +118,7 @@ to beat that, not a byte loop.
 | 32-bit Arm without NEON (Cortex-M) | Yes, from 192 B, inline assembly | `ldm` + `adcs` chain: 0.69 cycles per byte against 1.27 for the portable loop on a Cortex-M4 (nRF52840 and STM32L4A6): 1.8× at 4 KiB, 1.3× at 256 B, up to 2.5× from an odd address. Cortex-M33 (nRF54L15): 0.62 against 0.96, 1.55× at 4 KiB, 1.17× at 256 B; it breaks even at about 96 B from an aligned address but is 30 % slower at 64 B from other addresses, so the threshold stays. |
 | Cortex-M0/M0+/M23 (Thumb-1) | Not done | `adcs` and `ldm` exist for low registers, but there is no `teq`: the loop test must not clobber the carry. No hardware to measure. |
 | Big-endian NEON | No | `vreinterpret` lane order differs between GCC and Clang, as for PMULL; big-endian AArch64 runs the portable loop. |
-| RISC-V V extension | Implemented, unproven | Widening add `vwaddu.wv` into 64-bit lanes, vector-length agnostic; also used with Zve64x alone (`__riscv_v_elen >= 64`). The preset tests QEMU's default VLEN 128, VLEN 256-1024 were tested by hand; QEMU 10.2 user mode crashes at VLEN 64. No hardware measured, so the 64 B threshold is a guess. |
+| RISC-V V extension | Implemented, unproven | Widening add `vwaddu.wv` into 64-bit lanes, vector-length agnostic, in the `riscv_v` preset. The tests run QEMU's default VLEN 128, VLEN 256-1024 were tested by hand; QEMU 10.2 user mode crashes at VLEN 64. No hardware measured, so the 64 B threshold is a guess. |
 | RISC-V scalar (Zba, Zbb) | No | No carry flag: a 64-bit word costs a load and three instructions with or without `add.uw`, the same as the portable loop. |
 
 Cortex-M methods, measured on the nRF52840 and STM32L4A6 (cycles per byte at 4 KiB):

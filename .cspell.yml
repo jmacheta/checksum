@@ -106,6 +106,7 @@ words:
 - ifndef
 - ifold
 - igmp
+- immediates
 - immintrin
 - inlines
 - iscsi
@@ -227,6 +228,7 @@ words:
 - VNNI
 - vpadalq
 - vpaddlq
+- vpclmul
 - VPCLMULQDQ
 - vpdpbusd
 - vqtbl
