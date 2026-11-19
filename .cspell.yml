@@ -112,6 +112,7 @@ words:
 - getauxval
 - ghash
 - glibcxx
+- GNUC
 - gnueabihf
 - googletest
 - gtest
