@@ -88,6 +88,10 @@ a cache keyed by the hash of its input.
 The state keeps the last 1 to 256 bytes passed in its buffer and folds the rest into the accumulators, so it can
 hash the end of the message as the one-shot function does. Messages up to 240 bytes are hashed from the buffer alone.
 
+Every function that takes `Isa` also has a value overload with an `isa_set` first, e.g. `xxh3_64_compute(cpu, data, seed)` with
+`cpu = checksum::detect_isa()`: it runs the best preset of this build in the set; see
+[Instruction-set presets](../README.md#instruction-set-presets).
+
 ## 3. Behavior
 
 - **Splits:** a message may be split anywhere; the result is the same as for one call.

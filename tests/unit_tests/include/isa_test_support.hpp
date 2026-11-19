@@ -10,7 +10,6 @@
 #include <isa_cpu.hpp>
 
 #include <cstddef>
-#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -32,13 +31,9 @@ struct preset_name {
   template <class Preset> static std::string GetName(int /*index*/) { return std::string(name(Preset::value)); }
 };
 
-// Skips the running test if the CPU cannot run preset; fails it if cpu_runs() has no check for preset.
+// Skips the running test if the CPU cannot run preset.
 inline void skip_unless_cpu_runs(checksum::isa preset) {
-  std::optional<bool> const runs = cpu_runs(preset);
-  if(!runs.has_value()) {
-    FAIL() << "isa_cpu::cpu_runs() has no check for " << name(preset);
-  }
-  if(!*runs) {
+  if(!cpu_runs(preset)) {
     GTEST_SKIP() << "the CPU cannot run " << name(preset);
   }
 }

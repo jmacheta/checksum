@@ -4,6 +4,7 @@
 #include <checksum/byte_range.hpp>
 #include <checksum/isa.hpp>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cassert>
@@ -98,6 +99,8 @@ namespace checksum {
 /// An immutable CRC engine: the strategy's table and the prepared parameters; the running CRC is a separate state_type value, so one engine
 /// serves any number of computations. Isa selects the run-time loop of the built-in strategies, the variant compiled for that
 /// instruction-set preset (checksum/isa.hpp); other strategies ignore it.
+template <crc_register Register, crc_strategy_for<Register> Strategy> class crc_dispatch_engine;
+
 template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_none, isa Isa = isa::generic> class crc_engine {
   static_assert(isa_available(Isa),
                 "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
@@ -135,6 +138,8 @@ public:
   [[nodiscard]] constexpr state_type compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept;
 
 private:
+  template <crc_register Other, crc_strategy_for<Other> OtherStrategy> friend class crc_dispatch_engine;
+
   constexpr crc_engine(crc_parameters const &parameters, typename Strategy::template table_type<Register> const &table) noexcept;
 
   // Asserts the state precondition and masks state to the width.
@@ -238,6 +243,49 @@ struct crc_lut_sliced : crc_detail::lookup_strategy<crc_detail::sliced_table_siz
 /// crc_lut_sliced plus 8 braid slices (16 x 256 entries): five interleaved streams of 8-byte words from 128 bytes on. Presets with CRC
 /// instructions run the crc_lut_sliced path instead.
 struct crc_lut_braided : crc_detail::lookup_strategy<crc_detail::braided_table_size> {};
+
+/// A crc_engine whose run-time loop is chosen once, when it is created: the variant of the best preset of this build in cpu
+/// (checksum/isa.hpp), e.g. detect_isa(). One table serves every preset; constant evaluation runs the portable loop.
+template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_sliced> class crc_dispatch_engine {
+public:
+  using state_type = Register; ///< Running CRC, below 2^width.
+
+  /// Validates parameters as crc_engine::create() does and chooses the preset.
+  [[nodiscard]] static constexpr std::optional<crc_dispatch_engine> create(crc_parameters const &parameters, isa_set cpu) noexcept;
+
+  /// The preset whose loop update() runs.
+  [[nodiscard]] constexpr isa preset() const noexcept;
+
+  /// As crc_engine::initial().
+  [[nodiscard]] constexpr state_type initial() const noexcept;
+
+  /// As crc_engine::update(), with the chosen preset's loop.
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data) const noexcept;
+
+  /// As crc_engine::update() for a byte range.
+  template <byte_range Range> [[nodiscard]] constexpr state_type update(state_type state, Range &&data) const noexcept;
+
+  /// As crc_engine::update() for the first bit_length bits of data.
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data, std::size_t bit_length) const noexcept;
+
+  /// As crc_engine::finalize().
+  [[nodiscard]] constexpr state_type finalize(state_type state) const noexcept;
+
+  /// finalize(update(initial(), data)).
+  [[nodiscard]] constexpr state_type compute(std::span<std::byte const> data) const noexcept;
+
+  /// finalize(update(initial(), data)) for a byte range.
+  template <byte_range Range> [[nodiscard]] constexpr state_type compute(Range &&data) const noexcept;
+
+  /// finalize(update(initial(), data, bit_length)).
+  [[nodiscard]] constexpr state_type compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept;
+
+private:
+  constexpr crc_dispatch_engine(crc_engine<Register, Strategy> const &engine, isa preset) noexcept;
+
+  crc_engine<Register, Strategy> engine; // the table and parameters, shared by every preset
+  isa chosen;
+};
 
 } // namespace checksum
 
@@ -793,6 +841,82 @@ constexpr Register crc_accumulator<Register, Strategy, Isa>::state() const noexc
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
 constexpr void crc_accumulator<Register, Strategy, Isa>::reset() noexcept {
   running_state = engine->initial();
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr crc_dispatch_engine<Register, Strategy>::crc_dispatch_engine(crc_engine<Register, Strategy> const &engine, isa preset) noexcept
+    : engine(engine), chosen(preset) {}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr std::optional<crc_dispatch_engine<Register, Strategy>> crc_dispatch_engine<Register, Strategy>::create(crc_parameters const &parameters,
+                                                                                                                 isa_set cpu) noexcept {
+  auto const engine = crc_engine<Register, Strategy>::create(parameters);
+  if(!engine) {
+    return std::nullopt;
+  }
+  // RISC-V builds both riscv_zbc and riscv_v; only Zbc has a CRC kernel.
+  return crc_dispatch_engine(*engine, isa_detail::select(cpu, isa::riscv_zbc));
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy> constexpr isa crc_dispatch_engine<Register, Strategy>::preset() const noexcept {
+  return chosen;
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type crc_dispatch_engine<Register, Strategy>::initial() const noexcept {
+  return engine.initial();
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
+crc_dispatch_engine<Register, Strategy>::update(state_type state, std::span<std::byte const> data) const noexcept {
+  state = engine.checked_state(state);
+  return isa_detail::dispatch<isa::riscv_zbc>(chosen,
+                                              [&]<isa Isa>() { return crc_detail::strategy_update<Strategy, Isa>(engine.table, state, data); });
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+template <byte_range Range>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type crc_dispatch_engine<Register, Strategy>::update(state_type state,
+                                                                                                                       Range &&data) const noexcept {
+  state = engine.checked_state(state);
+  return isa_detail::dispatch<isa::riscv_zbc>(chosen, [&]<isa Isa>() {
+    detail::for_each_chunk(std::forward<Range>(data),
+                           [&](std::span<std::byte const> chunk) { state = crc_detail::strategy_update<Strategy, Isa>(engine.table, state, chunk); });
+    return state;
+  });
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
+crc_dispatch_engine<Register, Strategy>::update(state_type state, std::span<std::byte const> data, std::size_t bit_length) const noexcept {
+  // The whole bytes with the chosen loop, the rest (and the precondition) as crc_engine does.
+  std::size_t const whole = std::min(bit_length / 8, data.size());
+  return engine.update(update(state, data.first(whole)), data.subspan(whole), bit_length - (8 * whole));
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
+crc_dispatch_engine<Register, Strategy>::finalize(state_type state) const noexcept {
+  return engine.finalize(state);
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
+crc_dispatch_engine<Register, Strategy>::compute(std::span<std::byte const> data) const noexcept {
+  return finalize(update(initial(), data));
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+template <byte_range Range>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type crc_dispatch_engine<Register, Strategy>::compute(Range &&data) const noexcept {
+  return finalize(update(initial(), std::forward<Range>(data)));
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
+crc_dispatch_engine<Register, Strategy>::compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept {
+  return finalize(update(initial(), data, bit_length));
 }
 
 } // namespace checksum

@@ -36,4 +36,4 @@ rules.
 ## Out of scope
 
 A C API, and features users can build from the public API (frame verification, residue checks). Run-time CPU
-detection is not in the library yet; it is planned as an optional layer on top of the compile-time presets.
+detection is an optional layer on top of the compile-time presets: programs that do not call it link none of it.

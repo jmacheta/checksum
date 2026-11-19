@@ -34,10 +34,10 @@ and 20 s in QEMU user mode. Debug test builds use `-Og`; `cross-arm` keeps `-O0`
 built without optimization.
 
 Preset tests run every preset the build has, from the range `isa_detail::first_built` to `last_built` of
-`checksum/isa.hpp`, and skip the presets the CPU cannot run. `tests/include/isa_cpu.hpp` checks the CPU on every
-architecture: CPUID on x86-64, the Linux `HWCAP` bits on Arm and RISC-V (plus `riscv_hwprobe`),
-`IsProcessorFeaturePresent` on MSVC ARM64; bare-metal targets count every preset as runnable. A built preset without
-a name or a CPU check there fails the tests, so a new preset adds both. CI runs `native-gcc` and `native-clang` on
+`checksum/isa.hpp`, and skip the presets the CPU cannot run, as the library's `detect_isa()` reports
+(`tests/include/isa_cpu.hpp`). `src/isa/detect.cpp` fails to compile for a built preset without a CPU check, and
+`ut_isa.cpp` fails for one without a name in `isa_cpu.hpp`, so a new preset adds both. `ut_dispatch.cpp` checks the
+value overloads and `crc_dispatch_engine` against `isa::generic` for the detected set and every preset alone. CI runs `native-gcc` and `native-clang` on
 GitHub's AArch64 runner too, where the AArch64 presets run on hardware.
 
 ## Coverage expectations

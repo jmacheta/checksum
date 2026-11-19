@@ -40,6 +40,34 @@ enum class isa : std::uint8_t {
 /// floating-point ABI. Naming a preset it rejects is a compile error; the answer is the same in every translation unit.
 [[nodiscard]] constexpr bool isa_available(isa preset) noexcept;
 
+/// A set of presets that a CPU runs, for the run-time overloads of every algorithm (e.g. internet_compute(cpu, data)), which
+/// run the best variant this build has inside the set. It always contains generic.
+class isa_set {
+public:
+  /// generic alone.
+  constexpr isa_set() noexcept = default;
+
+  /// preset and the earlier presets of its line, so that an explicit choice falls back one rung at a time.
+  constexpr isa_set(isa preset) noexcept; // NOLINT(google-explicit-constructor): a preset is the set of what it includes.
+
+  /// Whether the set contains preset.
+  [[nodiscard]] constexpr bool contains(isa preset) const noexcept;
+
+  /// Both sets, e.g. isa_set{isa::riscv_zbc} | isa::riscv_v.
+  [[nodiscard]] friend constexpr isa_set operator|(isa_set left, isa_set right) noexcept { return isa_set(left.bits | right.bits); }
+
+  friend constexpr bool operator==(isa_set, isa_set) noexcept = default;
+
+private:
+  constexpr explicit isa_set(std::uint32_t bits) noexcept;
+
+  std::uint32_t bits = 1; // bit n for the preset of value n
+};
+
+/// The presets this build has and the running CPU executes; on operating systems without a feature query (bare metal) every
+/// preset this build has. Call it once and keep the result: it queries the CPU or the operating system every time.
+[[nodiscard]] isa_set detect_isa() noexcept;
+
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -76,6 +104,16 @@ inline constexpr isa first_built = isa::generic;
 inline constexpr isa last_built = isa::generic;
 #endif
 
+// The preset of cpu that a run-time overload runs: preferred (not generic) if this build has it and cpu contains it, else the
+// latest preset of this build in cpu, else generic. Only RISC-V builds presets of two lines, which preferred settles for CRC.
+constexpr isa select(isa_set cpu, isa preferred = isa::generic) noexcept;
+
+// function.template operator()<select(cpu, Preferred)>(): the run-time overloads' switch over the presets of this build.
+template <isa Preferred = isa::generic, class Function> constexpr auto dispatch(isa_set cpu, Function &&function);
+
+// function.template operator()<preset>() if preset is Candidate or a later preset of this build, else for generic.
+template <isa Candidate, class Function> constexpr auto dispatch_from(isa preset, Function &function);
+
 } // namespace checksum::isa_detail
 
 ///@}
@@ -110,6 +148,52 @@ constexpr bool isa_available(isa preset) noexcept {
   return preset == isa::generic || (isa_detail::first_built <= preset && preset <= isa_detail::last_built);
 }
 
+constexpr isa_set::isa_set(isa preset) noexcept : bits(0) {
+  for(auto value = static_cast<unsigned>(preset);; --value) {
+    if(isa_detail::includes(preset, static_cast<isa>(value))) {
+      bits |= 1U << value;
+    }
+    if(value == 0) {
+      break;
+    }
+  }
+}
+
+constexpr isa_set::isa_set(std::uint32_t bits) noexcept : bits(bits) {}
+
+constexpr bool isa_set::contains(isa preset) const noexcept { return ((bits >> static_cast<unsigned>(preset)) & 1U) != 0; }
+
 } // namespace checksum
+
+namespace checksum::isa_detail {
+
+constexpr isa select(isa_set cpu, isa preferred) noexcept {
+  if(preferred != isa::generic && isa_available(preferred) && cpu.contains(preferred)) {
+    return preferred;
+  }
+  for(auto value = static_cast<unsigned>(last_built); value >= static_cast<unsigned>(first_built) && value != 0; --value) {
+    if(cpu.contains(static_cast<isa>(value))) {
+      return static_cast<isa>(value);
+    }
+  }
+  return isa::generic;
+}
+
+template <isa Candidate, class Function> constexpr auto dispatch_from(isa preset, Function &function) {
+  if constexpr(Candidate == isa::generic || Candidate > last_built) {
+    return function.template operator()<isa::generic>();
+  } else {
+    if(preset == Candidate) {
+      return function.template operator()<Candidate>();
+    }
+    return dispatch_from<static_cast<isa>(static_cast<unsigned>(Candidate) + 1)>(preset, function);
+  }
+}
+
+template <isa Preferred, class Function> constexpr auto dispatch(isa_set cpu, Function &&function) {
+  return dispatch_from<first_built>(select(cpu, Preferred), function);
+}
+
+} // namespace checksum::isa_detail
 
 #endif // CHECKSUM_ISA_HPP

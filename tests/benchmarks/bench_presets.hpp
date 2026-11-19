@@ -18,7 +18,7 @@ namespace isa_bench {
 // preset, then lets arguments add the sizes.
 template <class Make, class Arguments> void register_presets(std::string const &name, Make make, Arguments arguments) {
   auto const one = [&]<checksum::isa Preset>() {
-    if(!isa_cpu::cpu_runs(Preset).value_or(false)) {
+    if(!isa_cpu::cpu_runs(Preset)) {
       return;
     }
     std::string const full = Preset == checksum::isa::generic ? name : name + "_" + std::string(isa_cpu::name(Preset));

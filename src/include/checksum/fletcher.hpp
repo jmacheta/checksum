@@ -91,6 +91,27 @@ template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr std:
 /// fletcher_compute<64, Isa>(data).
 template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr std::uint64_t fletcher64_compute(Range &&data) noexcept;
 
+/// fletcher_update<Width, Isa>(state, data) for the best preset Isa of this build in cpu.
+template <unsigned Width, byte_range Range>
+[[nodiscard]] constexpr fletcher_state<Width> fletcher_update(isa_set cpu, fletcher_state<Width> state, Range &&data) noexcept;
+
+/// fletcher_update<Isa>(checksum, data) for the best preset Isa of this build in cpu.
+template <class Checksum, byte_range Range>
+  requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
+[[nodiscard]] constexpr Checksum fletcher_update(isa_set cpu, Checksum checksum, Range &&data) noexcept;
+
+/// fletcher_compute<Width, Isa>(data) for the best preset Isa of this build in cpu.
+template <unsigned Width, byte_range Range>
+[[nodiscard]] constexpr fletcher_state<Width>::value_type fletcher_compute(isa_set cpu, Range &&data) noexcept;
+
+/// fletcher16_compute<Isa>(data) for the best preset Isa of this build in cpu.
+template <byte_range Range> [[nodiscard]] constexpr std::uint16_t fletcher16_compute(isa_set cpu, Range &&data) noexcept;
+
+/// fletcher32_compute<Isa>(data) for the best preset Isa of this build in cpu.
+template <byte_range Range> [[nodiscard]] constexpr std::uint32_t fletcher32_compute(isa_set cpu, Range &&data) noexcept;
+
+/// fletcher64_compute<Isa>(data) for the best preset Isa of this build in cpu.
+template <byte_range Range> [[nodiscard]] constexpr std::uint64_t fletcher64_compute(isa_set cpu, Range &&data) noexcept;
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -176,7 +197,8 @@ template <unsigned Width> constexpr fletcher_state<Width> update_bytes(fletcher_
 
 namespace checksum {
 
-template <unsigned Width, isa Isa> constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
+template <unsigned Width, isa Isa>
+constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
   static_assert(isa_available(Isa),
                 "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   if consteval {
@@ -239,6 +261,33 @@ template <isa Isa, byte_range Range> constexpr std::uint32_t fletcher32_compute(
 
 template <isa Isa, byte_range Range> constexpr std::uint64_t fletcher64_compute(Range &&data) noexcept {
   return fletcher_compute<64, Isa>(std::forward<Range>(data));
+}
+
+template <unsigned Width, byte_range Range>
+constexpr fletcher_state<Width> fletcher_update(isa_set cpu, fletcher_state<Width> state, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return fletcher_update<Width, Isa>(state, std::forward<Range>(data)); });
+}
+
+template <class Checksum, byte_range Range>
+  requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
+constexpr Checksum fletcher_update(isa_set cpu, Checksum checksum, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return fletcher_update<Isa>(checksum, std::forward<Range>(data)); });
+}
+
+template <unsigned Width, byte_range Range> constexpr fletcher_state<Width>::value_type fletcher_compute(isa_set cpu, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return fletcher_compute<Width, Isa>(std::forward<Range>(data)); });
+}
+
+template <byte_range Range> constexpr std::uint16_t fletcher16_compute(isa_set cpu, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return fletcher16_compute<Isa>(std::forward<Range>(data)); });
+}
+
+template <byte_range Range> constexpr std::uint32_t fletcher32_compute(isa_set cpu, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return fletcher32_compute<Isa>(std::forward<Range>(data)); });
+}
+
+template <byte_range Range> constexpr std::uint64_t fletcher64_compute(isa_set cpu, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return fletcher64_compute<Isa>(std::forward<Range>(data)); });
 }
 
 } // namespace checksum

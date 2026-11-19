@@ -57,6 +57,10 @@ summed: pass text as `std::string_view`.
 
 Every state value is valid, so nothing has preconditions: sums from 65521 up count modulo 65521.
 
+Every function that takes `Isa` also has a value overload with an `isa_set` first, e.g. `adler32_compute(cpu, data)` with
+`cpu = checksum::detect_isa()`: it runs the best preset of this build in the set; see
+[Instruction-set presets](../README.md#instruction-set-presets).
+
 ## 4. Behavior
 
 - **Splits:** a message may be split anywhere; the result is the same as for one call.

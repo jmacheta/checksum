@@ -63,6 +63,10 @@ summed: pass text as `std::string_view`.
 
 Every state value is valid, so nothing has preconditions: `word_offset` is taken modulo 4.
 
+Every function that takes `Isa` also has a value overload with an `isa_set` first, e.g. `fletcher4_compute(cpu, data)` with
+`cpu = checksum::detect_isa()`: it runs the best preset of this build in the set; see
+[Instruction-set presets](../README.md#instruction-set-presets).
+
 ## 4. Behavior
 
 - **Splits:** a message may be split anywhere, including inside a word; the result is the same as for one call.

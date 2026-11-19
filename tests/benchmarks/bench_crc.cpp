@@ -64,7 +64,7 @@ template <class Strategy, isa Isa = isa::generic> void register_strategy(std::st
 // crc_lut_sliced for a preset with a CRC kernel, named sliced_<preset>, where this build has it and the CPU runs it.
 template <isa Preset> void register_preset(char const *name) {
   if constexpr(isa_available(Preset)) {
-    if(isa_cpu::cpu_runs(Preset).value_or(false)) {
+    if(isa_cpu::cpu_runs(Preset)) {
       register_strategy<crc_lut_sliced, Preset>(std::string("sliced_") + name);
     }
   }

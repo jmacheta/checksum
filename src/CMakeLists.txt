@@ -87,6 +87,7 @@ target_sources(
           internet/sum_loop_x86_avxvnni.cpp
           internet/sum_loop_x86_pclmul.cpp
           internet/sum_loop_x86_vpclmul.cpp
+          isa/detect.cpp
           murmur3/block_loop.cpp
           xxh3/multiply_fold.cpp
           murmur3/block_loop_aarch64_crc.cpp

@@ -15,6 +15,7 @@ target_sources(
           ut_fletcher.cpp
           ut_fletcher4.cpp
           ut_fletcher4_presets.cpp
+          ut_dispatch.cpp
           ut_hash_presets.cpp
           ut_internet.cpp
           ut_internet_presets.cpp

@@ -75,6 +75,20 @@ template <isa Isa = isa::generic, byte_range Range>
 template <isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
+/// xxhash_update<Width, Isa>(state, data) for the best preset Isa of this build in cpu.
+template <unsigned Width, byte_range Range>
+[[nodiscard]] constexpr xxhash_state<Width> xxhash_update(isa_set cpu, xxhash_state<Width> state, Range &&data) noexcept;
+
+/// xxhash_compute<Width, Isa>(data, seed) for the best preset Isa of this build in cpu.
+template <unsigned Width, byte_range Range>
+[[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_compute(isa_set cpu, Range &&data,
+                                                                       typename xxhash_state<Width>::value_type seed = 0) noexcept;
+
+/// xxh32_compute<Isa>(data, seed) for the best preset Isa of this build in cpu.
+template <byte_range Range> [[nodiscard]] constexpr std::uint32_t xxh32_compute(isa_set cpu, Range &&data, std::uint32_t seed = 0) noexcept;
+
+/// xxh64_compute<Isa>(data, seed) for the best preset Isa of this build in cpu.
+template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh64_compute(isa_set cpu, Range &&data, std::uint64_t seed = 0) noexcept;
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -330,6 +344,24 @@ template <isa Isa, byte_range Range> constexpr std::uint32_t xxh32_compute(Range
 
 template <isa Isa, byte_range Range> constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed) noexcept {
   return xxhash_compute<64, Isa>(std::forward<Range>(data), seed);
+}
+
+template <unsigned Width, byte_range Range>
+constexpr xxhash_state<Width> xxhash_update(isa_set cpu, xxhash_state<Width> state, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxhash_update<Width, Isa>(state, std::forward<Range>(data)); });
+}
+
+template <unsigned Width, byte_range Range>
+constexpr xxhash_state<Width>::value_type xxhash_compute(isa_set cpu, Range &&data, typename xxhash_state<Width>::value_type seed) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxhash_compute<Width, Isa>(std::forward<Range>(data), seed); });
+}
+
+template <byte_range Range> constexpr std::uint32_t xxh32_compute(isa_set cpu, Range &&data, std::uint32_t seed) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxh32_compute<Isa>(std::forward<Range>(data), seed); });
+}
+
+template <byte_range Range> constexpr std::uint64_t xxh64_compute(isa_set cpu, Range &&data, std::uint64_t seed) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxh64_compute<Isa>(std::forward<Range>(data), seed); });
 }
 
 } // namespace checksum

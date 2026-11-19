@@ -6,26 +6,7 @@
 
 #include <checksum/isa.hpp>
 
-#if defined(_MSC_VER) && !defined(__clang__)
-#include <intrin.h>
-#endif
-#if defined(_MSC_VER) && defined(_M_ARM64)
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#endif
-#if defined(__linux__) && (defined(__aarch64__) || defined(__arm__) || defined(__riscv))
-#include <sys/auxv.h>
-#endif
-#if defined(__linux__) && defined(__riscv) && __has_include(<asm/hwprobe.h>)
-#include <asm/hwprobe.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-#endif
-
-#include <array>
 #include <cstddef>
-#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -80,111 +61,10 @@ constexpr std::string_view name(checksum::isa preset) noexcept {
   return {};
 }
 
-// Whether the running CPU executes the code of preset, or nullopt where this function has no check for it. Operating
-// systems without a feature query (bare metal) report every built preset as runnable.
-inline std::optional<bool> cpu_runs(checksum::isa preset) {
-  using enum checksum::isa;
-  if(preset == generic) {
-    return true;
-  }
-#if defined(__x86_64__)
-  bool const pclmul = __builtin_cpu_supports("sse4.2") && __builtin_cpu_supports("pclmul");
-  bool const avx2 = pclmul && __builtin_cpu_supports("avx2");
-  bool const vpclmul = avx2 && __builtin_cpu_supports("vpclmulqdq");
-  bool const avxvnni = vpclmul && __builtin_cpu_supports("avxvnni");
-#elif defined(_M_X64)
-  // CPUID leaf 1, leaf 7 and leaf 7 subleaf 1 as EAX, EBX, ECX, EDX; AVX also needs the OS to save the YMM registers.
-  std::array<int, 4> leaf1{};
-  std::array<int, 4> leaf7{};
-  std::array<int, 4> leaf7_1{};
-  __cpuid(leaf1.data(), 1);
-  __cpuidex(leaf7.data(), 7, 0);
-  __cpuidex(leaf7_1.data(), 7, 1);
-  auto const bit = [](int value, unsigned index) { return ((static_cast<unsigned>(value) >> index) & 1U) != 0; };
-  bool const ymm_saved = bit(leaf1[2], 27) && (_xgetbv(0) & 6U) == 6U;
-  bool const pclmul = bit(leaf1[2], 20) && bit(leaf1[2], 1);
-  bool const avx2 = pclmul && ymm_saved && bit(leaf7[1], 5);
-  bool const vpclmul = avx2 && bit(leaf7[2], 10);
-  bool const avxvnni = vpclmul && bit(leaf7_1[0], 4);
-#endif
-#if defined(__x86_64__) || defined(_M_X64)
-  switch(preset) {
-  case x86_pclmul:
-    return pclmul;
-  case x86_avx2:
-    return avx2;
-  case x86_vpclmul:
-    return vpclmul;
-  case x86_avxvnni:
-    return avxvnni;
-  default:
-    return std::nullopt;
-  }
-#elif defined(__aarch64__) || defined(_M_ARM64)
-#if defined(__linux__)
-  unsigned long const hwcap = getauxval(AT_HWCAP);
-  bool const crc = (hwcap & HWCAP_CRC32) != 0;
-  bool const pmull = crc && (hwcap & HWCAP_PMULL) != 0;
-#elif defined(_M_ARM64)
-  bool const crc = IsProcessorFeaturePresent(PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE) != 0;
-  bool const pmull = crc && IsProcessorFeaturePresent(PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE) != 0;
-#else
-  bool const crc = true;
-  bool const pmull = true;
-#endif
-  switch(preset) {
-  case aarch64_crc:
-    return crc;
-  case aarch64_pmull:
-    return pmull;
-  default:
-    return std::nullopt;
-  }
-#elif defined(__arm__)
-  // thumb2 and thumb2_dsp exist only where the build's own flags have them, so the CPU runs them.
-#if defined(__linux__)
-  constexpr unsigned long hwcap2_crc32 = 1UL << 4U; // HWCAP2_CRC32 of the kernel's asm/hwcap.h
-  bool const neon = (getauxval(AT_HWCAP) & HWCAP_ARM_NEON) != 0;
-  bool const crc = neon && (getauxval(AT_HWCAP2) & hwcap2_crc32) != 0;
-#else
-  bool const neon = true;
-  bool const crc = true;
-#endif
-  switch(preset) {
-  case thumb2:
-  case thumb2_dsp:
-    return true;
-  case thumb2_neon:
-    return neon;
-  case thumb2_crc:
-    return crc;
-  default:
-    return std::nullopt;
-  }
-#elif defined(__riscv)
-#if defined(__linux__)
-  bool const vector = (getauxval(AT_HWCAP) & (1UL << ('V' - 'A'))) != 0;
-#if __has_include(<asm/hwprobe.h>)
-  riscv_hwprobe probe{.key = RISCV_HWPROBE_KEY_IMA_EXT_0, .value = 0};
-  bool const zbc = syscall(__NR_riscv_hwprobe, &probe, 1, 0, nullptr, 0) == 0 && (probe.value & RISCV_HWPROBE_EXT_ZBC) != 0;
-#else
-  bool const zbc = true;
-#endif
-#else
-  bool const vector = true;
-  bool const zbc = true;
-#endif
-  switch(preset) {
-  case riscv_zbc:
-    return zbc;
-  case riscv_v:
-    return vector;
-  default:
-    return std::nullopt;
-  }
-#else
-  return std::nullopt;
-#endif
+// Whether the running CPU executes the code of preset: the library's detect_isa(), queried once.
+inline bool cpu_runs(checksum::isa preset) {
+  static checksum::isa_set const cpu = checksum::detect_isa();
+  return cpu.contains(preset);
 }
 
 } // namespace isa_cpu

@@ -88,22 +88,31 @@ Arm the presets need a build that compiles Thumb-2 code; `thumb2_dsp` also needs
 and `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-point ABI, so a Cortex-M0 build has only
 `isa::generic`. Which preset enables which kernel is in each algorithm's guide.
 
-The library does not detect the CPU yet: calling a preset on a CPU without its instructions is undefined (illegal
-instruction), so check the CPU first. With GCC or Clang on x86-64:
+A preset in a template argument is the caller's promise that the CPU runs it; calling it on a CPU without its
+instructions is undefined (illegal instruction). To choose at run time, pass an `isa_set` to the value overloads, which
+every algorithm has next to its templates:
 
 ```cpp
-std::uint16_t ip_checksum(std::span<std::byte const> data) {
-  if constexpr(checksum::isa_available(checksum::isa::x86_avx2)) {
-    if(__builtin_cpu_supports("avx2")) {
-      return checksum::internet_compute<checksum::isa::x86_avx2>(data);
-    }
-  }
-  return checksum::internet_compute(data);
-}
+checksum::isa_set const cpu = checksum::detect_isa(); // once: queries the CPU or the operating system
+
+std::uint16_t const sum = checksum::internet_compute(cpu, data);
+std::uint64_t const hash = checksum::xxh3_64_compute(cpu, data, seed);
+auto const crc = checksum::crc_dispatch_engine<std::uint32_t>::create(checksum::crc32_iso_hdlc, cpu);
+std::uint32_t const value = crc->compute(data);
 ```
 
-A run-time layer that detects the CPU and picks among the compiled presets is planned, as an optional layer on top of
-the compile-time presets.
+- `detect_isa()` returns the presets this build has and the CPU runs: CPUID on x86-64, the Linux auxiliary vector
+  (and `riscv_hwprobe` for Zbc) on Arm and RISC-V, `IsProcessorFeaturePresent` on Windows ARM64. Where the operating
+  system has no feature query, bare metal included, it returns every preset of the build.
+- A value overload runs the best variant of this build inside the set; with presets of two lines (RISC-V), CRC takes
+  `riscv_zbc` and the others `riscv_v`. Choosing costs one or two cycles per call.
+- A single preset converts to the set of its line up to it, so `internet_compute(checksum::isa::x86_avx2, data)` runs
+  the AVX2 variant, falls back one rung at a time where the build lacks it, and runs `isa::generic` on another
+  architecture. Sets combine with `|`.
+- `crc_dispatch_engine<Register, Strategy = crc_lut_sliced>` chooses its loop once, in `create(parameters, cpu)`, and
+  keeps one table for every preset; `preset()` names the one it chose.
+- Programs that call none of this link none of it: `detect_isa()` is a source of its own, and the overloads are
+  header templates.
 
 ## Examples
 

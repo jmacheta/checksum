@@ -58,6 +58,16 @@ template <isa Isa = isa::generic> [[nodiscard]] constexpr std::uint16_t internet
 /// internet_finalize(internet_update<Isa>(internet_state{}, data)) for a byte range.
 template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr std::uint16_t internet_compute(Range &&data) noexcept;
 
+/// internet_update<Isa>(state, data) for the best preset Isa of this build in cpu, e.g. detect_isa().
+template <byte_range Range> [[nodiscard]] constexpr internet_state internet_update(isa_set cpu, internet_state state, Range &&data) noexcept;
+
+/// internet_update<Isa>(checksum, data) for the best preset Isa of this build in cpu.
+template <std::same_as<std::uint16_t> Checksum, byte_range Range>
+[[nodiscard]] constexpr std::uint16_t internet_update(isa_set cpu, Checksum checksum, Range &&data) noexcept;
+
+/// internet_compute<Isa>(data) for the best preset Isa of this build in cpu.
+template <byte_range Range> [[nodiscard]] constexpr std::uint16_t internet_compute(isa_set cpu, Range &&data) noexcept;
+
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -147,6 +157,19 @@ template <isa Isa> constexpr std::uint16_t internet_compute(std::span<std::byte 
 
 template <isa Isa, byte_range Range> constexpr std::uint16_t internet_compute(Range &&data) noexcept {
   return internet_finalize(internet_update<Isa>(internet_state{}, std::forward<Range>(data)));
+}
+
+template <byte_range Range> constexpr internet_state internet_update(isa_set cpu, internet_state state, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return internet_update<Isa>(state, std::forward<Range>(data)); });
+}
+
+template <std::same_as<std::uint16_t> Checksum, byte_range Range>
+constexpr std::uint16_t internet_update(isa_set cpu, Checksum checksum, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return internet_update<Isa>(checksum, std::forward<Range>(data)); });
+}
+
+template <byte_range Range> constexpr std::uint16_t internet_compute(isa_set cpu, Range &&data) noexcept {
+  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return internet_compute<Isa>(std::forward<Range>(data)); });
 }
 
 } // namespace checksum
