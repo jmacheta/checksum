@@ -404,7 +404,9 @@ template <isa Isa, class Value> constexpr bool runs_kernel(std::size_t size) noe
 }
 
 template <isa Isa, class Value> constexpr std::size_t kernel_minimum() noexcept {
-  return kernel<std::numeric_limits<Value>::digits, Isa>::minimum_size;
+  // An unavailable kernel (e.g. NEON on big-endian) bounds nothing: the portable loop then sums inputs of any size.
+  using value_kernel = kernel<std::numeric_limits<Value>::digits, Isa>;
+  return value_kernel::available ? value_kernel::minimum_size : std::numeric_limits<std::size_t>::max();
 }
 
 template <isa Isa, unsigned Width> sums_of<Width> sum_blocks(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {

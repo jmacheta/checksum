@@ -9,6 +9,8 @@
 
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
+#elif defined(__x86_64__)
+#include <cpuid.h>
 #endif
 #if defined(_MSC_VER) && defined(_M_ARM64)
 #define WIN32_LEAN_AND_MEAN
@@ -57,7 +59,12 @@ bool runs(isa preset) noexcept {
   bool const pclmul = __builtin_cpu_supports("sse4.2") && __builtin_cpu_supports("pclmul");
   bool const avx2 = pclmul && __builtin_cpu_supports("avx2");
   bool const vpclmul = avx2 && __builtin_cpu_supports("vpclmulqdq");
-  bool const avxvnni = vpclmul && __builtin_cpu_supports("avxvnni");
+  // CPUID leaf 7 subleaf 1, EAX bit 4: Clang 18 does not know "avxvnni" in __builtin_cpu_supports.
+  unsigned eax = 0;
+  unsigned ebx = 0;
+  unsigned ecx = 0;
+  unsigned edx = 0;
+  bool const avxvnni = vpclmul && __get_cpuid_count(7, 1, &eax, &ebx, &ecx, &edx) != 0 && ((eax >> 4U) & 1U) != 0;
 #elif defined(_M_X64)
   // CPUID leaf 1, leaf 7 and leaf 7 subleaf 1 as EAX, EBX, ECX, EDX; AVX also needs the OS to save the YMM registers.
   std::array<int, 4> leaf1{};

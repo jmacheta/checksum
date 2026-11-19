@@ -38,6 +38,10 @@ template <isa Isa> struct stripe_kernel {
 
 inline constexpr std::size_t rvv_lanes = std::tuple_size_v<accumulator_array>;
 
+// accumulators.data() outside the vector target: GCC 14 does not inline the always_inline std::array::data() into it.
+inline std::uint64_t *lanes_of(accumulator_array &accumulators) noexcept { return accumulators.data(); }
+inline std::uint64_t const *lanes_of(accumulator_array const &accumulators) noexcept { return accumulators.data(); }
+
 // The 64 bytes at data as eight little-endian 64-bit lanes; byte loads have no alignment requirement.
 template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] vuint64m4_t load_stripe(std::byte const *data) noexcept;
 
@@ -47,11 +51,11 @@ template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] vuint64m4_t load_str
 }
 
 template <isa Isa> stripe_kernel<Isa>::lanes stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept {
-  return __riscv_vle64_v_u64m4(accumulators.data(), rvv_lanes);
+  return __riscv_vle64_v_u64m4(lanes_of(accumulators), rvv_lanes);
 }
 
 template <isa Isa> void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
-  __riscv_vse64_v_u64m4(accumulators.data(), values, rvv_lanes);
+  __riscv_vse64_v_u64m4(lanes_of(accumulators), values, rvv_lanes);
 }
 
 // Each lane adds the product of the 32-bit halves of data ^ secret (vmacc), and the data of its neighbor (vrgather).
