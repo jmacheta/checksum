@@ -59,12 +59,6 @@ template <isa Isa = isa::generic> [[nodiscard]] constexpr fletcher4_value fletch
 /// fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, data)) for a byte range. A std::span<std::byte const> takes the overload above.
 template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept;
 
-/// fletcher4_update<Isa>(state, data) for the best preset Isa of this build in cpu.
-template <byte_range Range> [[nodiscard]] constexpr fletcher4_state fletcher4_update(isa_set cpu, fletcher4_state state, Range &&data) noexcept;
-
-/// fletcher4_compute<Isa>(data) for the best preset Isa of this build in cpu.
-template <byte_range Range> [[nodiscard]] constexpr fletcher4_value fletcher4_compute(isa_set cpu, Range &&data) noexcept;
-
 /// The fletcher4 with the run-time loop of one preset, chosen when the engine is made, by default for the running CPU.
 class fletcher4_dispatch_engine {
 public:
@@ -197,14 +191,6 @@ template <isa Isa, byte_range Range> constexpr fletcher4_value fletcher4_compute
   } else {
     return fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, std::forward<Range>(data)));
   }
-}
-
-template <byte_range Range> constexpr fletcher4_state fletcher4_update(isa_set cpu, fletcher4_state state, Range &&data) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return fletcher4_update<Isa>(state, std::forward<Range>(data)); });
-}
-
-template <byte_range Range> constexpr fletcher4_value fletcher4_compute(isa_set cpu, Range &&data) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return fletcher4_compute<Isa>(std::forward<Range>(data)); });
 }
 
 constexpr fletcher4_dispatch_engine::fletcher4_dispatch_engine(isa_set cpu) noexcept : chosen(isa_detail::select(cpu)) {}

@@ -80,23 +80,6 @@ template <isa Isa = isa::generic, byte_range Range>
 /// The XXH3-128 hash of data: xxh3_compute<128, Isa>(data, seed).
 template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
-/// xxh3_update<Width, Isa>(state, data) for the best preset Isa of this build in cpu.
-template <unsigned Width, byte_range Range>
-[[nodiscard]] constexpr xxh3_state<Width> xxh3_update(isa_set cpu, xxh3_state<Width> state, Range &&data) noexcept;
-
-/// xxh3_finalize<Width, Isa>(state) for the best preset Isa of this build in cpu.
-template <unsigned Width> [[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_finalize(isa_set cpu, xxh3_state<Width> const &state) noexcept;
-
-/// xxh3_compute<Width, Isa>(data, seed) for the best preset Isa of this build in cpu.
-template <unsigned Width, byte_range Range>
-[[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_compute(isa_set cpu, Range &&data, std::uint64_t seed = 0) noexcept;
-
-/// xxh3_64_compute<Isa>(data, seed) for the best preset Isa of this build in cpu.
-template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh3_64_compute(isa_set cpu, Range &&data, std::uint64_t seed = 0) noexcept;
-
-/// xxh3_128_compute<Isa>(data, seed) for the best preset Isa of this build in cpu.
-template <byte_range Range> [[nodiscard]] constexpr hash128 xxh3_128_compute(isa_set cpu, Range &&data, std::uint64_t seed = 0) noexcept;
-
 /// The XXH3 of Width bits with the run-time loop of one preset, chosen when the engine is made, by default
 /// for the running CPU.
 template <unsigned Width>
@@ -682,27 +665,6 @@ template <isa Isa, byte_range Range> constexpr std::uint64_t xxh3_64_compute(Ran
 
 template <isa Isa, byte_range Range> constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed) noexcept {
   return xxh3_compute<128, Isa>(std::forward<Range>(data), seed);
-}
-
-template <unsigned Width, byte_range Range> constexpr xxh3_state<Width> xxh3_update(isa_set cpu, xxh3_state<Width> state, Range &&data) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxh3_update<Width, Isa>(state, std::forward<Range>(data)); });
-}
-
-template <unsigned Width> constexpr xxh3_state<Width>::value_type xxh3_finalize(isa_set cpu, xxh3_state<Width> const &state) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxh3_finalize<Width, Isa>(state); });
-}
-
-template <unsigned Width, byte_range Range>
-constexpr xxh3_state<Width>::value_type xxh3_compute(isa_set cpu, Range &&data, std::uint64_t seed) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxh3_compute<Width, Isa>(std::forward<Range>(data), seed); });
-}
-
-template <byte_range Range> constexpr std::uint64_t xxh3_64_compute(isa_set cpu, Range &&data, std::uint64_t seed) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxh3_64_compute<Isa>(std::forward<Range>(data), seed); });
-}
-
-template <byte_range Range> constexpr hash128 xxh3_128_compute(isa_set cpu, Range &&data, std::uint64_t seed) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxh3_128_compute<Isa>(std::forward<Range>(data), seed); });
 }
 
 template <unsigned Width>

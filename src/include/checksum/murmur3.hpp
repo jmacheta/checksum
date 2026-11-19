@@ -76,22 +76,6 @@ template <isa Isa = isa::generic, byte_range Range>
 template <isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed = 0) noexcept;
 
-/// murmur3_update<Width, Isa>(state, data) for the best preset Isa of this build in cpu.
-template <unsigned Width, byte_range Range>
-[[nodiscard]] constexpr murmur3_state<Width> murmur3_update(isa_set cpu, murmur3_state<Width> state, Range &&data) noexcept;
-
-/// murmur3_compute<Width, Isa>(data, seed) for the best preset Isa of this build in cpu.
-template <unsigned Width, byte_range Range>
-[[nodiscard]] constexpr murmur3_state<Width>::value_type murmur3_compute(isa_set cpu, Range &&data, std::uint32_t seed = 0) noexcept;
-
-/// murmur3_32_compute<Isa>(data, seed) for the best preset Isa of this build in cpu.
-template <byte_range Range>
-[[nodiscard]] constexpr murmur3_32_state::value_type murmur3_32_compute(isa_set cpu, Range &&data, std::uint32_t seed = 0) noexcept;
-
-/// murmur3_128_compute<Isa>(data, seed) for the best preset Isa of this build in cpu.
-template <byte_range Range>
-[[nodiscard]] constexpr murmur3_128_state::value_type murmur3_128_compute(isa_set cpu, Range &&data, std::uint32_t seed = 0) noexcept;
-
 /// The MurmurHash3 of Width bits with the run-time loop of one preset, chosen when the engine is made, by default
 /// for the running CPU.
 template <unsigned Width>
@@ -375,24 +359,6 @@ template <isa Isa, byte_range Range> constexpr murmur3_32_state::value_type murm
 
 template <isa Isa, byte_range Range> constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed) noexcept {
   return murmur3_compute<128, Isa>(std::forward<Range>(data), seed);
-}
-
-template <unsigned Width, byte_range Range>
-constexpr murmur3_state<Width> murmur3_update(isa_set cpu, murmur3_state<Width> state, Range &&data) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return murmur3_update<Width, Isa>(state, std::forward<Range>(data)); });
-}
-
-template <unsigned Width, byte_range Range>
-constexpr murmur3_state<Width>::value_type murmur3_compute(isa_set cpu, Range &&data, std::uint32_t seed) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return murmur3_compute<Width, Isa>(std::forward<Range>(data), seed); });
-}
-
-template <byte_range Range> constexpr murmur3_32_state::value_type murmur3_32_compute(isa_set cpu, Range &&data, std::uint32_t seed) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return murmur3_32_compute<Isa>(std::forward<Range>(data), seed); });
-}
-
-template <byte_range Range> constexpr murmur3_128_state::value_type murmur3_128_compute(isa_set cpu, Range &&data, std::uint32_t seed) noexcept {
-  return isa_detail::dispatch(cpu, [&]<isa Isa>() { return murmur3_128_compute<Isa>(std::forward<Range>(data), seed); });
 }
 
 template <unsigned Width>
