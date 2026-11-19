@@ -11,21 +11,21 @@ XXH64 are in `checksum/xxhash.hpp`, XXH3-64 and XXH3-128 in `checksum/xxh3.hpp`.
 using namespace std::literals;
 
 // One call, seed 0 or another seed.
-std::uint32_t small = checksum::xxh32_compute(key);
-std::uint64_t hash = checksum::xxh3_64_compute(key, 1234);
-checksum::hash128 wide = checksum::xxh3_128_compute(key);
+std::uint32_t small = checksum::xxhash_compute<32>(key);
+std::uint64_t hash = checksum::xxh3_compute<64>(key, 1234);
+checksum::hash128 wide = checksum::xxh3_compute<128>(key);
 
-// Incremental: a message may be split anywhere.
-checksum::xxh3_64_state state{.seed = 1234};
-state = checksum::xxh3_update(state, first_part);
-state = checksum::xxh3_update(state, second_part);
-std::uint64_t value = checksum::xxh3_finalize(state);
+// Incremental: the engine holds the seed, the state only the message; a message may be split anywhere.
+constexpr checksum::xxh3_engine<64> xxh3(1234);
+auto state = xxh3.update(xxh3.initial(), first_part);
+state = xxh3.update(state, second_part);
+std::uint64_t value = xxh3.finalize(state);
 
 // Compile time.
-static_assert(checksum::xxh32_compute("abc"sv) == 0x32D153FF);
-static_assert(checksum::xxh64_compute("abc"sv) == 0x44BC2CF5AD770999);
-static_assert(checksum::xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950);
-static_assert(checksum::xxh3_128_compute("abc"sv) ==
+static_assert(checksum::xxhash_compute<32>("abc"sv) == 0x32D153FF);
+static_assert(checksum::xxhash_compute<64>("abc"sv) == 0x44BC2CF5AD770999);
+static_assert(checksum::xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950);
+static_assert(checksum::xxh3_compute<128>("abc"sv) ==
               checksum::hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
 ```
 
@@ -39,7 +39,10 @@ the reference's 192-byte default secret, kept in read-only data; a seed other th
 
 ## 3. API
 
-Both families have a state, `update`, `finalize` and `compute` with their own prefix. `Isa` is an instruction-set
+Both families have an engine, which holds the seed, a state and one `compute` function with their own prefix. The
+engine's members are `initial()` (the empty message), `update(state, data)` (folds `data` into `state` and returns
+the new state), `finalize(state)` (the hash), `compute(data)` (`finalize(update(initial(), data))`) and the static
+`preset()`; a hash has no `resume`, since its result does not determine the state. `Isa` is an instruction-set
 preset, `isa::generic` by default (section 5). All functions are `constexpr` and `noexcept`. `data` is a
 `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`, `signed char` or `char8_t`; arrays
 of `char` are rejected so a literal's `'\0'` is never hashed (pass `std::string_view`). `compute` hashes contiguous
@@ -52,12 +55,10 @@ plain value, so one prefix can be hashed several ways.
 
 | Name | What it does |
 | --- | --- |
-| `xxhash_state<Width>` | Four lanes, the byte count (`length`), the `seed` and an unfinished stripe (`buffer`, 16 or 32 bytes). The default is the empty message with seed 0; `xxhash_state<Width>{.seed = seed}` starts another. `value_type` is `std::uint32_t` or `std::uint64_t`. |
-| `xxhash_update<Width, Isa>(state, data)` | Folds `data` into `state` and returns the new state. |
-| `xxhash_finalize(state)` | The hash of the message folded into `state`. |
-| `xxhash_compute<Width, Isa>(data, seed = 0)` | `xxhash_finalize(xxhash_update<Width, Isa>(xxhash_state<Width>{.seed = seed}, data))`. The seed is a `std::uint32_t` for XXH32 and a `std::uint64_t` for XXH64; XXH3 takes a `std::uint64_t`. |
-| `xxh32_state`, `xxh64_state`, `xxh32_compute<Isa>`, `xxh64_compute<Isa>` | Aliases for Width 32 and 64. |
-| `xxhash_dispatch_engine<Width>` | `compute` and `update` with the preset chosen at run time. |
+| `xxhash_engine<Width, Isa>` | The engine: `xxhash_engine<Width, Isa>{seed}`, seed 0 by default. The seed is a `std::uint32_t` for XXH32 and a `std::uint64_t` for XXH64; XXH3 takes a `std::uint64_t`. |
+| `xxhash_state<Width>` | Four lanes, the byte count (`length`) and an unfinished stripe (`buffer`, 16 or 32 bytes). The default is the empty message. `value_type` is `std::uint32_t` or `std::uint64_t`. |
+| `xxhash_compute<Width, Isa>(data, seed = 0)` | `xxhash_engine<Width, Isa>{seed}.compute(data)`. |
+| `xxhash_dispatch_engine<Width>` | The same members as `xxhash_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`, with the preset chosen at run time. |
 
 ### 3.2 XXH3-64 and XXH3-128
 
@@ -65,13 +66,11 @@ plain value, so one prefix can be hashed several ways.
 
 | Name | What it does |
 | --- | --- |
-| `xxh3_state<Width>` | Eight accumulators, `length`, `seed` and a 256-byte `buffer`: 336 bytes. The default is the empty message with seed 0; `xxh3_state<Width>{.seed = seed}` starts another. `value_type` is `std::uint64_t` or `hash128`. |
-| `xxh3_update<Width, Isa>(state, data)` | Folds `data` into `state` and returns the new state. |
-| `xxh3_finalize<Width, Isa>(state)` | The hash of the message folded into `state`; `Isa` runs the stripe loop for the remaining buffer. |
-| `xxh3_compute<Width, Isa>(data, seed = 0)` | `xxh3_finalize<Width, Isa>(xxh3_update<Width, Isa>(xxh3_state<Width>{.seed = seed}, data))`. |
-| `xxh3_64_state`, `xxh3_128_state`, `xxh3_64_compute<Isa>`, `xxh3_128_compute<Isa>` | Aliases for Width 64 and 128. |
+| `xxh3_engine<Width, Isa>` | The engine: `xxh3_engine<Width, Isa>{seed}`, seed 0 by default. `finalize` runs the stripe loop of `Isa` for the remaining buffer. |
+| `xxh3_state<Width>` | Eight accumulators, `length` and a 256-byte `buffer`: 328 bytes. The default is the empty message. `value_type` is `std::uint64_t` or `hash128`. |
+| `xxh3_compute<Width, Isa>(data, seed = 0)` | `xxh3_engine<Width, Isa>{seed}.compute(data)`. |
 | `hash128` | `low` and `high` 64 bits, as `XXH128_hash_t`; compares with `==`. MurmurHash3_x64_128 returns it too. |
-| `xxh3_dispatch_engine<Width>` | `compute`, `update` and `finalize` with the preset chosen at run time. |
+| `xxh3_dispatch_engine<Width>` | The same members as `xxh3_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`, with the preset chosen at run time. |
 
 The state keeps the last 1 to 256 bytes in its buffer, so it can hash the end of the message as the one-shot function
 does; messages up to 240 bytes are hashed from the buffer alone.
@@ -84,7 +83,7 @@ does; messages up to 240 bytes are hashed from the buffer alone.
 - **Byte order:** input words are read little-endian on every target. The result is a number or a pair of numbers;
   the reference's canonical form writes most significant byte first, and `high` before `low`.
 - **Long messages:** the length is a 64-bit count; XXH32 mixes it in modulo 2^32, as the reference does.
-- **Streaming cost:** `xxh3_update` copies its 336-byte state in and out per call. In 64-byte pieces XXH3 streams about
+- **Streaming cost:** `xxh3_engine::update` copies its 328-byte state in and out per call. In 64-byte pieces XXH3 streams about
   4× slower than one call; from 4 KiB pieces the copy is negligible. The `byte_range` overload folds all its chunks into
   one state.
 
@@ -119,14 +118,14 @@ A dispatch engine asks the CPU once, when it is made, and from then on runs the 
 
 // Made once, during program start-up: detect_isa() queries the CPU or the operating system.
 static checksum::xxh3_dispatch_engine<64> const xxh3_64;
-static checksum::xxhash_dispatch_engine<64> const xxh64;
+static checksum::xxhash_dispatch_engine<64> const xxh64(42); // seed 42
 
 std::uint64_t key_hash(std::string_view key) { return xxh3_64.compute(key); }
-std::uint64_t legacy_hash(std::string_view key) { return xxh64.compute(key, 42); }
+std::uint64_t legacy_hash(std::string_view key) { return xxh64.compute(key); }
 ```
 
 `xxh3_64.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
-`checksum::xxh3_dispatch_engine<64>(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
+`checksum::xxh3_dispatch_engine<64>(0, checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `xxh3_compute<64>` / `xxhash_compute<64>` or
 give the engine an explicit preset. Details and the list of engines: [Instruction-set

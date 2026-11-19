@@ -44,14 +44,14 @@ std::uint16_t reference(std::span<std::byte const> data) {
   return static_cast<std::uint16_t>(~sum);
 }
 
-static_assert(internet_finalize(internet_update({}, rfc1071_example)) == 0x220D);
-static_assert(internet_update({}, rfc1071_example) == internet_state{.sum = 0xDDF2, .odd = false});
+static_assert(internet_engine{}.finalize(internet_engine{}.update({}, rfc1071_example)) == 0x220D);
+static_assert(internet_engine{}.update({}, rfc1071_example) == internet_state{.sum = 0xDDF2, .odd = false});
 static_assert(internet_compute(ipv4_header) == 0xB861);
 static_assert(internet_compute(std::span<std::byte const>{}) == 0xFFFF);
 static_assert(internet_compute(std::string_view("\x01")) == 0xFEFF);
 
 TEST(internet, published_examples) {
-  EXPECT_EQ(internet_update({}, rfc1071_example), (internet_state{.sum = 0xDDF2, .odd = false}));
+  EXPECT_EQ(internet_engine{}.update({}, rfc1071_example), (internet_state{.sum = 0xDDF2, .odd = false}));
   EXPECT_EQ(internet_compute(rfc1071_example), 0x220D);
   EXPECT_EQ(internet_compute(ipv4_header), 0xB861);
 }
@@ -80,16 +80,16 @@ TEST(internet, field_update) {
   auto const new_field = bytes<2>({0x3F, 0x11}); // TTL 63
   header[8] = new_field[0];
   internet_state state{.sum = static_cast<std::uint16_t>(~old_checksum)};
-  state = internet_update(state, bytes<2>({~0x40U & 0xFFU, ~0x11U & 0xFFU}));
-  state = internet_update(state, new_field);
+  state = internet_engine{}.update(state, bytes<2>({~0x40U & 0xFFU, ~0x11U & 0xFFU}));
+  state = internet_engine{}.update(state, new_field);
   EXPECT_EQ(old_field[0], ipv4_header[8]);
-  EXPECT_EQ(internet_finalize(state), internet_compute(header));
+  EXPECT_EQ(internet_engine{}.finalize(state), internet_compute(header));
 }
 
 TEST(internet, odd_length) {
   EXPECT_EQ(internet_compute(bytes<1>({0x01})), 0xFEFF);
   EXPECT_EQ(internet_compute(bytes<3>({0x12, 0x34, 0x56})), static_cast<std::uint16_t>(~(0x1234 + 0x5600)));
-  EXPECT_TRUE(internet_update({}, bytes<3>({0x12, 0x34, 0x56})).odd);
+  EXPECT_TRUE(internet_engine{}.update({}, bytes<3>({0x12, 0x34, 0x56})).odd);
 }
 
 // All lengths past the unrolled loop, its tail and the thresholds of every CPU kernel, at every alignment of a word.
@@ -131,10 +131,10 @@ TEST(internet, split_anywhere) {
   auto const message = std::span<std::byte const>(data);
   for(std::size_t first = 0; first <= data.size(); ++first) {
     for(std::size_t second = first; second <= data.size(); ++second) {
-      internet_state state = internet_update({}, message.first(first));
-      state = internet_update(state, message.subspan(first, second - first));
-      state = internet_update(state, message.subspan(second));
-      ASSERT_EQ(internet_finalize(state), whole) << "split at " << first << " and " << second;
+      internet_state state = internet_engine{}.update({}, message.first(first));
+      state = internet_engine{}.update(state, message.subspan(first, second - first));
+      state = internet_engine{}.update(state, message.subspan(second));
+      ASSERT_EQ(internet_engine{}.finalize(state), whole) << "split at " << first << " and " << second;
     }
   }
 }
@@ -145,8 +145,8 @@ TEST(internet, split_before_long_chunks) {
   std::uint16_t const whole = internet_compute(data);
   auto const message = std::span<std::byte const>(data);
   for(std::size_t const first : {1U, 3U, 63U, 255U, 257U, 511U, 513U, 939U}) {
-    internet_state const state = internet_update(internet_update({}, message.first(first)), message.subspan(first));
-    ASSERT_EQ(internet_finalize(state), whole) << "split at " << first;
+    internet_state const state = internet_engine{}.update(internet_engine{}.update({}, message.first(first)), message.subspan(first));
+    ASSERT_EQ(internet_engine{}.finalize(state), whole) << "split at " << first;
   }
 }
 
@@ -168,8 +168,8 @@ TEST(internet, constant_evaluation_matches_run_time) {
     }
     return result;
   }();
-  static constexpr std::uint16_t split =
-      internet_finalize(internet_update(internet_update({}, std::span(constant_message).first(7)), std::span(constant_message).subspan(7)));
+  static constexpr std::uint16_t split = internet_engine{}.finalize(
+      internet_engine{}.update(internet_engine{}.update({}, std::span(constant_message).first(7)), std::span(constant_message).subspan(7)));
   auto const message = std::span<std::byte const>(constant_message);
   for(std::size_t size = 0; size <= constant_message_size; ++size) {
     ASSERT_EQ(prefixes[size], internet_compute(message.first(size))) << "size " << size;
@@ -177,13 +177,16 @@ TEST(internet, constant_evaluation_matches_run_time) {
   EXPECT_EQ(split, internet_compute(message));
 }
 
-template <class Checksum>
-concept resumable = requires(Checksum checksum, std::span<std::byte const> data) { internet_update(checksum, data); };
+// Continues the message whose checksum is checksum with data.
+template <class Range> constexpr std::uint16_t continued(std::uint16_t checksum, Range const &data) {
+  constexpr internet_engine internet;
+  return internet.finalize(internet.update(internet.resume(checksum), data));
+}
 
-// Only a std::uint16_t is a checksum; {} stays the empty state.
-static_assert(resumable<std::uint16_t> && !resumable<int> && !resumable<std::uint32_t> && !resumable<bool>);
-static_assert(std::same_as<decltype(internet_update({}, rfc1071_example)), internet_state>);
-static_assert(internet_update(internet_compute(std::span(rfc1071_example).first(4)), std::span(rfc1071_example).subspan(4)) == 0x220D);
+static_assert(resumable_engine<internet_engine<>> && resumable_engine<internet_dispatch_engine>);
+static_assert(internet_engine{}.resume(0x220D) == internet_state{.sum = 0xDDF2, .odd = false});
+static_assert(std::same_as<decltype(internet_engine{}.update({}, rfc1071_example)), internet_state>);
+static_assert(continued(internet_compute(std::span(rfc1071_example).first(4)), std::span(rfc1071_example).subspan(4)) == 0x220D);
 
 // A stored checksum continues the message after any even number of bytes, at compile time and at run time. After an odd number it
 // does not: the checksum does not record that the next byte is the low byte of a word.
@@ -193,7 +196,7 @@ TEST(internet, resume_from_checksum) {
     auto const message = std::span(constant_message).first(constant_size);
     std::array<std::uint16_t, (constant_size / 2) + 1> result{};
     for(std::size_t word = 0; word < result.size(); ++word) {
-      result[word] = internet_update(internet_compute(message.first(2 * word)), message.subspan(2 * word));
+      result[word] = continued(internet_compute(message.first(2 * word)), message.subspan(2 * word));
     }
     return result;
   }();
@@ -205,17 +208,17 @@ TEST(internet, resume_from_checksum) {
   auto const message = std::span<std::byte const>(data);
   std::uint16_t const whole = reference(message);
   for(std::size_t first = 0; first <= data.size(); first += 2) {
-    ASSERT_EQ(internet_update(internet_compute(message.first(first)), message.subspan(first)), whole) << "split at " << first;
+    ASSERT_EQ(continued(internet_compute(message.first(first)), message.subspan(first)), whole) << "split at " << first;
   }
   std::list<std::byte> const tail(data.begin() + 100, data.end());
-  EXPECT_EQ(internet_update(internet_compute(message.first(100)), tail), whole);
-  EXPECT_NE(internet_update(internet_compute(message.first(1)), message.subspan(1)), whole);
+  EXPECT_EQ(continued(internet_compute(message.first(100)), tail), whole);
+  EXPECT_NE(continued(internet_compute(message.first(1)), message.subspan(1)), whole);
 
   // Both zeros of one's complement: 0xFFFF after only zero bytes, 0 after a message that sums to 0xFFFF.
   std::array<std::byte, 4> const zeros{};
-  EXPECT_EQ(internet_update(internet_compute(zeros), message), whole);
-  EXPECT_EQ(internet_update(std::uint16_t{0}, zeros), 0);
-  EXPECT_EQ(internet_update(std::uint16_t{0xFFFF}, zeros), 0xFFFF);
+  EXPECT_EQ(continued(internet_compute(zeros), message), whole);
+  EXPECT_EQ(continued(std::uint16_t{0}, zeros), 0);
+  EXPECT_EQ(continued(std::uint16_t{0xFFFF}, zeros), 0xFFFF);
 }
 
 TEST(internet, byte_ranges) {

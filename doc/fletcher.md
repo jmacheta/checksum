@@ -10,18 +10,18 @@ tables. Adler-32 and ZFS fletcher4 have their own guides: [adler32.md](adler32.m
 using namespace std::literals;
 
 // One call.
-std::uint32_t value = checksum::fletcher32_compute(std::span(buffer));
+std::uint32_t value = checksum::fletcher_compute<32>(std::span(buffer));
 
 // Incremental: a message may be split anywhere.
-checksum::fletcher16_state state;
-state = checksum::fletcher_update(state, header);
-state = checksum::fletcher_update(state, payload);
-std::uint16_t frame_checksum = checksum::fletcher_finalize(state);
+constexpr checksum::fletcher_engine<16> fletcher16;
+auto state = fletcher16.update(fletcher16.initial(), header);
+state = fletcher16.update(state, payload);
+std::uint16_t frame_checksum = fletcher16.finalize(state);
 
 // Compile time.
-static_assert(checksum::fletcher16_compute("abcde"sv) == 0xC8F0);
-static_assert(checksum::fletcher32_compute("abcde"sv) == 0xF04FC729);
-static_assert(checksum::fletcher64_compute("abcde"sv) == 0xC8C6C527646362C6);
+static_assert(checksum::fletcher_compute<16>("abcde"sv) == 0xC8F0);
+static_assert(checksum::fletcher_compute<32>("abcde"sv) == 0xF04FC729);
+static_assert(checksum::fletcher_compute<64>("abcde"sv) == 0xC8C6C527646362C6);
 ```
 
 `examples/fletcher` has complete programs: checksums at compile time, a file checksum computed in chunks, and a frame
@@ -43,18 +43,14 @@ which reads words little-endian.
 
 ## 3. API
 
-`Width` is 16, 32 or 64; `fletcher_update` and `fletcher_finalize` take it from the state or checksum type.
+`Width` is 16, 32 or 64.
 
 | Name | What it does |
 | --- | --- |
+| `fletcher_engine<Width, Isa>` | The engine, an empty object. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the checksum (an unfinished block padded with zero bytes), `resume(checksum)` the state of a message with that checksum (section 4), `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. |
 | `fletcher_state<Width>` | `sum1`, `sum2` and `block_offset` (bytes of an unfinished block already in `sum1`). A plain value; the default is the empty message. `value_type` is the checksum type, `sum_type` the type of one sum. |
-| `fletcher_update<Width, Isa>(state, data)` | Folds `data` into `state` and returns the new state. |
-| `fletcher_update<Isa>(checksum, data)` | Folds `data` into the message whose checksum is `checksum` and returns the new checksum; see section 4. |
-| `fletcher_finalize(state)` | The checksum, an unfinished block padded with zero bytes. |
-| `fletcher_compute<Width, Isa>(data)` | `fletcher_finalize(fletcher_update<Width, Isa>(fletcher_state<Width>{}, data))`. |
-| `fletcher16_state`, `fletcher32_state`, `fletcher64_state` | Aliases of `fletcher_state<16>` and so on. |
-| `fletcher16_compute<Isa>(data)`, `fletcher32_compute<Isa>(data)`, `fletcher64_compute<Isa>(data)` | `fletcher_compute<16, Isa>(data)` and so on. |
-| `fletcher_dispatch_engine<Width>` | `compute` and `update` with the preset chosen at run time. |
+| `fletcher_compute<Width, Isa>(data)` | `fletcher_engine<Width, Isa>{}.compute(data)`. |
+| `fletcher_dispatch_engine<Width>` | The same members as `fletcher_engine<Width>`, with the preset chosen at run time (section 5.1). |
 
 `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
 `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
@@ -69,11 +65,10 @@ which reads words little-endian.
 - **Ones and zeros:** a sum never equals M, so a block of all one bits counts as a block of zeros. For Fletcher-16,
   bytes 0x00 and 0xFF give the same checksum, and neither byte of the result is ever 0xFF.
 - **Byte order:** words are read little-endian on every target; the result is a number.
-- **Continuing from a stored checksum:** `fletcher_update(value, data)` returns the new checksum; the type of `value`
-  selects the width (`std::uint16_t`, `std::uint32_t`, `std::uint64_t`). Other integer types and `{}` do not compile:
-  write `std::uint32_t{0xF04FC729}`, or name the state (`fletcher32_state{}`). Fletcher-32 and -64 continue correctly
-  only after whole blocks (a multiple of 2 or 4 bytes), since the checksum counts an unfinished block as padded; keep
-  the state otherwise. Fletcher-16 continues after any length.
+- **Continuing from a stored checksum:** `fletcher.update(fletcher.resume(value), data)` continues a message whose
+  checksum is `value`. Fletcher-32 and -64 continue correctly only after whole blocks (a multiple of 2 or 4 bytes),
+  since the checksum counts an unfinished block as padded; keep the state otherwise. Fletcher-16 continues after any
+  length.
 
 ## 5. CPU acceleration
 
@@ -118,7 +113,7 @@ presets](../README.md#instruction-set-presets).
 
 Measured figures: [performance.md](performance.md#fletcher-16--32-and--64).
 
-- **Pass data in chunks of a few KiB**, at least the kernel's minimum size (64-384 B) per `fletcher_update` call.
+- **Pass data in chunks of a few KiB**, at least the kernel's minimum size (64-384 B) per `update` call.
 - **On x86-64 use `isa::x86_avx2`** where the CPU has it: 2.4× faster than the SSE2 kernel of `isa::generic` for
   Fletcher-16 and -32 at 4 KiB, and the only Fletcher-64 kernel. With Clang a kernel matters more: its portable loop is
   2.1-2.3× slower than GCC's.

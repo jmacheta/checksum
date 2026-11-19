@@ -48,7 +48,7 @@ Measured speed and code size on x86-64, Cortex-A72, Cortex-M4 and Cortex-M33: [d
 using namespace std::literals;
 
 // Compile time.
-static_assert(checksum::crc_engine_for<checksum::crc32>.compute("123456789"sv) == 0xCBF43926);
+static_assert(checksum::crc_compute<checksum::crc32>("123456789"sv) == 0xCBF43926);
 
 // Run time, on any span or range of bytes; crc_lut_sliced trades 8 KiB of tables for speed.
 std::vector<std::byte> data = read_file("firmware.bin");
@@ -58,6 +58,19 @@ std::uint32_t crc = checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_
 static checksum::xxh3_dispatch_engine<64> const xxh3;
 std::uint64_t hash = xxh3.compute(data);
 ```
+
+Every algorithm has the same shape:
+
+- **One-shot:** `<algorithm>_compute<[Width,] Isa>(data[, seed])`, e.g. `adler32_compute(data)`,
+  `xxh3_compute<128>(data, seed)`, `crc_compute<checksum::crc32>(data)`.
+- **Engines:** `<algorithm>_engine<[Width,] Isa>` (CRC: `crc_engine<Register, Strategy, Isa>::create(parameters)` or
+  `crc_engine_for<Parameters>`) holds what does not change during a computation: CRC parameters and tables, the seed of
+  a hash. The running state is a separate value: `initial()`, `update(state, data)`, `finalize(state)`,
+  `compute(data)`, the preset in `preset()`, and for CRC, Internet, Adler-32, Fletcher and fletcher4
+  `resume(checksum)`, the state of a message with a stored checksum. The `engine` and `resumable_engine` concepts
+  (`checksum/engine.hpp`) describe them.
+- **Accumulator:** `checksum::accumulator running{engine}` keeps an engine pointer and the state together:
+  `running.update(header).update(payload).value()`. It works with every engine, dispatch engines included.
 
 [examples/](examples) has small complete programs for every algorithm: files read in chunks, a MODBUS frame, an IPv4
 header and UDP datagram, a zlib trailer, a ZFS block, a Bloom filter, a seeded hash table, and a custom CRC strategy
@@ -116,19 +129,18 @@ from then on; each call costs one or two cycles to switch to the chosen loop.
 
 ```cpp
 static checksum::internet_dispatch_engine const internet;  // detects the CPU at program start
-static auto const crc = checksum::crc_dispatch_engine<std::uint32_t>::create(checksum::crc32);
+static auto const crc = checksum::crc_dispatch_engine<std::uint32_t, checksum::crc_lut_sliced>::create(checksum::crc32);
 
 std::uint16_t const sum = internet.compute(data);
 std::uint32_t const value = crc->compute(data);
 ```
 
-- Every algorithm has one: `internet_dispatch_engine`, `adler32_dispatch_engine`, `fletcher_dispatch_engine<Width>`,
-  `fletcher4_dispatch_engine`, `xxh3_dispatch_engine<Width>`, `xxhash_dispatch_engine<Width>`,
-  `murmur3_dispatch_engine<Width>` (constructor `explicit engine(isa_set cpu = detect_isa())`), and
-  `crc_dispatch_engine<Register, Strategy = crc_lut_sliced>::create(parameters, isa_set cpu = detect_isa())`, which
-  returns `std::optional` and keeps one table for every preset. `compute` and `update` match the free functions, and
-  the XXH3 and CRC engines also have `finalize`; the others finish with the algorithm's free `*_finalize`. `preset()`
-  names the chosen preset.
+- Every algorithm has one, with the same members as its static engine: `internet_dispatch_engine`,
+  `adler32_dispatch_engine`, `fletcher_dispatch_engine<Width>`, `fletcher4_dispatch_engine` (constructor
+  `explicit engine(isa_set cpu = detect_isa())`), `xxh3_dispatch_engine<Width>`, `xxhash_dispatch_engine<Width>`,
+  `murmur3_dispatch_engine<Width>` (constructor `explicit engine(seed = 0, isa_set cpu = detect_isa())`), and
+  `crc_dispatch_engine<Register, Strategy>::create(parameters, isa_set cpu = detect_isa())`, which returns
+  `std::optional` and keeps one table for every preset. `preset()` names the chosen preset.
 - `detect_isa()` asks the CPU or the operating system on every call: the CPU identification instruction on x86-64,
   the Linux auxiliary vector and system calls on Arm and RISC-V, `IsProcessorFeaturePresent` on Windows ARM64,
   `elf_aux_info` on FreeBSD and `sysctlbyname` on Apple AArch64. It also reports what the compiler flags already require
@@ -150,9 +162,14 @@ std::uint32_t const value = crc->compute(data);
   kernels; in 2.0 the default `isa::generic` runs only the architecture baseline (SSE2, AArch64 NEON). Name a preset
   (`internet_compute<checksum::isa::x86_avx2>(data)`) or use a dispatch engine to get them back.
 - **The CMake option `CHECKSUM_ACCELERATION` is gone**; `isa::generic` is the portable choice.
+- **One engine model for every algorithm.** The free update and finalize functions are gone: make the engine
+  (`internet_engine<Isa>{}`, `xxh3_engine<64, Isa>{seed}`) and call its `update` and `finalize`. A seed is given to
+  the engine, no longer stored in the state. Continuing from a stored checksum is
+  `engine.update(engine.resume(checksum), data)`. The aliases of each width are gone: write `fletcher_compute<16>`,
+  `xxhash_compute<32>`, `xxh3_state<64>`. The CRC accumulator became `checksum::accumulator`, and
+  `crc_dispatch_engine` names its strategy.
 - **Explicit template arguments moved:** the preset is now the first template parameter (after the width, where there is
-  one), so a call such as `internet_update<std::uint16_t>(checksum, data)` drops the explicit type. Results are
-  unchanged everywhere.
+  one). Results are unchanged everywhere.
 
 ## Contributing
 

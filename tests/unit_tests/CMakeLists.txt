@@ -4,7 +4,8 @@ target_compile_features(checksum_ut PRIVATE cxx_std_23)
 
 target_sources(
   checksum_ut
-  PRIVATE ut_adler32.cpp
+  PRIVATE ut_accumulator.cpp
+          ut_adler32.cpp
           ut_crc_acceleration.cpp
           ut_crc_accumulator.cpp
           ut_crc_catalog.cpp

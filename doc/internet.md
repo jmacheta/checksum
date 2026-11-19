@@ -14,11 +14,11 @@ header[10] = std::byte(value >> 8);
 header[11] = std::byte(value & 0xFF);
 
 // Incremental, e.g. a UDP pseudo-header, the UDP header and the payload.
-checksum::internet_state state;
-state = checksum::internet_update(state, pseudo_header);
-state = checksum::internet_update(state, udp_header);
-state = checksum::internet_update(state, payload);
-std::uint16_t udp_checksum = checksum::internet_finalize(state);
+constexpr checksum::internet_engine internet;
+auto state = internet.update(internet.initial(), pseudo_header);
+state = internet.update(state, udp_header);
+state = internet.update(state, payload);
+std::uint16_t udp_checksum = internet.finalize(state);
 
 // Compile time.
 static_assert(checksum::internet_compute(std::string_view("123456789")) == 0xF62A);
@@ -37,12 +37,10 @@ complement arithmetic (each carry out of bit 15 added back into bit 0), and the 
 
 | Name | What it does |
 | --- | --- |
+| `internet_engine<Isa>` | The engine, an empty object. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the checksum `~state.sum`, `resume(checksum)` the state of a message with that checksum (section 4), `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. |
 | `internet_state` | The running sum (`sum`) and whether an odd number of bytes was folded (`odd`). A plain value; the default is the empty message. |
-| `internet_update<Isa>(state, data)` | Folds `data` into `state` and returns the new state. |
-| `internet_update<Isa>(checksum, data)` | Folds `data` into the message whose checksum is `checksum` (a `std::uint16_t`) and returns the new checksum; see section 4. |
-| `internet_finalize(state)` | The checksum: `~state.sum`. |
-| `internet_compute<Isa>(data)` | `internet_finalize(internet_update<Isa>({}, data))`. |
-| `internet_dispatch_engine` | `compute` and `update` with the preset chosen at run time. |
+| `internet_compute<Isa>(data)` | `internet_engine<Isa>{}.compute(data)`. |
+| `internet_dispatch_engine` | The same members as `internet_engine`, with the preset chosen at run time (section 5.1). |
 
 `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
 `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
@@ -57,10 +55,9 @@ complement arithmetic (each carry out of bit 15 added back into bit 0), and the 
   verifies a packet.
 - **Byte order:** the result is a number; write it most significant byte first. Every target reads the message the
   same way.
-- **Continuing from a stored checksum:** `internet_update(value, data)` continues a message whose checksum is `value`
-  (the running sum is `~value`). It is correct only after an even number of bytes, since the checksum does not record
-  an odd last byte; keep the state otherwise. `value` must be a `std::uint16_t`, so that `internet_update({}, data)`
-  still starts from the empty state.
+- **Continuing from a stored checksum:** `internet.update(internet.resume(value), data)` continues a message whose
+  checksum is `value` (the running sum is `~value`). It is correct only after an even number of bytes, since the
+  checksum does not record an odd last byte; keep the state otherwise.
 
 ## 5. CPU acceleration
 

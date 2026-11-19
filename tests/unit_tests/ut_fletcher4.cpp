@@ -67,9 +67,9 @@ TEST(fletcher4, reference_vectors) {
   EXPECT_EQ(reference(message), fletcher4_test::long_message);
   fletcher4_state state{};
   for(std::size_t start = 0; start < message.size(); start += 4099) {
-    state = fletcher4_update(state, message.subspan(start, std::min<std::size_t>(4099, message.size() - start)));
+    state = fletcher4_engine{}.update(state, message.subspan(start, std::min<std::size_t>(4099, message.size() - start)));
   }
-  EXPECT_EQ(fletcher4_finalize(state), fletcher4_test::long_message);
+  EXPECT_EQ(fletcher4_engine{}.finalize(state), fletcher4_test::long_message);
 }
 
 // All lengths, including unfinished words, at every alignment of a word.
@@ -97,12 +97,12 @@ TEST(fletcher4, all_ones) {
 TEST(fletcher4, split_anywhere) {
   auto const data = random_bytes(80, 3);
   auto const message = std::span<std::byte const>(data);
-  fletcher4_state const whole = fletcher4_update(fletcher4_state{}, message);
+  fletcher4_state const whole = fletcher4_engine{}.update(fletcher4_state{}, message);
   for(std::size_t first = 0; first <= data.size(); ++first) {
     for(std::size_t second = first; second <= data.size(); ++second) {
-      fletcher4_state state = fletcher4_update(fletcher4_state{}, message.first(first));
-      state = fletcher4_update(state, message.subspan(first, second - first));
-      state = fletcher4_update(state, message.subspan(second));
+      fletcher4_state state = fletcher4_engine{}.update(fletcher4_state{}, message.first(first));
+      state = fletcher4_engine{}.update(state, message.subspan(first, second - first));
+      state = fletcher4_engine{}.update(state, message.subspan(second));
       ASSERT_EQ(state, whole) << "split at " << first << " and " << second;
     }
   }
@@ -114,8 +114,9 @@ TEST(fletcher4, split_before_long_chunks) {
   auto const message = std::span<std::byte const>(data);
   auto const whole = reference(message);
   for(std::size_t const first : {1U, 2U, 3U, 5U, 63U, 255U, 257U, 1023U, 1501U, 4093U}) {
-    fletcher4_state const state = fletcher4_update(fletcher4_update(fletcher4_state{}, message.first(first)), message.subspan(first));
-    ASSERT_EQ(fletcher4_finalize(state), whole) << "split at " << first;
+    fletcher4_state const state =
+        fletcher4_engine{}.update(fletcher4_engine{}.update(fletcher4_state{}, message.first(first)), message.subspan(first));
+    ASSERT_EQ(fletcher4_engine{}.finalize(state), whole) << "split at " << first;
   }
 }
 
@@ -137,7 +138,7 @@ TEST(fletcher4, lanes_continue_state) {
       }
       expected.sum1 += reference(message.subspan(size - (size % 4)))[0];
       expected.word_offset = static_cast<std::uint8_t>(size % 4);
-      ASSERT_EQ(fletcher4_update(start, message), expected) << "offset " << offset << ", size " << size;
+      ASSERT_EQ(fletcher4_engine{}.update(start, message), expected) << "offset " << offset << ", size " << size;
     }
   }
 }
@@ -154,8 +155,8 @@ TEST(fletcher4, constant_evaluation_matches_run_time) {
   static constexpr auto splits = [] {
     std::array<fletcher4_state, 4> result{};
     for(std::size_t first = 0; first < result.size(); ++first) {
-      result[first] = fletcher4_update(fletcher4_update(fletcher4_state{}, std::span(constant_message).first(first + 5)),
-                                       std::span(constant_message).subspan(first + 5));
+      result[first] = fletcher4_engine{}.update(fletcher4_engine{}.update(fletcher4_state{}, std::span(constant_message).first(first + 5)),
+                                                std::span(constant_message).subspan(first + 5));
     }
     return result;
   }();
@@ -164,8 +165,38 @@ TEST(fletcher4, constant_evaluation_matches_run_time) {
     ASSERT_EQ(prefixes[size], fletcher4_compute(message.first(size))) << "size " << size;
   }
   for(std::size_t first = 0; first < splits.size(); ++first) {
-    EXPECT_EQ(splits[first], fletcher4_update(fletcher4_update(fletcher4_state{}, message.first(first + 5)), message.subspan(first + 5)));
+    EXPECT_EQ(splits[first],
+              fletcher4_engine{}.update(fletcher4_engine{}.update(fletcher4_state{}, message.first(first + 5)), message.subspan(first + 5)));
   }
+}
+
+static_assert(resumable_engine<fletcher4_engine<>> && resumable_engine<fletcher4_dispatch_engine>);
+static_assert(fletcher4_engine{}.resume({1, 2, 3, 4}) == fletcher4_state{.sum1 = 1, .sum2 = 2, .sum3 = 3, .sum4 = 4});
+
+// A stored checksum continues the message after any whole number of words, at compile time and at run time.
+TEST(fletcher4, resume_from_checksum) {
+  static constexpr fletcher4_engine fletcher4;
+  static constexpr auto resumed = [] {
+    std::array<fletcher4_value, (constant_message_size / 4) + 1> result{};
+    for(std::size_t word = 0; word < result.size(); ++word) {
+      auto const message = std::span(constant_message);
+      result[word] = fletcher4.finalize(fletcher4.update(fletcher4.resume(fletcher4_compute(message.first(4 * word))), message.subspan(4 * word)));
+    }
+    return result;
+  }();
+  for(fletcher4_value const &value : resumed) {
+    ASSERT_EQ(value, fletcher4_compute(constant_message));
+  }
+
+  auto const data = random_bytes(1101, 9);
+  auto const message = std::span<std::byte const>(data);
+  auto const whole = reference(message);
+  for(std::size_t first = 0; first <= data.size(); first += 4) {
+    ASSERT_EQ(fletcher4.finalize(fletcher4.update(fletcher4.resume(fletcher4_compute(message.first(first))), message.subspan(first))), whole)
+        << "split at " << first;
+  }
+  std::list<std::byte> const tail(data.begin() + 100, data.end());
+  EXPECT_EQ(fletcher4.finalize(fletcher4.update(fletcher4.resume(fletcher4_compute(message.first(100))), tail)), whole);
 }
 
 TEST(fletcher4, byte_ranges) {
@@ -177,7 +208,8 @@ TEST(fletcher4, byte_ranges) {
   // Longer than one 64-byte chunk of a non-contiguous range, chunks ending inside a word.
   auto const data = random_bytes(203, 4);
   EXPECT_EQ(fletcher4_compute(std::list<std::byte>(data.begin(), data.end())), reference(data));
-  EXPECT_EQ(fletcher4_update(fletcher4_state{}, std::list<std::byte>(data.begin(), data.end())), fletcher4_update(fletcher4_state{}, data));
+  EXPECT_EQ(fletcher4_engine{}.update(fletcher4_state{}, std::list<std::byte>(data.begin(), data.end())),
+            fletcher4_engine{}.update(fletcher4_state{}, data));
 }
 
 // The word offset is taken modulo 4, at compile time and at run time.
@@ -189,14 +221,14 @@ TEST(fletcher4, word_offset_modulo_4) {
     fletcher4_state const state{.sum1 = largest, .sum2 = largest, .sum3 = largest, .sum4 = largest, .word_offset = static_cast<std::uint8_t>(offset)};
     fletcher4_state masked = state;
     masked.word_offset = static_cast<std::uint8_t>(offset % 4);
-    auto const result = fletcher4_update(state, message);
-    ASSERT_EQ(result, fletcher4_update(masked, message)) << "offset " << offset;
-    ASSERT_EQ(fletcher4_finalize(state), fletcher4_finalize(masked)) << "offset " << offset;
+    auto const result = fletcher4_engine{}.update(state, message);
+    ASSERT_EQ(result, fletcher4_engine{}.update(masked, message)) << "offset " << offset;
+    ASSERT_EQ(fletcher4_engine{}.finalize(state), fletcher4_engine{}.finalize(masked)) << "offset " << offset;
     ASSERT_LT(result.word_offset, 4U);
   }
   constexpr fletcher4_state maximum{.word_offset = 0xFF};
-  static_assert(fletcher4_update(maximum, std::span<std::byte const>{}) ==
-                fletcher4_update(fletcher4_state{.word_offset = 3}, std::span<std::byte const>{}));
+  static_assert(fletcher4_engine{}.update(maximum, std::span<std::byte const>{}) ==
+                fletcher4_engine{}.update(fletcher4_state{.word_offset = 3}, std::span<std::byte const>{}));
 }
 
 } // namespace

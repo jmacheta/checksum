@@ -52,11 +52,12 @@ template <unsigned Width> constexpr std::size_t prefix_mismatches(std::size_t si
 // The hash of data, folded in pieces of chunk_size bytes.
 template <unsigned Width>
 constexpr auto chunked(std::span<std::byte const> data, std::size_t chunk_size, typename xxhash_state<Width>::value_type seed) {
-  xxhash_state<Width> state{.seed = seed};
+  xxhash_engine<Width> const engine(seed);
+  auto state = engine.initial();
   for(; data.size() > chunk_size; data = data.subspan(chunk_size)) {
-    state = xxhash_update(state, data.first(chunk_size));
+    state = engine.update(state, data.first(chunk_size));
   }
-  return xxhash_finalize(xxhash_update(state, data));
+  return engine.finalize(engine.update(state, data));
 }
 
 using namespace std::literals;
@@ -65,7 +66,7 @@ static_assert(xxhash_compute<32>(""sv) == 0x02CC5D05U);
 static_assert(xxhash_compute<64>(""sv) == 0xEF46DB3751D8E999U);
 static_assert(xxhash_compute<32>("abc"sv) == 0x32D153FFU);
 static_assert(xxhash_compute<64>("abc"sv) == 0x44BC2CF5AD770999U);
-static_assert(xxhash_finalize(xxhash_state<64>{}) == 0xEF46DB3751D8E999U);
+static_assert(xxhash_engine<64>{}.finalize(xxhash_state<64>{}) == 0xEF46DB3751D8E999U);
 static_assert(xxhash_compute<32>(std::span(message), xxhash32_vectors[2].seed) == xxhash32_vectors[2].prefixes[300]);
 static_assert(xxhash_compute<64>(std::span(message).first(33), xxhash64_vectors[2].seed) == xxhash64_vectors[2].prefixes[33]);
 static_assert(chunked<64>(message, 7, xxhash64_vectors[1].seed) == xxhash64_vectors[1].prefixes[300]);
@@ -73,8 +74,8 @@ static_assert(chunked<32>(message, 13, xxhash32_vectors[1].seed) == xxhash32_vec
 // Every tail length around two XXH64 stripes; longer prefixes exceed the constant-evaluation step limit of Clang.
 static_assert(prefix_mismatches<32>(70) == 0);
 static_assert(prefix_mismatches<64>(70) == 0);
-static_assert(std::same_as<xxh32_state, xxhash_state<32>> && std::same_as<xxh64_state, xxhash_state<64>>);
-static_assert(xxh32_compute("abc"sv) == 0x32D153FFU && xxh64_compute("abc"sv, 1) == xxhash_compute<64>("abc"sv, 1));
+static_assert(xxhash_engine<64>{1}.compute("abc"sv) == xxhash_compute<64>("abc"sv, 1));
+static_assert(engine<xxhash_engine<32>> && engine<xxhash_dispatch_engine<64>> && !resumable_engine<xxhash_engine<64>>);
 
 template <class Width> class xxhash : public testing::Test {};
 
@@ -93,8 +94,8 @@ TYPED_TEST(xxhash, reference_prefixes) {
     for(std::size_t size = 0; size < xxhash_test::prefix_count; ++size) {
       auto const data = std::span(message).first(size);
       ASSERT_EQ(xxhash_compute<width>(data, set.seed), set.prefixes[size]) << "seed " << set.seed << ", size " << size;
-      ASSERT_EQ(xxhash_finalize(xxhash_update(xxhash_state<width>{.seed = set.seed}, data)), set.prefixes[size])
-          << "seed " << set.seed << ", size " << size;
+      xxhash_engine<width> const engine(set.seed);
+      ASSERT_EQ(engine.finalize(engine.update(engine.initial(), data)), set.prefixes[size]) << "seed " << set.seed << ", size " << size;
     }
   }
 }
@@ -119,10 +120,11 @@ TYPED_TEST(xxhash, split_anywhere) {
   auto const data = std::span<std::byte const>(message).first(size);
   for(std::size_t first = 0; first <= size; ++first) {
     for(std::size_t second = first; second <= size; ++second) {
-      xxhash_state<width> state = xxhash_update(xxhash_state<width>{.seed = set.seed}, data.first(first));
-      state = xxhash_update(state, data.subspan(first, second - first));
-      ASSERT_EQ(xxhash_finalize(state), set.prefixes[second]) << "split at " << first << " and " << second;
-      ASSERT_EQ(xxhash_finalize(xxhash_update(state, data.subspan(second))), set.prefixes[size]) << "split at " << first << " and " << second;
+      xxhash_engine<width> const engine(set.seed);
+      xxhash_state<width> state = engine.update(engine.initial(), data.first(first));
+      state = engine.update(state, data.subspan(first, second - first));
+      ASSERT_EQ(engine.finalize(state), set.prefixes[second]) << "split at " << first << " and " << second;
+      ASSERT_EQ(engine.finalize(engine.update(state, data.subspan(second))), set.prefixes[size]) << "split at " << first << " and " << second;
     }
   }
 }
@@ -148,7 +150,8 @@ TYPED_TEST(xxhash, byte_ranges) {
   EXPECT_EQ(xxhash_compute<width>(text, set.seed), expected);
   EXPECT_EQ(xxhash_compute<width>(std::list<char>(text.begin(), text.end()), set.seed), expected);
   EXPECT_EQ(xxhash_compute<width>(std::vector<unsigned char>(text.begin(), text.end()), set.seed), expected);
-  EXPECT_EQ(xxhash_finalize(xxhash_update(xxhash_state<width>{.seed = set.seed}, text)), expected);
+  xxhash_engine<width> const engine(set.seed);
+  EXPECT_EQ(engine.finalize(engine.update(engine.initial(), text)), expected);
   // Longer than one 64-byte chunk of a non-contiguous range.
   EXPECT_EQ(xxhash_compute<width>(std::list<std::byte>(message.begin(), message.end()), set.seed), set.prefixes[300]);
 }
@@ -161,22 +164,6 @@ TYPED_TEST(xxhash, long_message) {
     EXPECT_EQ(xxhash_compute<width>(data, set.seed), set.long_message) << "seed " << set.seed;
     EXPECT_EQ(chunked<width>(data, 4099, set.seed), set.long_message) << "seed " << set.seed;
   }
-}
-
-TEST(xxhash, aliases) {
-  constexpr std::string_view text = "123456789 123456789 123456789 123456789";
-  auto const bytes = std::as_bytes(std::span(text));
-  for(auto const &set : xxhash32_vectors) {
-    EXPECT_EQ(xxh32_compute(text, set.seed), xxhash_compute<32>(text, set.seed));
-    EXPECT_EQ(xxh32_compute(bytes, set.seed), xxhash_compute<32>(bytes, set.seed));
-    EXPECT_EQ(xxh32_compute(std::span(message), set.seed), set.prefixes[300]);
-  }
-  for(auto const &set : xxhash64_vectors) {
-    EXPECT_EQ(xxh64_compute(text, set.seed), xxhash_compute<64>(text, set.seed));
-    EXPECT_EQ(xxh64_compute(bytes, set.seed), xxhash_compute<64>(bytes, set.seed));
-    EXPECT_EQ(xxh64_compute(std::span(message), set.seed), set.prefixes[300]);
-  }
-  EXPECT_EQ(xxhash_finalize(xxhash_update(xxh64_state{.seed = 7}, text)), xxh64_compute(text, 7));
 }
 
 // Seeds of all ones wrap every lane's initial value; hashes from xxhash.h 0.8.4.

@@ -29,9 +29,9 @@ TYPED_TEST_SUITE(fletcher4_presets, isa_test::presets, isa_test::preset_name);
 TYPED_TEST(fletcher4_presets, constant_evaluation) {
   constexpr isa preset = TypeParam::value;
   static_assert(fletcher4_compute<preset>(std::string_view("abcdefgh")) == fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
-  static_assert(
-      fletcher4_finalize(fletcher4_update<preset>(fletcher4_update<preset>(fletcher4_state{}, std::string_view("abcdefg")), std::string_view("h"))) ==
-      fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
+  static_assert(fletcher4_engine{}.finalize(fletcher4_engine<preset>{}.update(
+                    fletcher4_engine<preset>{}.update(fletcher4_state{}, std::string_view("abcdefg")), std::string_view("h"))) ==
+                fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
   EXPECT_EQ(fletcher4_compute<preset>(std::string_view("abcdefgh")), (fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9}));
 }
 
@@ -64,14 +64,14 @@ TYPED_TEST(fletcher4_presets, match_generic_through_updates_and_splits) {
     for(std::size_t const offset : {0UZ, 1UZ, 3UZ, 7UZ}) {
       auto const head = at(buffer, offset, split);
       auto const tail = at(buffer, offset + split, 1300 - split);
-      fletcher4_state const expected = fletcher4_update(fletcher4_update(fletcher4_state{}, head), tail);
-      fletcher4_state actual = fletcher4_update<preset>(fletcher4_state{}, head.first(split / 2));
-      actual = fletcher4_update<preset>(actual, head.subspan(split / 2));
-      actual = fletcher4_update<preset>(actual, tail);
+      fletcher4_state const expected = fletcher4_engine{}.update(fletcher4_engine{}.update(fletcher4_state{}, head), tail);
+      fletcher4_state actual = fletcher4_engine<preset>{}.update(fletcher4_state{}, head.first(split / 2));
+      actual = fletcher4_engine<preset>{}.update(actual, head.subspan(split / 2));
+      actual = fletcher4_engine<preset>{}.update(actual, tail);
       ASSERT_EQ(actual, expected) << "split " << split << ", offset " << offset;
     }
   }
-  EXPECT_EQ(fletcher4_update<preset>(fletcher4_state{}, std::span<std::byte const>{}), fletcher4_state{});
+  EXPECT_EQ(fletcher4_engine<preset>{}.update(fletcher4_state{}, std::span<std::byte const>{}), fletcher4_state{});
   EXPECT_EQ(fletcher4_compute<preset>(buffer), fletcher4_compute(buffer));
   std::list<std::byte> const list(buffer.begin(), buffer.end());
   EXPECT_EQ(fletcher4_compute<preset>(list), fletcher4_compute(list));

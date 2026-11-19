@@ -20,8 +20,13 @@ What every algorithm in this repository has to satisfy.
 - Few headers: an algorithm has its main header and, if it has named parameter sets, a catalog header that the main
   header includes (`checksum/crc.hpp`, `checksum/crc_catalog.hpp`, `checksum/internet.hpp`). What every algorithm needs
   (the `byte_range` concept, chunking of non-contiguous ranges) is in `checksum/byte_range.hpp`, with its details in
-  `checksum::detail`; `checksum/hash128.hpp` holds the 128-bit result type of XXH3 and MurmurHash3. Headers shared only
+  `checksum::detail`; `checksum/engine.hpp` holds what every engine shares (the `engine` concept, `accumulator`, the
+  members of the dispatch engines in `checksum::detail`), and `checksum/hash128.hpp` the 128-bit result type of XXH3
+  and MurmurHash3. Every algorithm header includes `engine.hpp`. Headers shared only
   by `src/` go to `src/include_private/checksum_private/`.
+- One API model for every algorithm: an immutable engine (`<algorithm>_engine`, with its `Isa` preset, CRC parameters
+  or a seed) folds data into a plain state value; a dispatch engine has the same members and chooses the preset at run
+  time. The only free function of an algorithm is its one-shot `<algorithm>_compute`.
 - Platform-specific code lives only in the architecture headers, one directory per architecture
   (`checksum_private/x86_64/crc.hpp`, `arm/internet.hpp`, ...); each `<algorithm>_arch.hpp` selects the directory.
 - `constexpr` first: parameter validation and table generation work at compile time, so named engines are constants

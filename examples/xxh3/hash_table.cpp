@@ -18,11 +18,11 @@ using namespace std::literals;
 struct seeded_hasher {
   using is_transparent = void; // Lets find() take a std::string_view without building a std::string.
   std::uint64_t seed = 0;
-  std::size_t operator()(std::string_view key) const noexcept { return static_cast<std::size_t>(checksum::xxh3_64_compute(key, seed)); }
+  std::size_t operator()(std::string_view key) const noexcept { return static_cast<std::size_t>(checksum::xxh3_compute<64>(key, seed)); }
 };
 
 // The XXH3-64 check value of "abc", computed at compile time.
-static_assert(checksum::xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950);
+static_assert(checksum::xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950);
 
 int main() {
   std::unordered_map<std::string, int, seeded_hasher, std::equal_to<>> port_by_service(16, seeded_hasher{.seed = 0x9E3779B97F4A7C15});
@@ -36,6 +36,6 @@ int main() {
     return 1;
   }
   std::cout << "https -> " << found->second << ", hash 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(16)
-            << checksum::xxh3_64_compute("https"sv, port_by_service.hash_function().seed) << '\n';
+            << checksum::xxh3_compute<64>("https"sv, port_by_service.hash_function().seed) << '\n';
   return 0;
 }

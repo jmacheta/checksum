@@ -31,7 +31,8 @@ TYPED_TEST_SUITE(internet_presets, isa_test::presets, isa_test::preset_name);
 TYPED_TEST(internet_presets, constant_evaluation) {
   constexpr isa preset = TypeParam::value;
   static_assert(internet_compute<preset>(std::string_view("123456789")) == 0xF62A);
-  static_assert(internet_update<preset>(internet_compute(std::string_view("12345678")), std::string_view("9")) == 0xF62A);
+  constexpr internet_engine<preset> internet;
+  static_assert(internet.finalize(internet.update(internet.resume(internet_compute(std::string_view("12345678"))), std::string_view("9"))) == 0xF62A);
   EXPECT_EQ(internet_compute<preset>(std::string_view("123456789")), 0xF62A);
 }
 
@@ -80,17 +81,18 @@ TYPED_TEST(internet_presets, match_generic_through_updates_and_splits) {
     for(std::size_t const offset : {0UZ, 1UZ, 3UZ, 7UZ}) {
       auto const head = at(buffer, offset, split);
       auto const tail = at(buffer, offset + split, 1300 - split);
-      internet_state const expected = internet_update(internet_update(internet_state{}, head), tail);
-      internet_state actual = internet_update<preset>(internet_state{}, head.first(split / 2));
-      actual = internet_update<preset>(actual, head.subspan(split / 2));
-      actual = internet_update<preset>(actual, tail);
+      internet_state const expected = internet_engine{}.update(internet_engine{}.update(internet_state{}, head), tail);
+      internet_state actual = internet_engine<preset>{}.update(internet_state{}, head.first(split / 2));
+      actual = internet_engine<preset>{}.update(actual, head.subspan(split / 2));
+      actual = internet_engine<preset>{}.update(actual, tail);
       ASSERT_EQ(actual, expected) << "split " << split << ", offset " << offset;
     }
   }
-  // The checksum overloads and byte ranges instead of spans.
+  // Resuming from a checksum, and byte ranges instead of spans.
+  constexpr internet_engine<preset> internet;
   std::uint16_t const value = internet_compute(buffer);
-  EXPECT_EQ(internet_update<preset>(value, std::span<std::byte const>{}), value);
-  EXPECT_EQ(internet_update<preset>(value, buffer), internet_update(value, buffer));
+  EXPECT_EQ(internet.finalize(internet.update(internet.resume(value), std::span<std::byte const>{})), value);
+  EXPECT_EQ(internet.update(internet.resume(value), buffer), internet_engine{}.update(internet_engine{}.resume(value), buffer));
   EXPECT_EQ(internet_compute<preset>(buffer), internet_compute(buffer));
   std::list<std::byte> const list(buffer.begin(), buffer.end());
   EXPECT_EQ(internet_compute<preset>(list), internet_compute(buffer));

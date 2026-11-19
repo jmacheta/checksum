@@ -10,11 +10,11 @@
 using namespace std::literals;
 
 // The compiler verifies a reference value of MurmurHash3_x86_32.
-static_assert(checksum::murmur3_32_compute("Hello, world!"sv, 1234) == 0xFAF6CDB3);
+static_assert(checksum::murmur3_compute<32>("Hello, world!"sv, 1234) == 0xFAF6CDB3);
 
 namespace {
 
-constexpr std::uint32_t key(std::string_view command) { return checksum::murmur3_32_compute(command); }
+constexpr std::uint32_t key(std::string_view command) { return checksum::murmur3_compute<32>(command); }
 
 // Two commands with the same hash would be duplicate case labels, a compile error. Unknown text that collides with a label runs
 // that command; compare the text too where this matters.

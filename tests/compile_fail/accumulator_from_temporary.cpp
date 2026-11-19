@@ -1,4 +1,4 @@
-// A crc_accumulator cannot be created from a temporary engine: it stores the engine's address, which would dangle.
+// An accumulator cannot be created from a temporary engine: it stores the engine's address, which would dangle.
 #include <checksum/crc.hpp>
 
 #include <cstdint>
@@ -6,8 +6,8 @@
 constexpr checksum::crc_parameters test_parameters{.polynomial = *checksum::crc_polynomial::create(0x1021, 16)};
 
 #ifdef CHECKSUM_EXPECT_COMPILE_ERROR
-auto accumulator = checksum::crc_accumulator{*checksum::crc_engine<std::uint16_t>::create(test_parameters)};
+auto accumulator = checksum::accumulator{*checksum::crc_engine<std::uint16_t>::create(test_parameters)};
 #else
 auto const engine = *checksum::crc_engine<std::uint16_t>::create(test_parameters);
-auto accumulator = checksum::crc_accumulator{engine};
+auto accumulator = checksum::accumulator{engine};
 #endif

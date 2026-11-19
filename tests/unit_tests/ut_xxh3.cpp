@@ -82,11 +82,12 @@ template <unsigned Width> constexpr std::size_t prefix_mismatches(std::size_t si
 
 // The hash of data, folded in pieces of chunk_size bytes.
 template <unsigned Width> constexpr auto chunked(std::span<std::byte const> data, std::size_t chunk_size, std::uint64_t seed) {
-  xxh3_state<Width> state{.seed = seed};
+  xxh3_engine<Width> const engine(seed);
+  auto state = engine.initial();
   for(; data.size() > chunk_size; data = data.subspan(chunk_size)) {
-    state = xxh3_update(state, data.first(chunk_size));
+    state = engine.update(state, data.first(chunk_size));
   }
-  return xxh3_finalize(xxh3_update(state, data));
+  return engine.finalize(engine.update(state, data));
 }
 
 using namespace std::literals;
@@ -94,7 +95,7 @@ using namespace std::literals;
 static_assert(xxh3_compute<64>(""sv) == 0x2D06800538D394C2U);
 static_assert(xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950U);
 static_assert(xxh3_compute<128>("abc"sv) == hash128{.low = 0x78AF5F94892F3950U, .high = 0x06B05AB6733A6185U});
-static_assert(xxh3_finalize(xxh3_state<128>{}) == xxh3_128_vectors[0].prefixes[0]);
+static_assert(xxh3_engine<128>{}.finalize(xxh3_state<128>{}) == xxh3_128_vectors[0].prefixes[0]);
 // Every length class up to the first medium one.
 static_assert(prefix_mismatches<64>(20) == 0);
 static_assert(prefix_mismatches<128>(20) == 0);
@@ -109,10 +110,10 @@ static_assert(edge_seed_mismatches<128>(513) == 0);
 static_assert(xxh3_detail::multiply_portable(~std::uint64_t{0}, ~std::uint64_t{0}) == hash128{.low = 1, .high = ~std::uint64_t{1}});
 static_assert(xxh3_detail::multiply_portable(0x9E3779B185EBCA87U, 0xC2B2AE3D27D4EB4FU) ==
               hash128{.low = 0xDEF35B010F796CA9U, .high = 0x7854787AA57880A8U});
-static_assert(xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950U);
-static_assert(xxh3_128_compute(std::span(message).first(241), xxh3_128_vectors[1].seed) == xxh3_128_vectors[1].prefixes[241]);
-static_assert(std::same_as<xxh3_64_state, xxh3_state<64>> && std::same_as<xxh3_128_state, xxh3_state<128>>);
-static_assert(sizeof(xxh3_state<64>) == 336);
+static_assert(xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950U);
+static_assert(xxh3_engine<128>{xxh3_128_vectors[1].seed}.compute(std::span(message).first(241)) == xxh3_128_vectors[1].prefixes[241]);
+static_assert(engine<xxh3_engine<64>> && engine<xxh3_dispatch_engine<128>> && !resumable_engine<xxh3_engine<64>>);
+static_assert(sizeof(xxh3_state<64>) == 328);
 
 template <class Width> class xxh3 : public testing::Test {};
 
@@ -131,13 +132,13 @@ TYPED_TEST(xxh3, reference_values) {
     for(std::size_t size = 0; size <= prefix_limit; ++size) {
       auto const data = std::span(message).first(size);
       ASSERT_EQ(xxh3_compute<width>(data, set.seed), set.prefixes[size]) << "seed " << set.seed << ", size " << size;
-      ASSERT_EQ(xxh3_finalize(xxh3_update(xxh3_state<width>{.seed = set.seed}, data)), set.prefixes[size])
+      ASSERT_EQ(xxh3_engine<width>{set.seed}.finalize(xxh3_engine<width>{set.seed}.update({}, data)), set.prefixes[size])
           << "seed " << set.seed << ", size " << size;
     }
     for(std::size_t index = 0; index < block_sizes.size(); ++index) {
       auto const data = std::span(message).first(block_sizes[index]);
       ASSERT_EQ(xxh3_compute<width>(data, set.seed), set.blocks[index]) << "seed " << set.seed << ", size " << block_sizes[index];
-      ASSERT_EQ(xxh3_finalize(xxh3_update(xxh3_state<width>{.seed = set.seed}, data)), set.blocks[index])
+      ASSERT_EQ(xxh3_engine<width>{set.seed}.finalize(xxh3_engine<width>{set.seed}.update({}, data)), set.blocks[index])
           << "seed " << set.seed << ", size " << block_sizes[index];
     }
   }
@@ -185,7 +186,8 @@ TYPED_TEST(xxh3, random_splits) {
   };
   for(auto const &set : vectors<width>()) {
     for(int round = 0; round < 200; ++round) {
-      xxh3_state<width> state{.seed = set.seed};
+      xxh3_engine<width> const engine(set.seed);
+      xxh3_state<width> state = engine.initial();
       std::span<std::byte const> data = split_message;
       while(!data.empty()) {
         std::size_t piece = 0;
@@ -204,10 +206,10 @@ TYPED_TEST(xxh3, random_splits) {
           break;
         }
         piece = std::min(piece, data.size());
-        state = xxh3_update(state, data.first(piece));
+        state = engine.update(state, data.first(piece));
         data = data.subspan(piece);
       }
-      ASSERT_EQ(xxh3_finalize(state), set.split_message) << "seed " << set.seed << ", round " << round;
+      ASSERT_EQ(engine.finalize(state), set.split_message) << "seed " << set.seed << ", round " << round;
     }
   }
 }
@@ -235,10 +237,11 @@ TYPED_TEST(xxh3, split_anywhere) {
   auto const data = std::span<std::byte const>(message).first(prefix_limit);
   for(std::size_t first = 0; first <= prefix_limit; ++first) {
     for(std::size_t second = first; second <= prefix_limit; ++second) {
-      xxh3_state<width> state = xxh3_update(xxh3_state<width>{.seed = set.seed}, data.first(first));
-      state = xxh3_update(state, data.subspan(first, second - first));
-      ASSERT_EQ(xxh3_finalize(state), set.prefixes[second]) << "split at " << first << " and " << second;
-      ASSERT_EQ(xxh3_finalize(xxh3_update(state, data.subspan(second))), set.prefixes[prefix_limit]) << "split at " << first << " and " << second;
+      xxh3_engine<width> const engine(set.seed);
+      xxh3_state<width> state = engine.update(engine.initial(), data.first(first));
+      state = engine.update(state, data.subspan(first, second - first));
+      ASSERT_EQ(engine.finalize(state), set.prefixes[second]) << "split at " << first << " and " << second;
+      ASSERT_EQ(engine.finalize(engine.update(state, data.subspan(second))), set.prefixes[prefix_limit]) << "split at " << first << " and " << second;
     }
   }
 }
@@ -281,8 +284,9 @@ TYPED_TEST(xxh3, splits_across_blocks_from_any_offset) {
     std::ranges::copy(message, buffer.begin() + static_cast<std::ptrdiff_t>(offset));
     auto const data = std::span<std::byte const>(buffer).subspan(offset);
     for(std::size_t const split : splits) {
-      xxh3_state<width> const state = xxh3_update(xxh3_state<width>{.seed = set.seed}, data.first(split));
-      ASSERT_EQ(xxh3_finalize(xxh3_update(state, data.subspan(split))), set.blocks.back()) << "offset " << offset << ", split " << split;
+      xxh3_engine<width> const engine(set.seed);
+      xxh3_state<width> const state = engine.update(engine.initial(), data.first(split));
+      ASSERT_EQ(engine.finalize(engine.update(state, data.subspan(split))), set.blocks.back()) << "offset " << offset << ", split " << split;
     }
   }
 }
@@ -295,7 +299,7 @@ TYPED_TEST(xxh3, byte_ranges) {
   EXPECT_EQ(xxh3_compute<width>(text, set.seed), expected);
   EXPECT_EQ(xxh3_compute<width>(std::list<char>(text.begin(), text.end()), set.seed), expected);
   EXPECT_EQ(xxh3_compute<width>(std::vector<unsigned char>(text.begin(), text.end()), set.seed), expected);
-  EXPECT_EQ(xxh3_finalize(xxh3_update(xxh3_state<width>{.seed = set.seed}, text)), expected);
+  EXPECT_EQ(xxh3_engine<width>{set.seed}.finalize(xxh3_engine<width>{set.seed}.update({}, text)), expected);
   // Non-contiguous ranges in 64-byte chunks, over the buffer and over blocks.
   EXPECT_EQ(xxh3_compute<width>(std::list<std::byte>(message.begin(), message.begin() + prefix_limit), set.seed), set.prefixes[prefix_limit]);
   EXPECT_EQ(xxh3_compute<width>(std::list<std::byte>(message.begin(), message.end()), set.seed), set.blocks.back());
@@ -309,25 +313,6 @@ TYPED_TEST(xxh3, long_message) {
     EXPECT_EQ(xxh3_compute<width>(data, set.seed), set.long_message) << "seed " << set.seed;
     EXPECT_EQ(chunked<width>(data, 4099, set.seed), set.long_message) << "seed " << set.seed;
   }
-}
-
-// The aliases give the hashes of the generic functions, for spans, string views and other byte ranges.
-TEST(xxh3_aliases, match_generic) {
-  constexpr std::string_view text = "123456789 123456789 123456789 123456789";
-  std::span<std::byte const> const bytes = std::as_bytes(std::span(text));
-  std::list<char> const list(text.begin(), text.end());
-  for(std::uint64_t const seed : {std::uint64_t{0}, std::uint64_t{0x9E3779B97F4A7C15U}}) {
-    EXPECT_EQ(xxh3_64_compute(bytes, seed), xxh3_compute<64>(bytes, seed));
-    EXPECT_EQ(xxh3_64_compute(text, seed), xxh3_compute<64>(bytes, seed));
-    EXPECT_EQ(xxh3_64_compute(list, seed), xxh3_compute<64>(bytes, seed));
-    EXPECT_EQ(xxh3_128_compute(bytes, seed), xxh3_compute<128>(bytes, seed));
-    EXPECT_EQ(xxh3_128_compute(text, seed), xxh3_compute<128>(bytes, seed));
-    EXPECT_EQ(xxh3_128_compute(list, seed), xxh3_compute<128>(bytes, seed));
-    EXPECT_EQ(xxh3_finalize(xxh3_update(xxh3_64_state{.seed = seed}, text)), xxh3_64_compute(text, seed));
-    EXPECT_EQ(xxh3_finalize(xxh3_update(xxh3_128_state{.seed = seed}, text)), xxh3_128_compute(text, seed));
-  }
-  EXPECT_EQ(xxh3_64_compute(message), xxh3_64_vectors[0].blocks.back());
-  EXPECT_EQ(xxh3_128_compute(message), xxh3_128_vectors[0].blocks.back());
 }
 
 // The run-time multiplication, native where the compiler has one, against the portable one.

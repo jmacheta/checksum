@@ -51,11 +51,12 @@ template <unsigned Width> constexpr std::size_t prefix_mismatches(std::size_t si
 
 // The hash of data, folded in pieces of chunk_size bytes.
 template <unsigned Width> constexpr auto chunked(std::span<std::byte const> data, std::size_t chunk_size, std::uint32_t seed) {
-  murmur3_state<Width> state{.seed = seed};
+  murmur3_engine<Width> const engine(seed);
+  auto state = engine.initial();
   for(; data.size() > chunk_size; data = data.subspan(chunk_size)) {
-    state = murmur3_update(state, data.first(chunk_size));
+    state = engine.update(state, data.first(chunk_size));
   }
-  return murmur3_finalize(murmur3_update(state, data));
+  return engine.finalize(engine.update(state, data));
 }
 
 using namespace std::literals;
@@ -65,7 +66,7 @@ static_assert(murmur3_compute<32>(""sv, 1) == 0x514E28B7U);
 static_assert(murmur3_compute<32>("Hello, world!"sv, 1234) == 0xFAF6CDB3U);
 static_assert(murmur3_compute<128>(""sv) == hash128{});
 static_assert(murmur3_compute<128>("Hello, world!"sv, 1234) == hash128{.low = 0x61130E64AA0AC6FEU, .high = 0x51F9046D087E1B56U});
-static_assert(murmur3_finalize(murmur3_state<32>{.seed = 1}) == 0x514E28B7U);
+static_assert(murmur3_engine<32>{1}.finalize(murmur3_state<32>{}) == 0x514E28B7U);
 static_assert(murmur3_compute<32>(std::span(message), murmur3_32_vectors[2].seed) == murmur3_32_vectors[2].prefixes[300]);
 static_assert(murmur3_compute<128>(std::span(message).first(33), murmur3_128_vectors[2].seed) == murmur3_128_vectors[2].prefixes[33]);
 static_assert(chunked<128>(message, 7, murmur3_128_vectors[1].seed) == murmur3_128_vectors[1].prefixes[300]);
@@ -73,9 +74,8 @@ static_assert(chunked<32>(message, 3, murmur3_32_vectors[1].seed) == murmur3_32_
 // Every tail length around a few blocks; longer prefixes exceed the constant-evaluation step limit of Clang.
 static_assert(prefix_mismatches<32>(70) == 0);
 static_assert(prefix_mismatches<128>(70) == 0);
-static_assert(murmur3_32_compute("Hello, world!"sv, 1234) == 0xFAF6CDB3U);
-static_assert(murmur3_128_compute("Hello, world!"sv, 1234) == hash128{.low = 0x61130E64AA0AC6FEU, .high = 0x51F9046D087E1B56U});
-static_assert(std::same_as<murmur3_32_state, murmur3_state<32>> && std::same_as<murmur3_128_state, murmur3_state<128>>);
+static_assert(murmur3_engine<32>{1234}.compute("Hello, world!"sv) == 0xFAF6CDB3U);
+static_assert(engine<murmur3_engine<32>> && engine<murmur3_dispatch_engine<128>> && !resumable_engine<murmur3_engine<128>>);
 
 template <class Width> class murmur3 : public testing::Test {};
 
@@ -94,8 +94,8 @@ TYPED_TEST(murmur3, reference_prefixes) {
     for(std::size_t size = 0; size < murmur3_test::prefix_count; ++size) {
       auto const data = std::span(message).first(size);
       ASSERT_EQ(murmur3_compute<width>(data, set.seed), set.prefixes[size]) << "seed " << set.seed << ", size " << size;
-      ASSERT_EQ(murmur3_finalize(murmur3_update(murmur3_state<width>{.seed = set.seed}, data)), set.prefixes[size])
-          << "seed " << set.seed << ", size " << size;
+      murmur3_engine<width> const engine(set.seed);
+      ASSERT_EQ(engine.finalize(engine.update(engine.initial(), data)), set.prefixes[size]) << "seed " << set.seed << ", size " << size;
     }
   }
 }
@@ -120,10 +120,11 @@ TYPED_TEST(murmur3, split_anywhere) {
   auto const data = std::span<std::byte const>(message).first(size);
   for(std::size_t first = 0; first <= size; ++first) {
     for(std::size_t second = first; second <= size; ++second) {
-      murmur3_state<width> state = murmur3_update(murmur3_state<width>{.seed = set.seed}, data.first(first));
-      state = murmur3_update(state, data.subspan(first, second - first));
-      ASSERT_EQ(murmur3_finalize(state), set.prefixes[second]) << "split at " << first << " and " << second;
-      ASSERT_EQ(murmur3_finalize(murmur3_update(state, data.subspan(second))), set.prefixes[size]) << "split at " << first << " and " << second;
+      murmur3_engine<width> const engine(set.seed);
+      murmur3_state<width> state = engine.update(engine.initial(), data.first(first));
+      state = engine.update(state, data.subspan(first, second - first));
+      ASSERT_EQ(engine.finalize(state), set.prefixes[second]) << "split at " << first << " and " << second;
+      ASSERT_EQ(engine.finalize(engine.update(state, data.subspan(second))), set.prefixes[size]) << "split at " << first << " and " << second;
     }
   }
 }
@@ -149,7 +150,8 @@ TYPED_TEST(murmur3, byte_ranges) {
   EXPECT_EQ(murmur3_compute<width>(text, set.seed), expected);
   EXPECT_EQ(murmur3_compute<width>(std::list<char>(text.begin(), text.end()), set.seed), expected);
   EXPECT_EQ(murmur3_compute<width>(std::vector<unsigned char>(text.begin(), text.end()), set.seed), expected);
-  EXPECT_EQ(murmur3_finalize(murmur3_update(murmur3_state<width>{.seed = set.seed}, text)), expected);
+  murmur3_engine<width> const engine(set.seed);
+  EXPECT_EQ(engine.finalize(engine.update(engine.initial(), text)), expected);
   // Longer than one 64-byte chunk of a non-contiguous range.
   EXPECT_EQ(murmur3_compute<width>(std::list<std::byte>(message.begin(), message.end()), set.seed), set.prefixes[300]);
 }
@@ -159,11 +161,11 @@ TYPED_TEST(murmur3, short_state_ignores_unused_fields) {
   constexpr unsigned width = TypeParam::value;
   auto const &set = vectors<width>()[2];
   for(std::size_t size = 0; size < width / 8; ++size) {
-    murmur3_state<width> state{.length = size, .seed = set.seed};
+    murmur3_state<width> state{.length = size};
     state.lanes.fill(0xA5A5A5A5U);
     state.buffer.fill(std::byte{0x5A});
     std::ranges::copy(std::span(message).first(size), state.buffer.begin());
-    EXPECT_EQ(murmur3_finalize(state), set.prefixes[size]) << "size " << size;
+    EXPECT_EQ(murmur3_engine<width>{set.seed}.finalize(state), set.prefixes[size]) << "size " << size;
   }
 }
 
@@ -172,24 +174,7 @@ TEST(murmur3_x86_32, length_wraps) {
   murmur3_state<32> state{.lanes = {0x12345678U}, .length = (std::uint64_t{1} << 32) + 5, .buffer = {std::byte{0x42}}};
   murmur3_state<32> wrapped = state;
   wrapped.length = 5;
-  EXPECT_EQ(murmur3_finalize(state), murmur3_finalize(wrapped));
-}
-
-// The aliases take the same inputs as the generic form: spans of std::byte, text and other byte ranges.
-TEST(murmur3_aliases, match_generic_form) {
-  auto const bytes = std::span<std::byte const>(message);
-  constexpr std::string_view text = "123456789";
-  std::list<unsigned char> const list(text.begin(), text.end());
-  for(std::uint32_t const seed : {0U, 1U, 0x9747B28CU}) {
-    EXPECT_EQ(murmur3_32_compute(bytes, seed), murmur3_compute<32>(bytes, seed));
-    EXPECT_EQ(murmur3_32_compute(text, seed), murmur3_compute<32>(text, seed));
-    EXPECT_EQ(murmur3_32_compute(list, seed), murmur3_compute<32>(list, seed));
-    EXPECT_EQ(murmur3_128_compute(bytes, seed), murmur3_compute<128>(bytes, seed));
-    EXPECT_EQ(murmur3_128_compute(text, seed), murmur3_compute<128>(text, seed));
-    EXPECT_EQ(murmur3_128_compute(list, seed), murmur3_compute<128>(list, seed));
-  }
-  EXPECT_EQ(murmur3_32_compute(bytes), murmur3_compute<32>(bytes));
-  EXPECT_EQ(murmur3_128_compute(bytes), murmur3_compute<128>(bytes));
+  EXPECT_EQ(murmur3_engine<32>{}.finalize(state), murmur3_engine<32>{}.finalize(wrapped));
 }
 
 TYPED_TEST(murmur3, long_message) {

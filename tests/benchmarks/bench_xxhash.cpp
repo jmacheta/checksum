@@ -27,11 +27,11 @@ template <class Hash> void run(benchmark::State &state, Hash hash) {
 }
 
 void xxhash32(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxh32_compute(data); });
+  run(state, [](std::span<std::byte const> data) { return checksum::xxhash_compute<32>(data); });
 }
 
 void xxhash64(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxh64_compute(data); });
+  run(state, [](std::span<std::byte const> data) { return checksum::xxhash_compute<64>(data); });
 }
 
 template <checksum::isa Isa> void xxh3_64(benchmark::State &state) {
@@ -45,11 +45,12 @@ void xxh3_64_seeded(benchmark::State &state) {
 // The message folded in pieces of Piece bytes.
 template <std::size_t Piece> void xxh3_64_streaming(benchmark::State &state) {
   run(state, [](std::span<std::byte const> data) {
+    constexpr checksum::xxh3_engine<64> engine;
     checksum::xxh3_state<64> hash{};
     for(; data.size() > Piece; data = data.subspan(Piece)) {
-      hash = checksum::xxh3_update(hash, data.first(Piece));
+      hash = engine.update(hash, data.first(Piece));
     }
-    return checksum::xxh3_finalize(checksum::xxh3_update(hash, data));
+    return engine.finalize(engine.update(hash, data));
   });
 }
 

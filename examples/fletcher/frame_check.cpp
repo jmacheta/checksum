@@ -14,7 +14,7 @@ namespace {
 
 // frame is the message followed by two bytes that receive its checksum.
 void append_checksum(std::span<std::byte> frame) {
-  std::uint16_t const value = checksum::fletcher16_compute(std::span<std::byte const>{frame}.first(frame.size() - 2));
+  std::uint16_t const value = checksum::fletcher_compute<16>(std::span<std::byte const>{frame}.first(frame.size() - 2));
   frame[frame.size() - 2] = static_cast<std::byte>(value >> 8U);
   frame[frame.size() - 1] = static_cast<std::byte>(value & 0xFFU);
 }
@@ -26,7 +26,7 @@ bool is_valid(std::span<std::byte const> frame) {
   }
   auto const received =
       static_cast<std::uint16_t>((std::to_integer<unsigned>(frame[frame.size() - 2]) << 8U) | std::to_integer<unsigned>(frame[frame.size() - 1]));
-  return checksum::fletcher16_compute(frame.first(frame.size() - 2)) == received;
+  return checksum::fletcher_compute<16>(frame.first(frame.size() - 2)) == received;
 }
 
 } // namespace

@@ -16,6 +16,7 @@
 #include <isa_test_support.hpp>
 #include <test_data.hpp>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -46,15 +47,16 @@ static_assert(isa_detail::select(isa_set{isa::riscv_zbc} | isa::riscv_v, isa::ri
 // Constant evaluation runs the portable code for any set.
 static_assert(internet_dispatch_engine(isa::x86_avx2).compute("123456789"sv) == internet_compute("123456789"sv));
 static_assert(fletcher_dispatch_engine<32>(isa::thumb2_neon).compute("abcde"sv) == fletcher_compute<32>("abcde"sv));
-static_assert(crc_dispatch_engine<std::uint32_t>::create(crc32_iso_hdlc, isa::aarch64_pmull)->compute("123456789"sv) == 0xCBF43926U);
-static_assert(xxh3_dispatch_engine<64>(isa::x86_vpclmul).compute("abc"sv, 7) == xxh3_compute<64>("abc"sv, 7));
+static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(crc32_iso_hdlc, isa::aarch64_pmull)->compute("123456789"sv) == 0xCBF43926U);
+static_assert(xxh3_dispatch_engine<64>(7, isa::x86_vpclmul).compute("abc"sv) == xxh3_compute<64>("abc"sv, 7));
 
-// update() of a checksum takes exactly the checksum type, as the free functions do.
-template <class Engine, class Checksum>
-concept updates_checksum = requires(Engine const engine, Checksum checksum) { engine.update(checksum, "abc"sv); };
-static_assert(updates_checksum<fletcher_dispatch_engine<16>, std::uint16_t> && !updates_checksum<fletcher_dispatch_engine<16>, std::uint32_t>);
-static_assert(updates_checksum<fletcher_dispatch_engine<64>, std::uint64_t> && !updates_checksum<fletcher_dispatch_engine<64>, int>);
-static_assert(!updates_checksum<internet_dispatch_engine, std::uint32_t> && !updates_checksum<adler32_dispatch_engine, std::uint64_t>);
+// Static and dispatch engines model the same concepts; the hashes cannot resume.
+static_assert(resumable_engine<internet_dispatch_engine> && resumable_engine<adler32_dispatch_engine> &&
+              resumable_engine<fletcher_dispatch_engine<32>> && resumable_engine<fletcher4_dispatch_engine> &&
+              resumable_engine<crc_dispatch_engine<std::uint16_t, crc_lut_sliced>>);
+static_assert(engine<xxhash_dispatch_engine<32>> && engine<xxh3_dispatch_engine<128>> && engine<murmur3_dispatch_engine<32>>);
+static_assert(!resumable_engine<xxhash_dispatch_engine<64>> && !resumable_engine<xxh3_dispatch_engine<64>> &&
+              !resumable_engine<murmur3_dispatch_engine<128>>);
 
 // Strategies without kernels choose generic, whatever the set: their loop is the same for every preset.
 static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_none>::create(crc32_iso_hdlc, isa::x86_avxvnni)->preset() == isa::generic);
@@ -88,6 +90,7 @@ template <crc_parameters Parameters, class Strategy> void check_crc(isa_set cpu,
   auto const &reference = crc_engine_for<Parameters, crc_lut_byte>;
   using register_type = std::remove_cvref_t<decltype(reference)>::state_type;
   auto const engine = crc_dispatch_engine<register_type, Strategy>::create(Parameters, cpu);
+  static_assert(std::same_as<typename decltype(engine)::value_type::value_type, register_type>);
   ASSERT_TRUE(engine.has_value());
   EXPECT_TRUE(cpu.contains(engine->preset()) && isa_available(engine->preset()));
   for(std::size_t const size : sizes) {
@@ -97,6 +100,7 @@ template <crc_parameters Parameters, class Strategy> void check_crc(isa_set cpu,
       EXPECT_EQ(engine->compute(data), reference.compute(data));
       EXPECT_EQ(engine->finalize(engine->update(engine->update(engine->initial(), data.first(size / 3)), data.subspan(size / 3))),
                 reference.compute(data));
+      EXPECT_EQ(engine->resume(reference.compute(data)), reference.resume(reference.compute(data)));
       if(size != 0) {
         EXPECT_EQ(engine->compute(data, (8 * size) - 3), reference.compute(data, (8 * size) - 3));
       }
@@ -115,45 +119,46 @@ void check_crcs(isa_set cpu, std::vector<std::byte> const &buffer) {
   check_crc<crc8_smbus, crc_lut_byte>(cpu, buffer);
 }
 
-// Every dispatch engine made for cpu against the generic template.
-void check_engines(isa_set cpu, std::vector<std::byte> const &buffer) {
-  internet_dispatch_engine const internet(cpu);
-  adler32_dispatch_engine const adler32(cpu);
-  fletcher_dispatch_engine<16> const fletcher16(cpu);
-  fletcher_dispatch_engine<64> const fletcher64(cpu);
-  fletcher4_dispatch_engine const fletcher4(cpu);
-  xxh3_dispatch_engine<64> const xxh3_64(cpu);
-  xxh3_dispatch_engine<128> const xxh3_128(cpu);
-  xxhash_dispatch_engine<32> const xxh32(cpu);
-  murmur3_dispatch_engine<128> const murmur3_128(cpu);
-  EXPECT_TRUE(cpu.contains(internet.preset()) && isa_available(internet.preset()));
-  EXPECT_EQ(internet.preset(), isa_detail::select(cpu));
+// Every member of a dispatch engine against the static engine of isa::generic, from a state other than the initial one.
+template <class Generic, class Dispatch>
+void check_engine(Generic const &generic, Dispatch const &dispatch, isa_set cpu, std::vector<std::byte> const &buffer) {
+  static_assert(std::same_as<typename Generic::state_type, typename Dispatch::state_type>);
+  static_assert(std::same_as<typename Generic::value_type, typename Dispatch::value_type>);
+  EXPECT_TRUE(cpu.contains(dispatch.preset()) && isa_available(dispatch.preset()));
+  EXPECT_EQ(dispatch.preset(), isa_detail::select(cpu));
+  EXPECT_EQ(dispatch.initial(), generic.initial());
+  auto const start = generic.update(generic.initial(), at(buffer, 2, 37));
   for(std::size_t const size : sizes) {
     for(std::size_t const offset : {0UZ, 1UZ}) {
       auto const data = at(buffer, offset, size);
       SCOPED_TRACE(testing::Message() << "size " << size << ", offset " << offset);
-      EXPECT_EQ(internet.compute(data), internet_compute(data));
-      EXPECT_EQ(internet.update(internet_state{.sum = 7, .odd = true}, data), internet_update(internet_state{.sum = 7, .odd = true}, data));
-      EXPECT_EQ(internet.update(std::uint16_t{0x1234}, data), internet_update(std::uint16_t{0x1234}, data));
-      EXPECT_EQ(adler32.compute(data), adler32_compute(data));
-      EXPECT_EQ(adler32.update(adler32_state{.sum1 = 0xFFFF, .sum2 = 0xFFFF}, data),
-                adler32_update(adler32_state{.sum1 = 0xFFFF, .sum2 = 0xFFFF}, data));
-      EXPECT_EQ(adler32.update(std::uint32_t{0x12345678}, data), adler32_update(std::uint32_t{0x12345678}, data));
-      EXPECT_EQ(fletcher16.compute(data), fletcher_compute<16>(data));
-      EXPECT_EQ(fletcher16.update(std::uint16_t{0x1234}, data), fletcher_update(std::uint16_t{0x1234}, data));
-      EXPECT_EQ(fletcher64.update(fletcher_state<64>{}, data), fletcher_update(fletcher_state<64>{}, data));
-      EXPECT_EQ(fletcher4.compute(data), fletcher4_compute(data));
-      EXPECT_EQ(fletcher4.update(fletcher4_state{}, data), fletcher4_update(fletcher4_state{}, data));
-      EXPECT_EQ(xxh3_64.compute(data, 5), xxh3_compute<64>(data, 5));
-      EXPECT_EQ(xxh3_128.finalize(xxh3_128.update(xxh3_state<128>{}, data)), xxh3_128_compute(data));
-      EXPECT_EQ(xxh32.compute(data, 3), xxh32_compute(data, 3));
-      EXPECT_EQ(xxhash_finalize(xxh32.update(xxhash_state<32>{}, data)), xxh32_compute(data));
-      EXPECT_EQ(murmur3_128.compute(data, 2), murmur3_128_compute(data, 2));
-      EXPECT_EQ(murmur3_finalize(murmur3_128.update(murmur3_state<128>{}, data)), murmur3_128_compute(data));
+      EXPECT_EQ(dispatch.compute(data), generic.compute(data));
+      EXPECT_EQ(dispatch.update(start, data), generic.update(start, data));
+      EXPECT_EQ(dispatch.finalize(dispatch.update(start, data)), generic.finalize(generic.update(start, data)));
+      if constexpr(resumable_engine<Generic>) {
+        EXPECT_EQ(dispatch.resume(generic.compute(data)), generic.resume(generic.compute(data)));
+      }
     }
   }
   std::list<std::byte> const list(buffer.begin(), buffer.begin() + 300);
-  EXPECT_EQ(internet.compute(list), internet_compute(list));
+  EXPECT_EQ(dispatch.compute(list), generic.compute(list));
+  EXPECT_EQ(dispatch.update(start, list), generic.update(start, list));
+}
+
+// Every dispatch engine made for cpu against the generic template.
+void check_engines(isa_set cpu, std::vector<std::byte> const &buffer) {
+  check_engine(internet_engine{}, internet_dispatch_engine(cpu), cpu, buffer);
+  check_engine(adler32_engine{}, adler32_dispatch_engine(cpu), cpu, buffer);
+  check_engine(fletcher_engine<16>{}, fletcher_dispatch_engine<16>(cpu), cpu, buffer);
+  check_engine(fletcher_engine<32>{}, fletcher_dispatch_engine<32>(cpu), cpu, buffer);
+  check_engine(fletcher_engine<64>{}, fletcher_dispatch_engine<64>(cpu), cpu, buffer);
+  check_engine(fletcher4_engine{}, fletcher4_dispatch_engine(cpu), cpu, buffer);
+  check_engine(xxh3_engine<64>{5}, xxh3_dispatch_engine<64>(5, cpu), cpu, buffer);
+  check_engine(xxh3_engine<128>{}, xxh3_dispatch_engine<128>(0, cpu), cpu, buffer);
+  check_engine(xxhash_engine<32>{3}, xxhash_dispatch_engine<32>(3, cpu), cpu, buffer);
+  check_engine(xxhash_engine<64>{}, xxhash_dispatch_engine<64>(0, cpu), cpu, buffer);
+  check_engine(murmur3_engine<32>{9}, murmur3_dispatch_engine<32>(9, cpu), cpu, buffer);
+  check_engine(murmur3_engine<128>{2}, murmur3_dispatch_engine<128>(2, cpu), cpu, buffer);
 }
 
 // Default-constructed engines detect the CPU themselves.
@@ -166,12 +171,12 @@ TEST(dispatch, DefaultEnginesChooseTheDetectedPreset) {
   EXPECT_EQ(xxh3_dispatch_engine<64>{}.preset(), best);
   EXPECT_EQ(xxhash_dispatch_engine<64>{}.preset(), best);
   EXPECT_EQ(murmur3_dispatch_engine<32>{}.preset(), best);
-  auto const crc = crc_dispatch_engine<std::uint32_t>::create(crc32_iso_hdlc);
+  auto const crc = crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(crc32_iso_hdlc);
   ASSERT_TRUE(crc.has_value());
   EXPECT_EQ(crc->preset(), isa_detail::select(detect_isa(), isa::riscv_zbc));
   EXPECT_EQ((crc_dispatch_engine<std::uint32_t, crc_lut_braided>::create(crc32_iso_hdlc)->preset()), crc->preset());
   EXPECT_EQ((crc_dispatch_engine<std::uint32_t, crc_lut_byte>::create(crc32_iso_hdlc)->preset()), isa::generic);
-  EXPECT_FALSE(crc_dispatch_engine<std::uint8_t>::create(crc32_iso_hdlc).has_value());
+  EXPECT_FALSE((crc_dispatch_engine<std::uint8_t, crc_lut_sliced>::create(crc32_iso_hdlc).has_value()));
   auto const data = random_bytes(5000, 14);
   EXPECT_EQ(crc->compute(data), (crc_engine_for<crc32_iso_hdlc, crc_lut_byte>.compute(data)));
 }
@@ -187,7 +192,7 @@ TEST(dispatch, PresetsOfOtherArchitecturesRunGeneric) {
   for(isa const preset : {isa::x86_avxvnni, isa::aarch64_pmull, isa::thumb2_crc, isa::riscv_v}) {
     if(!isa_available(preset)) {
       EXPECT_EQ(isa_detail::select(preset), isa::generic);
-      EXPECT_EQ(crc_dispatch_engine<std::uint32_t>::create(crc32_iso_hdlc, preset)->preset(), isa::generic);
+      EXPECT_EQ((crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(crc32_iso_hdlc, preset)->preset()), isa::generic);
     }
   }
   check_engines(isa_set{}, buffer);

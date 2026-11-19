@@ -15,13 +15,13 @@ namespace {
 
 // The options seed the hash of the source, so the same source built with other options gets another key.
 std::uint64_t cache_key(std::string_view source, std::string_view options) {
-  return checksum::xxh64_compute(source, checksum::xxh64_compute(options));
+  return checksum::xxhash_compute<64>(source, checksum::xxhash_compute<64>(options));
 }
 
 } // namespace
 
 // The compiler verifies XXH64("abc") of the reference implementation.
-static_assert(checksum::xxh64_compute("abc"sv) == 0x44BC2CF5AD770999);
+static_assert(checksum::xxhash_compute<64>("abc"sv) == 0x44BC2CF5AD770999);
 
 int main() {
   std::unordered_map<std::uint64_t, std::string> cache;

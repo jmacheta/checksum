@@ -20,11 +20,11 @@ struct record {
 
 // The fields are folded one after another; a separator keeps {"ab", "c"} and {"a", "bc"} apart.
 checksum::hash128 record_hash(record const &value) {
-  checksum::murmur3_128_state state{.seed = 0x5EED};
-  state = checksum::murmur3_update(state, value.name);
-  state = checksum::murmur3_update(state, "\037"sv);
-  state = checksum::murmur3_update(state, value.payload);
-  return checksum::murmur3_finalize(state);
+  constexpr checksum::murmur3_engine<128> murmur3(0x5EED);
+  auto state = murmur3.update(murmur3.initial(), value.name);
+  state = murmur3.update(state, "\037"sv);
+  state = murmur3.update(state, value.payload);
+  return murmur3.finalize(state);
 }
 
 // The hash is uniformly distributed, so its lower half is a good bucket index.
@@ -50,8 +50,8 @@ int main() {
   }
   std::cout << seen.size() << " unique, " << duplicates << " duplicates\n";
   // The streamed hash equals the hash of the whole record in one call.
-  bool const streaming_matches = record_hash(records[0]) == checksum::murmur3_128_compute("sensor-1\037"
-                                                                                          "21.5 C"sv,
-                                                                                          0x5EED);
+  bool const streaming_matches = record_hash(records[0]) == checksum::murmur3_compute<128>("sensor-1\037"
+                                                                                           "21.5 C"sv,
+                                                                                           0x5EED);
   return seen.size() == 3 && duplicates == 2 && streaming_matches ? 0 : 1;
 }

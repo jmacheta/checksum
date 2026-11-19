@@ -226,6 +226,30 @@ TEST(CrcEngine, ChunkingInvariance) {
   }
 }
 
+// A stored CRC continues the message after any number of bytes: resume() undoes finalize() for every model, register and strategy.
+TEST(CrcEngine, ResumeFromChecksum) {
+  auto const message = random_bytes(64, 98);
+  std::span<std::byte const> const data(message);
+  for(crc_model const &model : models) {
+    auto const expected = crc_test::reference_crc(model, data);
+    for_each_engine(model, [&](auto const &engine) {
+      static_assert(resumable_engine<std::remove_cvref_t<decltype(engine)>>);
+      for(std::size_t split = 0; split <= data.size(); ++split) {
+        auto const stored = engine.compute(data.first(split));
+        ASSERT_EQ(engine.finalize(engine.resume(stored)), stored) << model.name << " split " << split;
+        ASSERT_EQ(engine.finalize(engine.update(engine.resume(stored), data.subspan(split))), expected) << model.name << " split " << split;
+      }
+    });
+  }
+}
+
+static_assert(crc_compute<crc32>("123456789"sv) == 0xCBF43926U && crc_compute<crc16_modbus, crc_lut_byte>("123456789"sv) == 0x4B37U);
+static_assert(std::same_as<decltype(crc_compute<crc5_usb>("1"sv)), std::uint8_t>);
+static_assert([] {
+  auto const &engine = crc_engine_for<crc32>;
+  return engine.finalize(engine.update(engine.resume(crc_compute<crc32>("1234"sv)), "56789"sv)) == 0xCBF43926U;
+}());
+
 // Bit lengths 0..320 against the reference; multiples of 8 equal the byte overloads.
 TEST(CrcEngine, BitLengths) {
   auto const message = random_bytes(40, 5);

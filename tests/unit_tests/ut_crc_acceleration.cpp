@@ -1,5 +1,5 @@
 // crc_lut_sliced and crc_lut_braided of every preset must match crc_lut_byte for every catalog set, on the smallest register and
-// std::uint64_t, one-shot, split and through crc_accumulator; the first set of each code path runs every length, the others the lengths around each
+// std::uint64_t, one-shot, split and through an accumulator; the first set of each code path runs every length, the others the lengths around each
 // threshold. The other table strategies run three common sets at every length 0..300, and every strategy is checked at compile time per preset.
 #include <checksum/crc.hpp>
 #include <checksum/crc_catalog.hpp>
@@ -102,19 +102,19 @@ void check_against_byte(crc_parameters const &parameters, std::span<std::byte co
       ASSERT_EQ(wide->finalize(wide->update(wide->update(wide->initial(), data.first(split)), data.subspan(split))), expected)
           << "length " << length << ", offset " << offset << ", split " << split;
       // Accumulators in three parts, so that a kernel can start and stop in the middle of a message.
-      crc_accumulator<Register, Strategy, Preset> accumulator(*smallest);
-      accumulator.update(data.first(split)).update(data.subspan(split, second_split - split)).update(data.subspan(second_split));
-      ASSERT_EQ(accumulator.value(), expected) << "length " << length << ", offset " << offset;
-      crc_accumulator<std::uint64_t, Strategy, Preset> wide_accumulator(*wide);
+      accumulator<crc_engine<Register, Strategy, Preset>> running(*smallest);
+      running.update(data.first(split)).update(data.subspan(split, second_split - split)).update(data.subspan(second_split));
+      ASSERT_EQ(running.value(), expected) << "length " << length << ", offset " << offset;
+      accumulator<crc_engine<std::uint64_t, Strategy, Preset>> wide_accumulator(*wide);
       wide_accumulator.update(data.first(second_split)).update(data.subspan(second_split));
       ASSERT_EQ(wide_accumulator.value(), expected) << "length " << length << ", offset " << offset;
     }
   }
-  crc_accumulator<Register, Strategy, Preset> accumulator(*smallest);
-  accumulator.update(message.first(lengths.back()));
-  accumulator.reset();
-  accumulator.update(message.first(lengths.back()));
-  EXPECT_EQ(accumulator.value(), reference->compute(message.first(lengths.back())));
+  accumulator<crc_engine<Register, Strategy, Preset>> running(*smallest);
+  running.update(message.first(lengths.back()));
+  running.reset();
+  running.update(message.first(lengths.back()));
+  EXPECT_EQ(running.value(), reference->compute(message.first(lengths.back())));
 }
 
 template <class Strategy, isa Preset>
@@ -136,10 +136,10 @@ void check_set(crc_parameters const &parameters, std::span<std::byte const> mess
 
 template <isa Preset> consteval bool sliced_accumulator_round_trip() {
   auto const &engine = crc_engine_for<checksum::crc32_iso_hdlc, crc_lut_sliced, Preset>;
-  crc_accumulator<std::uint32_t, crc_lut_sliced, Preset> accumulator(engine);
-  accumulator.update(std::string_view("1234"));
-  accumulator.update(std::string_view("56789"));
-  return accumulator.value() == std::uint32_t{0xCBF43926};
+  accumulator<crc_engine<std::uint32_t, crc_lut_sliced, Preset>> running(engine);
+  running.update(std::string_view("1234"));
+  running.update(std::string_view("56789"));
+  return running.value() == std::uint32_t{0xCBF43926};
 }
 
 template <isa Preset> void check_constant() {

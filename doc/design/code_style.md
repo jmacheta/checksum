@@ -40,4 +40,6 @@ Applies to `src/` and the helper headers of `tests/`; examples follow it where i
 - One obvious way per task: no alternative notations, duplicate convenience functions or operators that restate
   another API.
 - Factories of one type share one name (overloads of `create`). Plain `bool`s over small flag enums.
+- Engine members take and return the state by value, except `finalize`, which only reads it and takes
+  `state_type const &` on every engine.
 - Prefer references to whole structs over raw pointers for out-of-line kernels.

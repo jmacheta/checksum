@@ -13,13 +13,13 @@ using namespace std::literals;
 std::uint32_t value = checksum::adler32_compute(std::span(buffer));
 
 // Incremental: a message may be split anywhere.
-checksum::adler32_state state;
-state = checksum::adler32_update(state, first_part);
-state = checksum::adler32_update(state, second_part);
-std::uint32_t stream_checksum = checksum::adler32_finalize(state);
+constexpr checksum::adler32_engine adler32;
+auto state = adler32.update(adler32.initial(), first_part);
+state = adler32.update(state, second_part);
+std::uint32_t stream_checksum = adler32.finalize(state);
 
 // Continue from a stored checksum.
-std::uint32_t extended = checksum::adler32_update(stream_checksum, third_part);
+std::uint32_t extended = adler32.finalize(adler32.update(adler32.resume(stream_checksum), third_part));
 
 // Compile time.
 static_assert(checksum::adler32_compute("123456789"sv) == 0x091E01DE);
@@ -39,12 +39,10 @@ adds `sum1` after each byte. The checksum is `(sum2 << 16) | sum1`. It differs f
 
 | Name | What it does |
 | --- | --- |
+| `adler32_engine<Isa>` | The engine, an empty object. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the checksum, `resume(checksum)` the state of a message with that checksum (section 4), `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. |
 | `adler32_state` | `sum1` and `sum2`. A plain value; the default (`sum1 = 1`, `sum2 = 0`) is the empty message. |
-| `adler32_update<Isa>(state, data)` | Folds `data` into `state` and returns the new state. |
-| `adler32_update<Isa>(checksum, data)` | Folds `data` into the message whose checksum is `checksum` (a `std::uint32_t`) and returns the new checksum. |
-| `adler32_finalize(state)` | The checksum. |
-| `adler32_compute<Isa>(data)` | `adler32_finalize(adler32_update<Isa>({}, data))`. |
-| `adler32_dispatch_engine` | `compute` and `update` with the preset chosen at run time. |
+| `adler32_compute<Isa>(data)` | `adler32_engine<Isa>{}.compute(data)`. |
+| `adler32_dispatch_engine` | The same members as `adler32_engine`, with the preset chosen at run time (section 5.1). |
 
 `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
 `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
@@ -56,9 +54,8 @@ adds `sum1` after each byte. The checksum is `(sum2 << 16) | sum1`. It differs f
 - **Splits:** a message may be split anywhere; the result is the same as for one call.
 - **Empty message:** gives 1.
 - **Byte order:** the result is a number; zlib stores it most significant byte first.
-- **Continuing from a stored checksum:** the checksum holds both sums, so `adler32_update(value, data)` continues any
-  message after any length, a checksum from zlib included, as zlib's `adler32(adler, buf, len)` does. `value` must be a
-  `std::uint32_t`, so that `adler32_update({}, data)` still starts from the empty state.
+- **Continuing from a stored checksum:** the checksum holds both sums, so `adler32.update(adler32.resume(value), data)`
+  continues any message after any length, a checksum from zlib included, as zlib's `adler32(adler, buf, len)` does.
 
 ## 5. CPU acceleration
 
@@ -101,7 +98,7 @@ explicit preset. Details and the list of engines: [Instruction-set presets](../R
 
 Measured figures: [performance.md](performance.md#adler-32).
 
-- **Pass data in chunks of a few KiB**, at least 64 bytes per `adler32_update` call.
+- **Pass data in chunks of a few KiB**, at least 64 bytes per `update` call.
 - **On x86-64 choose the preset for the CPU:** at 4 KiB `isa::generic` runs about 23 000 MB/s, `isa::x86_avx2` about
   58 000 and `isa::x86_avxvnni` about 85 000, 1.13-1.17× zlib-ng.
 - **On Cortex-M4/M7/M33 use `isa::thumb2_dsp`:** 2× the portable loop at 4 KiB, from any start address.

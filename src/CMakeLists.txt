@@ -137,6 +137,7 @@ target_sources(
          include/checksum/byte_range.hpp
          include/checksum/crc.hpp
          include/checksum/crc_catalog.hpp
+         include/checksum/engine.hpp
          include/checksum/fletcher.hpp
          include/checksum/fletcher4.hpp
          include/checksum/hash128.hpp

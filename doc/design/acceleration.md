@@ -232,7 +232,7 @@ Design notes:
 - No software prefetch: it helped only at 1 MiB.
 - Seed 0 uses the default secret in read-only data; another seed derives the 192-byte secret on the stack in each call
   that folds stripes.
-- Streaming folds in place, but `xxh3_update` copies the 336-byte state in and out per call; the `byte_range` overload
+- Streaming folds in place, but `xxh3_engine::update` copies the 328-byte state in and out per call; the `byte_range` overload
   folds all its chunks into one state.
 
 ## fletcher4

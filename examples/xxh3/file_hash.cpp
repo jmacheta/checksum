@@ -21,13 +21,14 @@ int main(int argument_count, char **arguments) {
     return 1;
   }
 
-  // The state is a 336-byte value passed in and out of each update: large chunks keep that copy negligible.
-  checksum::xxh3_64_state state;
+  // The state is a 328-byte value passed in and out of each update: large chunks keep that copy negligible.
+  constexpr checksum::xxh3_engine<64> xxh3;
+  auto state = xxh3.initial();
   std::array<char, 64 * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
-    state = checksum::xxh3_update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
+    state = xxh3.update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
   }
 
-  std::cout << "XXH3_" << std::hex << std::setfill('0') << std::setw(16) << checksum::xxh3_finalize(state) << "  " << arguments[1] << '\n';
+  std::cout << "XXH3_" << std::hex << std::setfill('0') << std::setw(16) << xxh3.finalize(state) << "  " << arguments[1] << '\n';
   return 0;
 }

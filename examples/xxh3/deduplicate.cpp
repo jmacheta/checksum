@@ -18,7 +18,7 @@ struct hash128_hasher {
 };
 
 // The XXH3-128 check value of "abc".
-static_assert(checksum::xxh3_128_compute("abc"sv) == checksum::hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
+static_assert(checksum::xxh3_compute<128>("abc"sv) == checksum::hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
 
 int main() {
   constexpr std::size_t block_size = 4096;
@@ -36,7 +36,7 @@ int main() {
   std::unordered_map<checksum::hash128, std::size_t, hash128_hasher> first_copy;
   for(std::size_t block = 0; block < block_count; ++block) {
     std::span<std::byte const> const data = std::span(image).subspan(block * block_size, block_size);
-    first_copy.try_emplace(checksum::xxh3_128_compute(data), block);
+    first_copy.try_emplace(checksum::xxh3_compute<128>(data), block);
   }
 
   std::cout << block_count << " blocks, " << first_copy.size() << " distinct, " << (block_count - first_copy.size()) * block_size << " bytes saved\n";

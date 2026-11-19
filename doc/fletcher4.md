@@ -13,10 +13,10 @@ using namespace std::literals;
 checksum::fletcher4_value value = checksum::fletcher4_compute(std::span(block));
 
 // Incremental: a message may be split anywhere.
-checksum::fletcher4_state state;
-state = checksum::fletcher4_update(state, first_part);
-state = checksum::fletcher4_update(state, second_part);
-checksum::fletcher4_value checksum_words = checksum::fletcher4_finalize(state);
+constexpr checksum::fletcher4_engine fletcher4;
+auto state = fletcher4.update(fletcher4.initial(), first_part);
+state = fletcher4.update(state, second_part);
+checksum::fletcher4_value checksum_words = fletcher4.finalize(state);
 
 // Compile time.
 static_assert(checksum::fletcher4_compute("abcdefgh"sv) ==
@@ -40,12 +40,11 @@ as `"abc\0"`.
 
 | Name | What it does |
 | --- | --- |
+| `fletcher4_engine<Isa>` | The engine, an empty object. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the checksum (an unfinished word padded with zero bytes), `resume(checksum)` the state of a message with that checksum (section 4), `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. |
 | `fletcher4_state` | `sum1` to `sum4` and `word_offset` (bytes of an unfinished word already in `sum1`). A plain value; the default is the empty message. |
-| `fletcher4_update<Isa>(state, data)` | Folds `data` into `state` and returns the new state. |
-| `fletcher4_finalize(state)` | The checksum, an unfinished word padded with zero bytes. |
-| `fletcher4_compute<Isa>(data)` | `fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, data))`. |
 | `fletcher4_value` | The checksum: `std::array<std::uint64_t, 4>` holding `sum1` to `sum4`. |
-| `fletcher4_dispatch_engine` | `compute` and `update` with the preset chosen at run time. |
+| `fletcher4_compute<Isa>(data)` | `fletcher4_engine<Isa>{}.compute(data)`. |
+| `fletcher4_dispatch_engine` | The same members as `fletcher4_engine`, with the preset chosen at run time. |
 
 `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
 `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
@@ -59,6 +58,8 @@ as `"abc\0"`.
   checksum.
 - **Wraparound:** the sums wrap modulo 2^64, as in ZFS; there is no length limit.
 - **Byte order:** words are read little-endian on every target; the result is four numbers.
+- **Continuing from a stored checksum:** the checksum holds all four sums, so `fletcher4.update(fletcher4.resume(value),
+  data)` continues a message after any whole number of words; keep the state after a partial word.
 
 ## 5. CPU acceleration
 

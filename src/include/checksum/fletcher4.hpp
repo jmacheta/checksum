@@ -2,6 +2,7 @@
 #define CHECKSUM_FLETCHER4_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/engine.hpp>
 #include <checksum/isa.hpp>
 
 #include <algorithm>
@@ -41,41 +42,50 @@ struct fletcher4_state {
   friend constexpr bool operator==(fletcher4_state, fletcher4_state) noexcept = default;
 };
 
-/// Folds data into state; data may be split anywhere, including inside a word. Isa selects the run-time loop: the variant
-/// compiled for that instruction-set preset (checksum/isa.hpp).
-template <isa Isa = isa::generic>
-[[nodiscard]] constexpr fletcher4_state fletcher4_update(fletcher4_state state, std::span<std::byte const> data) noexcept;
+/// fletcher4 with the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp). Empty: make one wherever it
+/// is needed.
+template <isa Isa = isa::generic> class fletcher4_engine {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
 
-/// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr fletcher4_state fletcher4_update(fletcher4_state state, Range &&data) noexcept;
+public:
+  using state_type = fletcher4_state; ///< Running checksum.
+  using value_type = fletcher4_value; ///< The checksum.
 
-/// The checksum of state, an unfinished word padded with zero bytes.
-[[nodiscard]] constexpr fletcher4_value fletcher4_finalize(fletcher4_state state) noexcept;
+  /// The preset whose loop the engine runs: Isa.
+  [[nodiscard]] static constexpr isa preset() noexcept;
 
-/// fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, data)).
-template <isa Isa = isa::generic> [[nodiscard]] constexpr fletcher4_value fletcher4_compute(std::span<std::byte const> data) noexcept;
+  /// State of an empty message.
+  [[nodiscard]] static constexpr state_type initial() noexcept;
 
-/// fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, data)) for a byte range. A std::span<std::byte const> takes the overload above.
+  /// Folds data into state; data may be split anywhere, including inside a word.
+  [[nodiscard]] static constexpr state_type update(state_type state, std::span<std::byte const> data) noexcept;
+
+  /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
+  template <byte_range Range> [[nodiscard]] static constexpr state_type update(state_type state, Range &&data) noexcept;
+
+  /// The checksum of state, an unfinished word padded with zero bytes.
+  [[nodiscard]] static constexpr value_type finalize(state_type const &state) noexcept;
+
+  /// State of a message whose checksum is checksum. That message must end on a whole word, since a checksum does not record an
+  /// unfinished word.
+  [[nodiscard]] static constexpr state_type resume(value_type checksum) noexcept;
+
+  /// finalize(update(initial(), data)).
+  [[nodiscard]] static constexpr value_type compute(std::span<std::byte const> data) noexcept;
+
+  /// finalize(update(initial(), data)) for a byte range.
+  template <byte_range Range> [[nodiscard]] static constexpr value_type compute(Range &&data) noexcept;
+};
+
+/// fletcher4_engine<Isa>{}.compute(data).
 template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept;
 
-/// The fletcher4 with the run-time loop of one preset, chosen when the engine is made, by default for the running CPU.
-class fletcher4_dispatch_engine {
+/// A fletcher4_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
+class fletcher4_dispatch_engine : public detail::dispatch_engine<fletcher4_engine> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit fletcher4_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
-
-  /// The preset whose loop the engine runs.
-  [[nodiscard]] constexpr isa preset() const noexcept;
-
-  /// fletcher4_update() as the free function, with the preset this engine chose.
-  template <byte_range Range> [[nodiscard]] constexpr fletcher4_state update(fletcher4_state state, Range &&data) const noexcept;
-
-  /// fletcher4_compute() as the free function, with the preset this engine chose.
-  template <byte_range Range> [[nodiscard]] constexpr fletcher4_value compute(Range &&data) const noexcept;
-
-private:
-  isa chosen;
 };
 
 } // namespace checksum
@@ -94,6 +104,9 @@ using lane_sums = std::array<std::array<std::uint64_t, lane_count>, 4>;
 
 // Adds sum1 to sum2, sum2 to sum3 and sum3 to sum4, as at the end of a word.
 constexpr void finish_word(fletcher4_state &state) noexcept;
+
+// The checksum of state, an unfinished word padded with zero bytes.
+constexpr fletcher4_value finish(fletcher4_state state) noexcept;
 
 // Folds data byte by byte; the constant-evaluation loop, also used to finish an unfinished word at run time.
 constexpr fletcher4_state update_bytes(fletcher4_state state, std::span<std::byte const> data) noexcept;
@@ -119,6 +132,14 @@ constexpr void finish_word(fletcher4_state &state) noexcept {
   state.sum4 += state.sum3;
 }
 
+constexpr fletcher4_value finish(fletcher4_state state) noexcept {
+  // The zero padding adds nothing to sum1, but the padded word still adds to sum2, sum3 and sum4.
+  if(state.word_offset % word_size != 0) {
+    finish_word(state);
+  }
+  return {state.sum1, state.sum2, state.sum3, state.sum4};
+}
+
 constexpr fletcher4_state update_bytes(fletcher4_state state, std::span<std::byte const> data) noexcept {
   unsigned offset = state.word_offset % word_size;
   for(std::byte const byte : data) {
@@ -136,9 +157,11 @@ constexpr fletcher4_state update_bytes(fletcher4_state state, std::span<std::byt
 
 namespace checksum {
 
-template <isa Isa> constexpr fletcher4_state fletcher4_update(fletcher4_state state, std::span<std::byte const> data) noexcept {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
+template <isa Isa> constexpr isa fletcher4_engine<Isa>::preset() noexcept { return Isa; }
+
+template <isa Isa> constexpr fletcher4_state fletcher4_engine<Isa>::initial() noexcept { return {}; }
+
+template <isa Isa> constexpr fletcher4_state fletcher4_engine<Isa>::update(fletcher4_state state, std::span<std::byte const> data) noexcept {
   if consteval {
     return fletcher4_detail::update_bytes(state, data);
   } else {
@@ -153,57 +176,45 @@ template <isa Isa> constexpr fletcher4_state fletcher4_update(fletcher4_state st
   }
 }
 
-template <isa Isa, byte_range Range> constexpr fletcher4_state fletcher4_update(fletcher4_state state, Range &&data) noexcept {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = fletcher4_update<Isa>(state, chunk); });
+template <isa Isa> template <byte_range Range> constexpr fletcher4_state fletcher4_engine<Isa>::update(fletcher4_state state, Range &&data) noexcept {
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-constexpr fletcher4_value fletcher4_finalize(fletcher4_state state) noexcept {
-  // The zero padding adds nothing to sum1, but the padded word still adds to sum2, sum3 and sum4.
-  if(state.word_offset % fletcher4_detail::word_size != 0) {
-    fletcher4_detail::finish_word(state);
-  }
-  return {state.sum1, state.sum2, state.sum3, state.sum4};
+template <isa Isa> constexpr fletcher4_value fletcher4_engine<Isa>::finalize(fletcher4_state const &state) noexcept {
+  return fletcher4_detail::finish(state);
 }
 
-template <isa Isa> constexpr fletcher4_value fletcher4_compute(std::span<std::byte const> data) noexcept {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
+template <isa Isa> constexpr fletcher4_state fletcher4_engine<Isa>::resume(fletcher4_value checksum) noexcept {
+  return {.sum1 = checksum[0], .sum2 = checksum[1], .sum3 = checksum[2], .sum4 = checksum[3]};
+}
+
+template <isa Isa> constexpr fletcher4_value fletcher4_engine<Isa>::compute(std::span<std::byte const> data) noexcept {
   if consteval {
-    return fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, data));
+    return finalize(update(initial(), data));
   } else {
     return fletcher4_detail::compute_loop<Isa>(data);
   }
 }
 
-template <isa Isa, byte_range Range> constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
+template <isa Isa> template <byte_range Range> constexpr fletcher4_value fletcher4_engine<Isa>::compute(Range &&data) noexcept {
   // Contiguous ranges take compute_loop() too.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
-      return fletcher4_compute<Isa>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
+      return compute(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
     } else {
-      return fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, std::forward<Range>(data)));
+      return finalize(update(initial(), std::forward<Range>(data)));
     }
   } else {
-    return fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, std::forward<Range>(data)));
+    return finalize(update(initial(), std::forward<Range>(data)));
   }
 }
 
-constexpr fletcher4_dispatch_engine::fletcher4_dispatch_engine(isa_set cpu) noexcept : chosen(isa_detail::select(cpu)) {}
-
-constexpr isa fletcher4_dispatch_engine::preset() const noexcept { return chosen; }
-
-template <byte_range Range> constexpr fletcher4_state fletcher4_dispatch_engine::update(fletcher4_state state, Range &&data) const noexcept {
-  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return fletcher4_update<Isa>(state, std::forward<Range>(data)); });
+template <isa Isa, byte_range Range> constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept {
+  return fletcher4_engine<Isa>{}.compute(std::forward<Range>(data));
 }
 
-template <byte_range Range> constexpr fletcher4_value fletcher4_dispatch_engine::compute(Range &&data) const noexcept {
-  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return fletcher4_compute<Isa>(std::forward<Range>(data)); });
-}
+constexpr fletcher4_dispatch_engine::fletcher4_dispatch_engine(isa_set cpu) noexcept : dispatch_engine(cpu) {}
 
 } // namespace checksum
 

@@ -16,7 +16,7 @@ namespace {
 class bloom_filter {
 public:
   void insert(std::string_view key) {
-    auto const hash = checksum::murmur3_128_compute(key);
+    auto const hash = checksum::murmur3_compute<128>(key);
     for(std::size_t index = 0; index < hash_count; ++index) {
       bits.set(position(hash, index));
     }
@@ -24,7 +24,7 @@ public:
 
   // False means the key was never inserted; true means it probably was.
   [[nodiscard]] bool may_contain(std::string_view key) const {
-    auto const hash = checksum::murmur3_128_compute(key);
+    auto const hash = checksum::murmur3_compute<128>(key);
     for(std::size_t index = 0; index < hash_count; ++index) {
       if(!bits.test(position(hash, index))) {
         return false;

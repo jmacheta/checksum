@@ -36,9 +36,9 @@ template <class Strategy, class Register> void check_set(vector_set const &set) 
     std::uint64_t const expected = set.byte_crcs[index];
     auto const data = message(length);
     EXPECT_EQ((*engine)->compute(data), expected) << set.name << ", " << length << " bytes";
-    crc_accumulator accumulator{**engine};
-    accumulator.update(data.first(length / 2)).update(data.subspan(length / 2));
-    EXPECT_EQ(accumulator.value(), expected) << set.name << ", " << length << " bytes, accumulator";
+    accumulator running{**engine};
+    running.update(data.first(length / 2)).update(data.subspan(length / 2));
+    EXPECT_EQ(running.value(), expected) << set.name << ", " << length << " bytes, accumulator";
   }
   for(std::size_t index = 0; index < bit_lengths.size(); ++index) {
     std::size_t const length = bit_lengths[index];

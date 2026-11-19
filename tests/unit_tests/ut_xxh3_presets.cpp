@@ -1,7 +1,7 @@
 // XXH3 presets: every preset this build has must give bit-identical results to isa::generic, at run time and at compile time.
 
-#include <checksum/xxh3.hpp>
 #include <checksum/isa.hpp>
+#include <checksum/xxh3.hpp>
 
 #include <gtest/gtest.h>
 #include <isa_test_support.hpp>
@@ -29,10 +29,10 @@ template <unsigned Width, class Preset> void check_constant() {
   constexpr isa preset = Preset::value;
   static_assert((xxh3_compute<Width, preset>("abc"sv)) == (xxh3_compute<Width, isa::generic>("abc"sv)));
   static_assert((xxh3_compute<Width, preset>("123456789"sv, test_seed)) == (xxh3_compute<Width, isa::generic>("123456789"sv, test_seed)));
-  static_assert(xxh3_finalize<Width, preset>(xxh3_update<Width, preset>(xxh3_update<Width, preset>(xxh3_state<Width>{.seed = test_seed}, "1234"sv),
-                                                                       "56789"sv)) ==
-                xxh3_finalize<Width, isa::generic>(
-                    xxh3_update<Width, isa::generic>(xxh3_update<Width, isa::generic>(xxh3_state<Width>{.seed = test_seed}, "1234"sv), "56789"sv)));
+  constexpr xxh3_engine<Width, preset> engine(test_seed);
+  constexpr xxh3_engine<Width> generic(test_seed);
+  static_assert(engine.finalize(engine.update(engine.update(engine.initial(), "1234"sv), "56789"sv)) ==
+                generic.finalize(generic.update(generic.update(generic.initial(), "1234"sv), "56789"sv)));
   EXPECT_EQ((xxh3_compute<Width, preset>("abc"sv)), (xxh3_compute<Width, isa::generic>("abc"sv)));
   EXPECT_EQ((xxh3_compute<Width, preset>("123456789"sv, test_seed)), (xxh3_compute<Width, isa::generic>("123456789"sv, test_seed)));
 }
@@ -61,27 +61,25 @@ template <unsigned Width, class Preset> void check_large(std::vector<std::byte> 
 
 template <unsigned Width, class Preset> void check_updates(std::vector<std::byte> const &buffer) {
   constexpr isa preset = Preset::value;
-  for(std::size_t const split : {1UZ, 63UZ, 64UZ, 65UZ, 127UZ, 128UZ, 129UZ, 240UZ, 241UZ, 255UZ, 256UZ, 257UZ, 511UZ, 512UZ, 513UZ, 1024UZ, 1299UZ}) {
+  constexpr xxh3_engine<Width, preset> engine(test_seed);
+  constexpr xxh3_engine<Width> generic(test_seed);
+  for(std::size_t const split :
+      {1UZ, 63UZ, 64UZ, 65UZ, 127UZ, 128UZ, 129UZ, 240UZ, 241UZ, 255UZ, 256UZ, 257UZ, 511UZ, 512UZ, 513UZ, 1024UZ, 1299UZ}) {
     for(std::size_t const offset : {0UZ, 1UZ, 3UZ, 7UZ}) {
       auto const head = at(buffer, offset, split);
       auto const tail = at(buffer, offset + split, 1300 - split);
-      auto const expected = xxh3_finalize<Width, isa::generic>(
-          xxh3_update<Width, isa::generic>(xxh3_update<Width, isa::generic>(xxh3_state<Width>{.seed = test_seed}, head), tail));
-      auto actual = xxh3_update<Width, preset>(xxh3_state<Width>{.seed = test_seed}, head.first(split / 2));
-      actual = xxh3_update<Width, preset>(actual, head.subspan(split / 2));
-      actual = xxh3_update<Width, preset>(actual, tail);
-      ASSERT_EQ((xxh3_finalize<Width, preset>(actual)), expected) << "split " << split << ", offset " << offset;
+      auto const expected = generic.finalize(generic.update(generic.update(generic.initial(), head), tail));
+      auto actual = engine.update(engine.initial(), head.first(split / 2));
+      actual = engine.update(actual, head.subspan(split / 2));
+      actual = engine.update(actual, tail);
+      ASSERT_EQ(engine.finalize(actual), expected) << "split " << split << ", offset " << offset;
     }
   }
   auto const value = (xxh3_compute<Width, isa::generic>(buffer, test_seed));
   EXPECT_EQ((xxh3_compute<Width, preset>(buffer, test_seed)), value);
   std::list<std::byte> const list(buffer.begin(), buffer.end());
   EXPECT_EQ((xxh3_compute<Width, preset>(list, test_seed)), (xxh3_compute<Width, isa::generic>(list, test_seed)));
-  if constexpr(Width == 64) {
-    EXPECT_EQ(xxh3_64_compute<preset>(buffer, test_seed), xxh3_64_compute(buffer, test_seed));
-  } else {
-    EXPECT_EQ(xxh3_128_compute<preset>(buffer, test_seed), xxh3_128_compute(buffer, test_seed));
-  }
+  EXPECT_EQ(engine.compute(buffer), value);
 }
 
 template <class Preset> using xxh3_presets = isa_test::preset_test<Preset>;

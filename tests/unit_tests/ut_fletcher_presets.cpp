@@ -13,7 +13,6 @@
 #include <list>
 #include <span>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace {
@@ -24,25 +23,14 @@ std::span<std::byte const> at(std::vector<std::byte> const &buffer, std::size_t 
   return std::span<std::byte const>(buffer).subspan(offset, size);
 }
 
+// The engine of each preset, the check value of "123456789" and the largest sums.
 template <unsigned Width, std::uint64_t Check>
   requires(Width == 16 || Width == 32 || Width == 64)
 struct Fletcher {
+  template <isa Isa = isa::generic> using engine = fletcher_engine<Width, Isa>;
   using state_type = fletcher_state<Width>;
-  using checksum_type = state_type::value_type;
-  static constexpr checksum_type check = static_cast<checksum_type>(Check);
-  static constexpr state_type initial_state() noexcept { return {}; }
-  static constexpr state_type largest_state() noexcept {
-    return {.sum1 = static_cast<state_type::sum_type>(-1), .sum2 = static_cast<state_type::sum_type>(-1)};
-  }
-  template <isa Isa = isa::generic, byte_range Range> static constexpr checksum_type compute(Range &&data) noexcept {
-    return fletcher_compute<Width, Isa>(std::forward<Range>(data));
-  }
-  template <isa Isa = isa::generic, byte_range Range> static constexpr state_type update(state_type state, Range &&data) noexcept {
-    return fletcher_update<Width, Isa>(state, std::forward<Range>(data));
-  }
-  template <isa Isa = isa::generic, byte_range Range> static constexpr checksum_type update(checksum_type checksum, Range &&data) noexcept {
-    return fletcher_update<Isa>(checksum, std::forward<Range>(data));
-  }
+  static constexpr state_type::value_type check = static_cast<state_type::value_type>(Check);
+  static constexpr state_type largest_state{.sum1 = static_cast<state_type::sum_type>(-1), .sum2 = static_cast<state_type::sum_type>(-1)};
 };
 
 using Fletcher16 = Fletcher<16, 0x1EDE>;
@@ -50,81 +38,72 @@ using Fletcher32 = Fletcher<32, 0xDF09D509>;
 using Fletcher64 = Fletcher<64, 0x0D0803376C6A689F>;
 
 struct Adler32 {
-  using state_type = adler32_state;
-  using checksum_type = std::uint32_t;
-  static constexpr checksum_type check = 0x091E01DE;
-  static constexpr state_type initial_state() noexcept { return {}; }
-  static constexpr state_type largest_state() noexcept { return {.sum1 = 0xFFFF, .sum2 = 0xFFFF}; }
-  template <isa Isa = isa::generic, byte_range Range> static constexpr checksum_type compute(Range &&data) noexcept {
-    return adler32_compute<Isa>(std::forward<Range>(data));
-  }
-  template <isa Isa = isa::generic, byte_range Range> static constexpr state_type update(state_type state, Range &&data) noexcept {
-    return adler32_update<Isa>(state, std::forward<Range>(data));
-  }
-  template <isa Isa = isa::generic, byte_range Range> static constexpr checksum_type update(checksum_type checksum, Range &&data) noexcept {
-    return adler32_update<Isa>(checksum, std::forward<Range>(data));
-  }
+  template <isa Isa = isa::generic> using engine = adler32_engine<Isa>;
+  static constexpr std::uint32_t check = 0x091E01DE;
+  static constexpr adler32_state largest_state{.sum1 = 0xFFFF, .sum2 = 0xFFFF};
 };
 
 template <class Algorithm, class Preset> void check_constant() {
-  constexpr isa preset = Preset::value;
-  static_assert(Algorithm::template compute<preset>(std::string_view("123456789")) == Algorithm::check);
-  static_assert(Algorithm::template update<preset>(Algorithm::template compute<preset>(std::string_view("12345678")), std::string_view("9")) ==
+  constexpr typename Algorithm::template engine<Preset::value> engine;
+  static_assert(engine.compute(std::string_view("123456789")) == Algorithm::check);
+  static_assert(engine.finalize(engine.update(engine.resume(engine.compute(std::string_view("12345678"))), std::string_view("9"))) ==
                 Algorithm::check);
-  EXPECT_EQ(Algorithm::template compute<preset>(std::string_view("123456789")), Algorithm::check);
+  EXPECT_EQ(engine.compute(std::string_view("123456789")), Algorithm::check);
 }
 
 template <class Algorithm, class Preset> void check_sizes(std::vector<std::byte> const &buffer) {
-  constexpr isa preset = Preset::value;
+  constexpr typename Algorithm::template engine<Preset::value> engine;
+  constexpr typename Algorithm::template engine<> generic;
   for(std::size_t offset = 0; offset <= 7; ++offset) {
     for(std::size_t size = 0; size <= 2048; ++size) {
-      ASSERT_EQ(Algorithm::template compute<preset>(at(buffer, offset, size)), Algorithm::compute(at(buffer, offset, size)))
-          << "offset " << offset << ", size " << size;
+      ASSERT_EQ(engine.compute(at(buffer, offset, size)), generic.compute(at(buffer, offset, size))) << "offset " << offset << ", size " << size;
     }
   }
 }
 
 template <class Algorithm, class Preset> void check_large(std::vector<std::byte> const &buffer) {
-  constexpr isa preset = Preset::value;
+  constexpr typename Algorithm::template engine<Preset::value> engine;
+  constexpr typename Algorithm::template engine<> generic;
   for(std::size_t const size : {511UZ, 512UZ, 513UZ, 4096UZ, 10'000UZ, 65'536UZ, 100'003UZ, 999'999UZ}) {
     for(std::size_t const offset : {0UZ, 1UZ, 3UZ, 7UZ}) {
-      ASSERT_EQ(Algorithm::template compute<preset>(at(buffer, offset, size)), Algorithm::compute(at(buffer, offset, size)))
-          << "offset " << offset << ", size " << size;
+      ASSERT_EQ(engine.compute(at(buffer, offset, size)), generic.compute(at(buffer, offset, size))) << "offset " << offset << ", size " << size;
     }
   }
 }
 
 template <class Algorithm, class Preset> void check_updates(std::vector<std::byte> const &buffer) {
-  constexpr isa preset = Preset::value;
+  constexpr typename Algorithm::template engine<Preset::value> engine;
+  constexpr typename Algorithm::template engine<> generic;
   for(std::size_t const split : {1UZ, 63UZ, 191UZ, 192UZ, 193UZ, 511UZ, 512UZ, 513UZ, 1024UZ, 1299UZ}) {
     for(std::size_t const offset : {0UZ, 1UZ, 3UZ, 7UZ}) {
       auto const head = at(buffer, offset, split);
       auto const tail = at(buffer, offset + split, 1300 - split);
-      auto const expected = Algorithm::update(Algorithm::update(Algorithm::initial_state(), head), tail);
-      auto actual = Algorithm::template update<preset>(Algorithm::initial_state(), head.first(split / 2));
-      actual = Algorithm::template update<preset>(actual, head.subspan(split / 2));
-      actual = Algorithm::template update<preset>(actual, tail);
+      auto const expected = generic.update(generic.update(generic.initial(), head), tail);
+      auto actual = engine.update(engine.initial(), head.first(split / 2));
+      actual = engine.update(actual, head.subspan(split / 2));
+      actual = engine.update(actual, tail);
       ASSERT_EQ(actual, expected) << "split " << split << ", offset " << offset;
     }
   }
-  auto const value = Algorithm::compute(buffer);
-  EXPECT_EQ(Algorithm::template update<preset>(value, std::span<std::byte const>{}), value);
-  EXPECT_EQ(Algorithm::template update<preset>(value, buffer), Algorithm::update(value, buffer));
-  EXPECT_EQ(Algorithm::template compute<preset>(buffer), Algorithm::compute(buffer));
+  auto const value = generic.compute(buffer);
+  EXPECT_EQ(engine.finalize(engine.update(engine.resume(value), std::span<std::byte const>{})), value);
+  EXPECT_EQ(engine.update(engine.resume(value), buffer), generic.update(generic.resume(value), buffer));
+  EXPECT_EQ(engine.compute(buffer), generic.compute(buffer));
   std::list<std::byte> const list(buffer.begin(), buffer.end());
-  EXPECT_EQ(Algorithm::template compute<preset>(list), Algorithm::compute(list));
+  EXPECT_EQ(engine.compute(list), generic.compute(list));
 }
 
 // All-ones bytes around the chunk sizes of every kernel, from the initial and the largest sums: the inputs that come closest to
 // overflowing a kernel's deferred sums.
 template <class Algorithm, class Preset> void check_overflow_bounds(std::vector<std::byte> const &ones) {
-  constexpr isa preset = Preset::value;
+  constexpr typename Algorithm::template engine<Preset::value> engine;
+  constexpr typename Algorithm::template engine<> generic;
   for(std::size_t const chunk : {1024UZ, 2048UZ, 4096UZ, 5600UZ, 5760UZ, 16UZ << 10U, 32UZ << 10U, 256UZ << 10U}) {
     for(std::size_t const size : {chunk - 1, chunk, chunk + 1, chunk + 35, (2 * chunk) + 35}) {
       for(std::size_t const offset : {0UZ, 1UZ, 3UZ}) {
         auto const message = at(ones, offset, size);
-        ASSERT_EQ(Algorithm::template compute<preset>(message), Algorithm::compute(message)) << "size " << size << ", offset " << offset;
-        ASSERT_EQ(Algorithm::template update<preset>(Algorithm::largest_state(), message), Algorithm::update(Algorithm::largest_state(), message))
+        ASSERT_EQ(engine.compute(message), generic.compute(message)) << "size " << size << ", offset " << offset;
+        ASSERT_EQ(engine.update(Algorithm::largest_state, message), generic.update(Algorithm::largest_state, message))
             << "size " << size << ", offset " << offset;
       }
     }

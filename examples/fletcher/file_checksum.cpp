@@ -22,12 +22,13 @@ int main(int argument_count, char **arguments) {
     return 1;
   }
 
-  checksum::fletcher32_state state;
+  constexpr checksum::fletcher_engine<32> fletcher32;
+  auto state = fletcher32.initial();
   std::array<char, 64 * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
-    state = checksum::fletcher_update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
+    state = fletcher32.update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
   }
 
-  std::cout << std::hex << std::setfill('0') << std::setw(8) << checksum::fletcher_finalize(state) << "  " << arguments[1] << '\n';
+  std::cout << std::hex << std::setfill('0') << std::setw(8) << fletcher32.finalize(state) << "  " << arguments[1] << '\n';
   return 0;
 }

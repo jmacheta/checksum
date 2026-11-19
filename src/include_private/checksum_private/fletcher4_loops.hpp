@@ -170,7 +170,7 @@ template <isa Isa> CHECKSUM_NOINLINE fletcher4_state sum_long(fletcher4_state st
 }
 
 template <isa Isa> CHECKSUM_NOINLINE void compute_long(std::span<std::byte const> data, fletcher4_value &value) noexcept {
-  value = fletcher4_finalize(sum_lanes_then_words<Isa>(fletcher4_state{}, data));
+  value = finish(sum_lanes_then_words<Isa>(fletcher4_state{}, data));
 }
 
 template <isa Isa> CHECKSUM_ALWAYS_INLINE inline bool use_lanes(std::span<std::byte const> data) noexcept {
@@ -188,7 +188,7 @@ template <isa Isa> fletcher4_value fletcher4_compute_any(std::span<std::byte con
     compute_long<Isa>(data, value);
     return value;
   }
-  return fletcher4_finalize(sum_words<Isa>(fletcher4_state{}, data));
+  return finish(sum_words<Isa>(fletcher4_state{}, data));
 }
 
 } // namespace checksum::fletcher4_detail

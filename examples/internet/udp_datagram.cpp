@@ -29,18 +29,19 @@ constexpr std::array<std::byte, 2> big_endian(std::uint16_t value) {
 // The checksum over the pseudo-header, the UDP header with checksum_field and the payload.
 std::uint16_t udp_checksum(std::uint16_t checksum_field) {
   // Pseudo-header: source, destination, a zero byte and the protocol, the UDP length.
-  checksum::internet_state state;
-  state = checksum::internet_update(state, source);
-  state = checksum::internet_update(state, destination);
-  state = checksum::internet_update(state, big_endian(protocol_udp));
-  state = checksum::internet_update(state, big_endian(udp_length));
+  constexpr checksum::internet_engine internet;
+  auto state = internet.initial();
+  state = internet.update(state, source);
+  state = internet.update(state, destination);
+  state = internet.update(state, big_endian(protocol_udp));
+  state = internet.update(state, big_endian(udp_length));
   // UDP header: ports, length, checksum.
-  state = checksum::internet_update(state, big_endian(source_port));
-  state = checksum::internet_update(state, big_endian(destination_port));
-  state = checksum::internet_update(state, big_endian(udp_length));
-  state = checksum::internet_update(state, big_endian(checksum_field));
-  state = checksum::internet_update(state, payload);
-  return checksum::internet_finalize(state);
+  state = internet.update(state, big_endian(source_port));
+  state = internet.update(state, big_endian(destination_port));
+  state = internet.update(state, big_endian(udp_length));
+  state = internet.update(state, big_endian(checksum_field));
+  state = internet.update(state, payload);
+  return internet.finalize(state);
 }
 
 } // namespace

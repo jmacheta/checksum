@@ -78,12 +78,12 @@ void check_engines(isa_set cpu) {
   fletcher_dispatch_engine<32> const fletcher32(cpu);
   fletcher_dispatch_engine<64> const fletcher64(cpu);
   fletcher4_dispatch_engine const fletcher4(cpu);
-  xxh3_dispatch_engine<64> const xxh3_64(cpu);
-  xxh3_dispatch_engine<128> const xxh3_128(cpu);
-  xxhash_dispatch_engine<32> const xxh32(cpu);
-  xxhash_dispatch_engine<64> const xxh64(cpu);
-  murmur3_dispatch_engine<32> const murmur3_32(cpu);
-  murmur3_dispatch_engine<128> const murmur3_128(cpu);
+  xxh3_dispatch_engine<64> const xxh3_64(5, cpu);
+  xxh3_dispatch_engine<128> const xxh3_128(0, cpu);
+  xxhash_dispatch_engine<32> const xxh32(3, cpu);
+  xxhash_dispatch_engine<64> const xxh64(3, cpu);
+  murmur3_dispatch_engine<32> const murmur3_32(2, cpu);
+  murmur3_dispatch_engine<128> const murmur3_128(2, cpu);
   isa const preset = internet.preset();
   check(preset == isa_detail::select(cpu) && cpu.contains(preset), "preset", preset, 0);
   for(std::size_t const size : {0UZ, 1UZ, 3UZ, 15UZ, 16UZ, 63UZ, 64UZ, 255UZ, 1500UZ, 4097UZ}) {
@@ -95,12 +95,12 @@ void check_engines(isa_set cpu) {
       check(fletcher32.compute(data) == fletcher_compute<32>(data), "fletcher32", preset, size);
       check(fletcher64.compute(data) == fletcher_compute<64>(data), "fletcher64", preset, size);
       check(fletcher4.compute(data) == fletcher4_compute(data), "fletcher4", preset, size);
-      check(xxh3_64.compute(data, 5) == xxh3_compute<64>(data, 5), "xxh3_64", preset, size);
-      check(xxh3_128.compute(data) == xxh3_128_compute(data), "xxh3_128", preset, size);
-      check(xxh32.compute(data, 3) == xxh32_compute(data, 3), "xxh32", preset, size);
-      check(xxh64.compute(data, 3) == xxh64_compute(data, 3), "xxh64", preset, size);
-      check(murmur3_32.compute(data, 2) == murmur3_32_compute(data, 2), "murmur3_32", preset, size);
-      check(murmur3_128.compute(data, 2) == murmur3_128_compute(data, 2), "murmur3_128", preset, size);
+      check(xxh3_64.compute(data) == xxh3_compute<64>(data, 5), "xxh3_64", preset, size);
+      check(xxh3_128.compute(data) == xxh3_compute<128>(data), "xxh3_128", preset, size);
+      check(xxh32.compute(data) == xxhash_compute<32>(data, 3), "xxh32", preset, size);
+      check(xxh64.compute(data) == xxhash_compute<64>(data, 3), "xxh64", preset, size);
+      check(murmur3_32.compute(data) == murmur3_compute<32>(data, 2), "murmur3_32", preset, size);
+      check(murmur3_128.compute(data) == murmur3_compute<128>(data, 2), "murmur3_128", preset, size);
       check_crc<crc32_iso_hdlc, crc_lut_sliced>(cpu, data, "crc32 sliced");
       check_crc<crc32c, crc_lut_braided>(cpu, data, "crc32c braided");
       check_crc<crc16_xmodem, crc_lut_sliced>(cpu, data, "crc16 sliced");

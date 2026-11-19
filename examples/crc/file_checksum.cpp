@@ -22,12 +22,12 @@ int main(int argument_count, char **arguments) {
   }
 
   // The accumulator references the engine and keeps the running state across chunks.
-  checksum::crc_accumulator accumulator{checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_sliced>};
+  checksum::accumulator crc{checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_sliced>};
   std::array<char, 64 * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
-    accumulator.update(std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
+    crc.update(std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
   }
 
-  std::cout << std::hex << std::setfill('0') << std::setw(8) << accumulator.value() << "  " << arguments[1] << '\n';
+  std::cout << std::hex << std::setfill('0') << std::setw(8) << crc.value() << "  " << arguments[1] << '\n';
   return 0;
 }

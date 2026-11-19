@@ -13,7 +13,7 @@
 using namespace std::literals;
 
 // The compiler verifies the XXH3-64 check value of "abc".
-static_assert(checksum::xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950);
+static_assert(checksum::xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950);
 
 namespace {
 
@@ -22,7 +22,7 @@ struct asset {
   std::uint64_t id;
 };
 
-constexpr asset make_asset(std::string_view path) { return {.path = path, .id = checksum::xxh3_64_compute(path)}; }
+constexpr asset make_asset(std::string_view path) { return {.path = path, .id = checksum::xxh3_compute<64>(path)}; }
 
 // The table is a constant in read-only data, sorted by ID for a binary search.
 constexpr auto assets = [] {
@@ -42,7 +42,7 @@ std::string_view find_path(std::uint64_t id) {
 
 int main() {
   // A path read at run time, e.g. from a level file, hashes to the same ID.
-  std::uint64_t const id = checksum::xxh3_64_compute("sounds/step.wav"sv);
+  std::uint64_t const id = checksum::xxh3_compute<64>("sounds/step.wav"sv);
   std::string_view const path = find_path(id);
   std::cout << "ID 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(16) << id << " -> " << path << '\n';
   return path == "sounds/step.wav" ? 0 : 1;

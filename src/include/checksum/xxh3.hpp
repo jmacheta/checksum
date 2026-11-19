@@ -2,6 +2,7 @@
 #define CHECKSUM_XXH3_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/engine.hpp>
 #include <checksum/hash128.hpp>
 #include <checksum/isa.hpp>
 #include <checksum/xxhash.hpp>
@@ -9,7 +10,6 @@
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <ranges>
@@ -27,8 +27,7 @@
 
 namespace checksum {
 
-/// Running XXH3-64 (Width 64) or XXH3-128 (Width 128) hash, 336 bytes. Every value is valid; the default is the empty message with seed 0, and
-/// xxh3_state<Width>{.seed = seed} starts one with another seed.
+/// Running XXH3-64 (Width 64) or XXH3-128 (Width 128) hash, 328 bytes. Every value is valid; the default is the empty message.
 template <unsigned Width>
   requires(Width == 64 || Width == 128)
 struct xxh3_state {
@@ -39,71 +38,77 @@ struct xxh3_state {
   std::array<std::uint64_t, 8> accumulators{0xC2B2AE3DU,         0x9E3779B185EBCA87U, 0xC2B2AE3D27D4EB4FU, 0x165667B19E3779F9U,
                                             0x85EBCA77C2B2AE63U, 0x85EBCA77U,         0x27D4EB2F165667C5U, 0x9E3779B1U};
   std::uint64_t length = 0; ///< Bytes passed so far.
-  std::uint64_t seed = 0;   ///< Seed of the hash.
   std::array<std::byte, 256>
       buffer{}; ///< The input after the folded part, from the start. While it holds fewer than 64 bytes, its end keeps the stripe before them.
+
+  friend constexpr bool operator==(xxh3_state const &, xxh3_state const &) noexcept = default;
 };
 
-/// Folds data into state, which may be split anywhere; Isa selects the run-time stripe loop, the variant compiled for that
-/// instruction-set preset (checksum/isa.hpp). With a seed other than 0, each call that folds the buffer builds the 192-byte secret again, as
-/// xxh3_finalize() does.
+/// XXH3-64 (Width 64) or XXH3-128 (Width 128) with a seed, the default secret and the run-time stripe loop compiled for the
+/// instruction-set preset Isa (checksum/isa.hpp).
 template <unsigned Width, isa Isa = isa::generic>
-[[nodiscard]] constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept;
-
-/// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <unsigned Width, isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, Range &&data) noexcept;
-
-/// The hash of the message folded into state. Isa selects the run-time stripe loop for the remaining buffer.
-template <unsigned Width, isa Isa = isa::generic>
-[[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_finalize(xxh3_state<Width> const &state) noexcept;
-
-/// The hash of data: xxh3_finalize<Width, Isa>(xxh3_update<Width, Isa>(xxh3_state<Width>{.seed = seed}, data)).
-template <unsigned Width, isa Isa = isa::generic>
-[[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_compute(std::span<std::byte const> data, std::uint64_t seed = 0) noexcept;
-
-/// The hash of a byte range with a seed. A std::span<std::byte const> takes the overload above.
-template <unsigned Width, isa Isa = isa::generic, byte_range Range>
-  requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
-[[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed = 0) noexcept;
-
-/// Running XXH3-64 hash.
-using xxh3_64_state = xxh3_state<64>;
-
-/// Running XXH3-128 hash.
-using xxh3_128_state = xxh3_state<128>;
-
-/// The XXH3-64 hash of data: xxh3_compute<64, Isa>(data, seed).
-template <isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
-
-/// The XXH3-128 hash of data: xxh3_compute<128, Isa>(data, seed).
-template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
-
-/// The XXH3 of Width bits with the run-time loop of one preset, chosen when the engine is made, by default
-/// for the running CPU.
-template <unsigned Width>
   requires(Width == 64 || Width == 128)
-class xxh3_dispatch_engine {
+class xxh3_engine {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
+
 public:
-  /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
-  constexpr explicit xxh3_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
+  using state_type = xxh3_state<Width>;             ///< Running hash.
+  using value_type = xxh3_state<Width>::value_type; ///< The hash: std::uint64_t or hash128.
 
-  /// The preset whose loop the engine runs.
-  [[nodiscard]] constexpr isa preset() const noexcept;
+  /// The engine of the hash with seed.
+  constexpr explicit xxh3_engine(std::uint64_t seed = 0) noexcept;
 
-  /// xxh3_update() as the free function, with the preset this engine chose.
-  template <byte_range Range> [[nodiscard]] constexpr xxh3_state<Width> update(xxh3_state<Width> state, Range &&data) const noexcept;
+  /// The preset whose loop the engine runs: Isa.
+  [[nodiscard]] static constexpr isa preset() noexcept;
 
-  /// xxh3_finalize() as the free function, with the preset this engine chose.
-  [[nodiscard]] constexpr typename xxh3_state<Width>::value_type finalize(xxh3_state<Width> const &state) const noexcept;
+  /// State of an empty message.
+  [[nodiscard]] constexpr state_type initial() const noexcept;
 
-  /// xxh3_compute() as the free function, with the preset this engine chose.
-  template <byte_range Range>
-  [[nodiscard]] constexpr typename xxh3_state<Width>::value_type compute(Range &&data, std::uint64_t seed = 0) const noexcept;
+  /// Folds data into state; data may be split anywhere. With a seed other than 0, each call that folds the buffer builds the 192-byte
+  /// secret again, as finalize() does.
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data) const noexcept;
+
+  /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
+  template <byte_range Range> [[nodiscard]] constexpr state_type update(state_type state, Range &&data) const noexcept;
+
+  /// The hash of the message folded into state, with the preset's stripe loop for the remaining buffer.
+  [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
+
+  /// finalize(update(initial(), data)).
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
+
+  /// finalize(update(initial(), data)) for a byte range.
+  template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
 
 private:
-  isa chosen;
+  std::uint64_t seed;
+};
+
+/// xxh3_engine<Width, Isa>{seed}.compute(data).
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+
+} // namespace checksum
+
+namespace checksum::xxh3_detail {
+
+// xxh3_engine as a template of the preset alone, for detail::dispatch_engine.
+template <unsigned Width> struct engine_of {
+  template <isa Isa> using type = xxh3_engine<Width, Isa>;
+};
+
+} // namespace checksum::xxh3_detail
+
+namespace checksum {
+
+/// An xxh3_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
+template <unsigned Width>
+  requires(Width == 64 || Width == 128)
+class xxh3_dispatch_engine : public detail::dispatch_engine<xxh3_detail::engine_of<Width>::template type, std::uint64_t> {
+public:
+  /// The engine of the hash with seed and the best preset of this build in cpu: by default the presets the running CPU executes.
+  constexpr explicit xxh3_dispatch_engine(std::uint64_t seed = 0, isa_set cpu = detect_isa()) noexcept;
 };
 
 } // namespace checksum
@@ -250,8 +255,8 @@ constexpr std::uint64_t folded_length(std::uint64_t length) noexcept;
 // Position in its block of the stripe at offset folded.
 constexpr std::size_t stripe_index(std::uint64_t folded) noexcept;
 
-// xxh3_update() in place: copying the state costs more than folding a short piece.
-template <unsigned Width, isa Isa> constexpr void update(xxh3_state<Width> &state, std::span<std::byte const> data) noexcept;
+// xxh3_engine::update() in place: copying the state costs more than folding a short piece.
+template <unsigned Width, isa Isa> constexpr void update(xxh3_state<Width> &state, std::uint64_t seed, std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::xxh3_detail
 
@@ -563,7 +568,7 @@ constexpr std::uint64_t folded_length(std::uint64_t length) noexcept { return le
 
 constexpr std::size_t stripe_index(std::uint64_t folded) noexcept { return static_cast<std::size_t>((folded / stripe_size) % stripes_per_block); }
 
-template <unsigned Width, isa Isa> constexpr void update(xxh3_state<Width> &state, std::span<std::byte const> data) noexcept {
+template <unsigned Width, isa Isa> constexpr void update(xxh3_state<Width> &state, std::uint64_t seed, std::span<std::byte const> data) noexcept {
   std::uint64_t const folded = folded_length(state.length);
   auto const buffered = static_cast<std::size_t>(state.length - folded);
   state.length += data.size();
@@ -575,7 +580,7 @@ template <unsigned Width, isa Isa> constexpr void update(xxh3_state<Width> &stat
   }
   // The buffer is full and more input follows: fold it, then all but the last 1 to 256 bytes of data.
   std::size_t const whole = ((data.size() - 1) / buffer_size) * buffer_size;
-  with_secret(state.seed, [&](secret_array const &secret) {
+  with_secret(seed, [&](secret_array const &secret) {
     fold<Isa>(state.accumulators, state.buffer, stripe_index(folded), secret, nullptr);
     if(whole != 0) {
       fold<Isa>(state.accumulators, data.first(whole), stripe_index(folded + buffer_size), secret, nullptr);
@@ -591,24 +596,43 @@ template <unsigned Width, isa Isa> constexpr void update(xxh3_state<Width> &stat
 
 namespace checksum {
 
-template <unsigned Width, isa Isa> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-  xxh3_detail::update<Width, Isa>(state, data);
+template <unsigned Width, isa Isa>
+  requires(Width == 64 || Width == 128)
+constexpr xxh3_engine<Width, Isa>::xxh3_engine(std::uint64_t seed) noexcept : seed(seed) {}
+
+template <unsigned Width, isa Isa>
+  requires(Width == 64 || Width == 128)
+constexpr isa xxh3_engine<Width, Isa>::preset() noexcept {
+  return Isa;
+}
+
+template <unsigned Width, isa Isa>
+  requires(Width == 64 || Width == 128)
+constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::initial() const noexcept {
+  return {};
+}
+
+template <unsigned Width, isa Isa>
+  requires(Width == 64 || Width == 128)
+constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::update(xxh3_state<Width> state, std::span<std::byte const> data) const noexcept {
+  xxh3_detail::update<Width, Isa>(state, seed, data);
   return state;
 }
 
-template <unsigned Width, isa Isa, byte_range Range> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = xxh3_update<Width, Isa>(state, chunk); });
+template <unsigned Width, isa Isa>
+  requires(Width == 64 || Width == 128)
+template <byte_range Range>
+constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::update(xxh3_state<Width> state, Range &&data) const noexcept {
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { xxh3_detail::update<Width, Isa>(state, seed, chunk); });
   return state;
 }
 
-template <unsigned Width, isa Isa> constexpr xxh3_state<Width>::value_type xxh3_finalize(xxh3_state<Width> const &state) noexcept {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
+template <unsigned Width, isa Isa>
+  requires(Width == 64 || Width == 128)
+constexpr xxh3_state<Width>::value_type xxh3_engine<Width, Isa>::finalize(xxh3_state<Width> const &state) const noexcept {
   using namespace xxh3_detail;
   if(state.length <= midsize_max) {
-    return xxh3_compute<Width, Isa>(std::span(state.buffer).first(static_cast<std::size_t>(state.length)), state.seed);
+    return compute(std::span(state.buffer).first(static_cast<std::size_t>(state.length)));
   }
   std::uint64_t const folded = folded_length(state.length);
   auto const buffered = static_cast<std::size_t>(state.length - folded);
@@ -621,7 +645,7 @@ template <unsigned Width, isa Isa> constexpr xxh3_state<Width>::value_type xxh3_
     auto const tail = std::ranges::copy(std::span(state.buffer).last(stripe_size - buffered), wrapped.begin()).out;
     std::ranges::copy(std::span(state.buffer).first(buffered), tail);
   }
-  return with_secret(state.seed, [&](secret_array const &secret) {
+  return with_secret(seed, [&](secret_array const &secret) {
     accumulator_array accumulators = state.accumulators;
     fold<Isa>(accumulators, std::span(state.buffer).first(((buffered - 1) / stripe_size) * stripe_size), stripe_index(folded), secret, last_stripe);
     return finish_large<Width>(accumulators, state.length, secret);
@@ -629,9 +653,8 @@ template <unsigned Width, isa Isa> constexpr xxh3_state<Width>::value_type xxh3_
 }
 
 template <unsigned Width, isa Isa>
-constexpr xxh3_state<Width>::value_type xxh3_compute(std::span<std::byte const> data, std::uint64_t seed) noexcept {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
+  requires(Width == 64 || Width == 128)
+constexpr xxh3_state<Width>::value_type xxh3_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
   if(data.size() <= xxh3_detail::small_max) {
     return xxh3_detail::hash_small<Width>(data, seed);
   }
@@ -644,58 +667,30 @@ constexpr xxh3_state<Width>::value_type xxh3_compute(std::span<std::byte const> 
   return xxh3_detail::hash_large<Width, Isa>(data, seed);
 }
 
-template <unsigned Width, isa Isa, byte_range Range>
-  requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
-constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed) noexcept {
+template <unsigned Width, isa Isa>
+  requires(Width == 64 || Width == 128)
+template <byte_range Range>
+constexpr xxh3_state<Width>::value_type xxh3_engine<Width, Isa>::compute(Range &&data) const noexcept {
   // Contiguous ranges skip the buffer of the state.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
-      return xxh3_compute<Width, Isa>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
+      return compute(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
     } else {
-      return xxh3_finalize<Width, Isa>(xxh3_update<Width, Isa>(xxh3_state<Width>{.seed = seed}, std::forward<Range>(data)));
+      return finalize(update(initial(), std::forward<Range>(data)));
     }
   } else {
-    return xxh3_finalize<Width, Isa>(xxh3_update<Width, Isa>(xxh3_state<Width>{.seed = seed}, std::forward<Range>(data)));
+    return finalize(update(initial(), std::forward<Range>(data)));
   }
 }
 
-template <isa Isa, byte_range Range> constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed) noexcept {
-  return xxh3_compute<64, Isa>(std::forward<Range>(data), seed);
-}
-
-template <isa Isa, byte_range Range> constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed) noexcept {
-  return xxh3_compute<128, Isa>(std::forward<Range>(data), seed);
+template <unsigned Width, isa Isa, byte_range Range> constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed) noexcept {
+  return xxh3_engine<Width, Isa>{seed}.compute(std::forward<Range>(data));
 }
 
 template <unsigned Width>
   requires(Width == 64 || Width == 128)
-constexpr xxh3_dispatch_engine<Width>::xxh3_dispatch_engine(isa_set cpu) noexcept : chosen(isa_detail::select(cpu)) {}
-
-template <unsigned Width>
-  requires(Width == 64 || Width == 128)
-constexpr isa xxh3_dispatch_engine<Width>::preset() const noexcept {
-  return chosen;
-}
-
-template <unsigned Width>
-  requires(Width == 64 || Width == 128)
-template <byte_range Range>
-constexpr xxh3_state<Width> xxh3_dispatch_engine<Width>::update(xxh3_state<Width> state, Range &&data) const noexcept {
-  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return xxh3_update<Width, Isa>(state, std::forward<Range>(data)); });
-}
-
-template <unsigned Width>
-  requires(Width == 64 || Width == 128)
-constexpr typename xxh3_state<Width>::value_type xxh3_dispatch_engine<Width>::finalize(xxh3_state<Width> const &state) const noexcept {
-  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return xxh3_finalize<Width, Isa>(state); });
-}
-
-template <unsigned Width>
-  requires(Width == 64 || Width == 128)
-template <byte_range Range>
-constexpr typename xxh3_state<Width>::value_type xxh3_dispatch_engine<Width>::compute(Range &&data, std::uint64_t seed) const noexcept {
-  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return xxh3_compute<Width, Isa>(std::forward<Range>(data), seed); });
-}
+constexpr xxh3_dispatch_engine<Width>::xxh3_dispatch_engine(std::uint64_t seed, isa_set cpu) noexcept
+    : detail::dispatch_engine<xxh3_detail::engine_of<Width>::template type, std::uint64_t>(cpu, seed) {}
 
 } // namespace checksum
 
