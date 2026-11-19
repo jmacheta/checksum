@@ -103,8 +103,9 @@ inline constexpr std::array<isa, 0> built_presets{};
 // latest preset of this build in cpu, else generic. Only RISC-V builds presets of two lines, which preferred settles for CRC.
 constexpr isa select(isa_set cpu, isa preferred = isa::generic) noexcept;
 
-// function.template operator()<select(cpu, Preferred)>(): the dispatch engines' switch over the presets of this build.
-template <isa Preferred = isa::generic, class Function> constexpr auto dispatch(isa_set cpu, Function &&function);
+// function.template operator()<preset>() for preset, a result of select() that a dispatch engine keeps: its switch over the
+// presets of this build, the only work of a call besides the variant itself.
+template <class Function> constexpr auto dispatch(isa preset, Function &&function);
 
 // function.template operator()<preset>() if preset is built_presets[Index] or a later one, else for generic.
 template <std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function &function);
@@ -194,9 +195,7 @@ template <std::size_t Index, class Function> constexpr auto dispatch_from(isa pr
   }
 }
 
-template <isa Preferred, class Function> constexpr auto dispatch(isa_set cpu, Function &&function) {
-  return dispatch_from<0>(select(cpu, Preferred), function);
-}
+template <class Function> constexpr auto dispatch(isa preset, Function &&function) { return dispatch_from<0>(preset, function); }
 
 } // namespace checksum::isa_detail
 

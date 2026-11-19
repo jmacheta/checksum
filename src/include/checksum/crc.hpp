@@ -872,8 +872,7 @@ template <crc_register Register, crc_strategy_for<Register> Strategy>
 constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
 crc_dispatch_engine<Register, Strategy>::update(state_type state, std::span<std::byte const> data) const noexcept {
   state = engine.checked_state(state);
-  return isa_detail::dispatch<isa::riscv_zbc>(chosen,
-                                              [&]<isa Isa>() { return crc_detail::strategy_update<Strategy, Isa>(engine.table, state, data); });
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return crc_detail::strategy_update<Strategy, Isa>(engine.table, state, data); });
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy>
@@ -881,7 +880,7 @@ template <byte_range Range>
 constexpr typename crc_dispatch_engine<Register, Strategy>::state_type crc_dispatch_engine<Register, Strategy>::update(state_type state,
                                                                                                                        Range &&data) const noexcept {
   state = engine.checked_state(state);
-  return isa_detail::dispatch<isa::riscv_zbc>(chosen, [&]<isa Isa>() {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() {
     detail::for_each_chunk(std::forward<Range>(data),
                            [&](std::span<std::byte const> chunk) { state = crc_detail::strategy_update<Strategy, Isa>(engine.table, state, chunk); });
     return state;
