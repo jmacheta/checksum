@@ -244,14 +244,15 @@ struct crc_lut_sliced : crc_detail::lookup_strategy<crc_detail::sliced_table_siz
 /// instructions run the crc_lut_sliced path instead.
 struct crc_lut_braided : crc_detail::lookup_strategy<crc_detail::braided_table_size> {};
 
-/// A crc_engine whose run-time loop is chosen once, when it is created: the variant of the best preset of this build in cpu
-/// (checksum/isa.hpp), e.g. detect_isa(). One table serves every preset; constant evaluation runs the portable loop.
+/// A crc_engine whose run-time loop is chosen once, when it is created: by default the best preset of this build that the
+/// running CPU executes (checksum/isa.hpp). One table serves every preset; constant evaluation runs the portable loop.
 template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_sliced> class crc_dispatch_engine {
 public:
   using state_type = Register; ///< Running CRC, below 2^width.
 
-  /// Validates parameters as crc_engine::create() does and chooses the preset.
-  [[nodiscard]] static constexpr std::optional<crc_dispatch_engine> create(crc_parameters const &parameters, isa_set cpu) noexcept;
+  /// Validates parameters as crc_engine::create() does and chooses the best preset of this build in cpu: by default the
+  /// presets the running CPU executes.
+  [[nodiscard]] static constexpr std::optional<crc_dispatch_engine> create(crc_parameters const &parameters, isa_set cpu = detect_isa()) noexcept;
 
   /// The preset whose loop update() runs.
   [[nodiscard]] constexpr isa preset() const noexcept;

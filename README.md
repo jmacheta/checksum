@@ -89,30 +89,35 @@ and `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-poin
 `isa::generic`. Which preset enables which kernel is in each algorithm's guide.
 
 A preset in a template argument is the caller's promise that the CPU runs it; calling it on a CPU without its
-instructions is undefined (illegal instruction). To choose at run time, pass an `isa_set` to the value overloads, which
-every algorithm has next to its templates:
+instructions is undefined (illegal instruction). To choose at run time, make a dispatch engine: it detects the CPU when
+it is made and runs the best variant of this build from then on.
 
 ```cpp
-checksum::isa_set const cpu = checksum::detect_isa(); // once: queries the CPU or the operating system
+checksum::internet_dispatch_engine const internet;   // detects the CPU
+checksum::xxh3_dispatch_engine<64> const xxh3;
+auto const crc = checksum::crc_dispatch_engine<std::uint32_t>::create(checksum::crc32_iso_hdlc);
 
-std::uint16_t const sum = checksum::internet_compute(cpu, data);
-std::uint64_t const hash = checksum::xxh3_64_compute(cpu, data, seed);
-auto const crc = checksum::crc_dispatch_engine<std::uint32_t>::create(checksum::crc32_iso_hdlc, cpu);
+std::uint16_t const sum = internet.compute(data);
+std::uint64_t const hash = xxh3.compute(data, seed);
 std::uint32_t const value = crc->compute(data);
 ```
 
-- `detect_isa()` returns the presets this build has and the CPU runs: CPUID on x86-64, the Linux auxiliary vector
-  (and `riscv_hwprobe` for Zbc) on Arm and RISC-V, `IsProcessorFeaturePresent` on Windows ARM64. Where the operating
-  system has no feature query, bare metal included, it returns every preset of the build.
-- A value overload runs the best variant of this build inside the set; with presets of two lines (RISC-V), CRC takes
-  `riscv_zbc` and the others `riscv_v`. Choosing costs one or two cycles per call.
-- A single preset converts to the set of its line up to it, so `internet_compute(checksum::isa::x86_avx2, data)` runs
-  the AVX2 variant, falls back one rung at a time where the build lacks it, and runs `isa::generic` on another
-  architecture. Sets combine with `|`.
-- `crc_dispatch_engine<Register, Strategy = crc_lut_sliced>` chooses its loop once, in `create(parameters, cpu)`, and
-  keeps one table for every preset; `preset()` names the one it chose.
-- Programs that call none of this link none of it: `detect_isa()` is a source of its own, and the overloads are
-  header templates.
+- Every algorithm has one: `internet_dispatch_engine`, `adler32_dispatch_engine`, `fletcher_dispatch_engine<Width>`,
+  `fletcher4_dispatch_engine`, `xxh3_dispatch_engine<Width>`, `xxhash_dispatch_engine<Width>`,
+  `murmur3_dispatch_engine<Width>` and `crc_dispatch_engine<Register, Strategy = crc_lut_sliced>`. Their `compute` and
+  `update` match the free functions; `preset()` names the preset they chose. The CRC engine keeps one table for every
+  preset.
+- The CPU check is `detect_isa()`, the default argument of every constructor and of `crc_dispatch_engine::create`:
+  CPUID on x86-64, the Linux auxiliary vector (and `riscv_hwprobe` for Zbc) on Arm and RISC-V,
+  `IsProcessorFeaturePresent` on Windows ARM64. Where the operating system has no feature query, bare metal included,
+  it reports every preset of the build. Make engines once, not per message: each one queries the CPU.
+- Passing an `isa_set` instead chooses explicitly, e.g. from a configuration: `internet_dispatch_engine(isa::x86_avx2)`
+  runs the AVX2 variant, falls back one rung at a time where the build lacks it, and runs `isa::generic` on another
+  architecture. A preset converts to the set of its line up to it; sets combine with `|`. With two lines in one build
+  (RISC-V), CRC takes `riscv_zbc` and the others `riscv_v`.
+- Each call switches to the chosen loop in one or two cycles. Constant evaluation runs the portable code; an engine
+  made from an explicit set is `constexpr`.
+- Programs that make no dispatch engine link none of this: `detect_isa()` is a source of its own.
 
 ## Examples
 

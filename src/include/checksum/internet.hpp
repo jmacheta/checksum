@@ -68,6 +68,29 @@ template <std::same_as<std::uint16_t> Checksum, byte_range Range>
 /// internet_compute<Isa>(data) for the best preset Isa of this build in cpu.
 template <byte_range Range> [[nodiscard]] constexpr std::uint16_t internet_compute(isa_set cpu, Range &&data) noexcept;
 
+/// The Internet checksum with the run-time loop of one preset, chosen when the engine is made, by default for the running CPU.
+class internet_dispatch_engine {
+public:
+  /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
+  constexpr explicit internet_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
+
+  /// The preset whose loop the engine runs.
+  [[nodiscard]] constexpr isa preset() const noexcept;
+
+  /// internet_update() as the free function, with the preset this engine chose.
+  template <byte_range Range> [[nodiscard]] constexpr internet_state update(internet_state state, Range &&data) const noexcept;
+
+  /// internet_update() for a checksum as the free function, with the preset this engine chose.
+  template <std::same_as<std::uint16_t> Checksum, byte_range Range>
+  [[nodiscard]] constexpr std::uint16_t update(Checksum checksum, Range &&data) const noexcept;
+
+  /// internet_compute() as the free function, with the preset this engine chose.
+  template <byte_range Range> [[nodiscard]] constexpr std::uint16_t compute(Range &&data) const noexcept;
+
+private:
+  isa chosen;
+};
+
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -170,6 +193,23 @@ constexpr std::uint16_t internet_update(isa_set cpu, Checksum checksum, Range &&
 
 template <byte_range Range> constexpr std::uint16_t internet_compute(isa_set cpu, Range &&data) noexcept {
   return isa_detail::dispatch(cpu, [&]<isa Isa>() { return internet_compute<Isa>(std::forward<Range>(data)); });
+}
+
+constexpr internet_dispatch_engine::internet_dispatch_engine(isa_set cpu) noexcept : chosen(isa_detail::select(cpu)) {}
+
+constexpr isa internet_dispatch_engine::preset() const noexcept { return chosen; }
+
+template <byte_range Range> constexpr internet_state internet_dispatch_engine::update(internet_state state, Range &&data) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return internet_update<Isa>(state, std::forward<Range>(data)); });
+}
+
+template <std::same_as<std::uint16_t> Checksum, byte_range Range>
+constexpr std::uint16_t internet_dispatch_engine::update(Checksum checksum, Range &&data) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return internet_update<Isa>(checksum, std::forward<Range>(data)); });
+}
+
+template <byte_range Range> constexpr std::uint16_t internet_dispatch_engine::compute(Range &&data) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return internet_compute<Isa>(std::forward<Range>(data)); });
 }
 
 } // namespace checksum

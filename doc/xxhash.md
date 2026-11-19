@@ -88,9 +88,8 @@ a cache keyed by the hash of its input.
 The state keeps the last 1 to 256 bytes passed in its buffer and folds the rest into the accumulators, so it can
 hash the end of the message as the one-shot function does. Messages up to 240 bytes are hashed from the buffer alone.
 
-Every function that takes `Isa` also has a value overload with an `isa_set` first, e.g. `xxh3_64_compute(cpu, data, seed)` with
-`cpu = checksum::detect_isa()`: it runs the best preset of this build in the set; see
-[Instruction-set presets](../README.md#instruction-set-presets).
+`xxh3_dispatch_engine<Width>` and `xxhash_dispatch_engine<Width>` choose the preset at run time, for the running CPU by
+default, and offer `compute` and `update` as above; see [Instruction-set presets](../README.md#instruction-set-presets).
 
 ## 3. Behavior
 

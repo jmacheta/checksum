@@ -56,9 +56,8 @@ chunks. Arrays of `char` are rejected, so the `'\0'` of a string literal is neve
 Every state value is valid, so nothing has preconditions. Before the first whole block (4 or 16 bytes), the lanes and
 the unused bytes of the buffer are ignored.
 
-Every function that takes `Isa` also has a value overload with an `isa_set` first, e.g. `murmur3_32_compute(cpu, data, seed)` with
-`cpu = checksum::detect_isa()`: it runs the best preset of this build in the set; see
-[Instruction-set presets](../README.md#instruction-set-presets).
+`murmur3_dispatch_engine<Width>` chooses the preset at run time, for the running CPU by default, and offers
+`compute` and `update` as above; see [Instruction-set presets](../README.md#instruction-set-presets).
 
 ## 3. Behavior
 

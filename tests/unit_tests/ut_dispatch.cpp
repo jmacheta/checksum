@@ -1,4 +1,4 @@
-// The run-time layer: isa_set, detect_isa(), the value overloads of every algorithm and crc_dispatch_engine must run a
+// The run-time layer: isa_set, detect_isa(), the value overloads and dispatch engines of every algorithm and the CRC engine must run a
 // variant of this build that the set allows and give the results of isa::generic.
 
 #include <checksum/adler32.hpp>
@@ -48,6 +48,7 @@ static_assert(internet_compute(isa::x86_avx2, "123456789"sv) == internet_compute
 static_assert(fletcher_compute<32>(isa::thumb2_neon, "abcde"sv) == fletcher_compute<32>("abcde"sv));
 static_assert(xxh3_compute<64>(isa::riscv_v, "abc"sv, 7) == xxh3_compute<64>("abc"sv, 7));
 static_assert(crc_dispatch_engine<std::uint32_t>::create(crc32_iso_hdlc, isa::aarch64_pmull)->compute("123456789"sv) == 0xCBF43926U);
+static_assert(xxh3_dispatch_engine<64>(isa::x86_vpclmul).compute("abc"sv, 7) == xxh3_compute<64>("abc"sv, 7));
 
 TEST(detect_isa, ContainsOnlyBuiltPresetsAndTheirLowerRungs) {
   isa_set const cpu = detect_isa();
@@ -144,9 +145,69 @@ void check_crcs(isa_set cpu, std::vector<std::byte> const &buffer) {
   check_crc<crc8_smbus, crc_lut_byte>(cpu, buffer);
 }
 
+// Every dispatch engine made for cpu against the generic template.
+void check_engines(isa_set cpu, std::vector<std::byte> const &buffer) {
+  internet_dispatch_engine const internet(cpu);
+  adler32_dispatch_engine const adler32(cpu);
+  fletcher_dispatch_engine<16> const fletcher16(cpu);
+  fletcher_dispatch_engine<64> const fletcher64(cpu);
+  fletcher4_dispatch_engine const fletcher4(cpu);
+  xxh3_dispatch_engine<64> const xxh3_64(cpu);
+  xxh3_dispatch_engine<128> const xxh3_128(cpu);
+  xxhash_dispatch_engine<32> const xxh32(cpu);
+  murmur3_dispatch_engine<128> const murmur3_128(cpu);
+  EXPECT_TRUE(cpu.contains(internet.preset()) && isa_available(internet.preset()));
+  EXPECT_EQ(internet.preset(), isa_detail::select(cpu));
+  for(std::size_t const size : sizes) {
+    for(std::size_t const offset : {0UZ, 1UZ}) {
+      auto const data = at(buffer, offset, size);
+      SCOPED_TRACE(testing::Message() << "size " << size << ", offset " << offset);
+      EXPECT_EQ(internet.compute(data), internet_compute(data));
+      EXPECT_EQ(internet.update(internet_state{.sum = 7, .odd = true}, data), internet_update(internet_state{.sum = 7, .odd = true}, data));
+      EXPECT_EQ(internet.update(std::uint16_t{0x1234}, data), internet_update(std::uint16_t{0x1234}, data));
+      EXPECT_EQ(adler32.compute(data), adler32_compute(data));
+      EXPECT_EQ(adler32.update(adler32_state{.sum1 = 0xFFFF, .sum2 = 0xFFFF}, data),
+                adler32_update(adler32_state{.sum1 = 0xFFFF, .sum2 = 0xFFFF}, data));
+      EXPECT_EQ(adler32.update(std::uint32_t{0x12345678}, data), adler32_update(std::uint32_t{0x12345678}, data));
+      EXPECT_EQ(fletcher16.compute(data), fletcher_compute<16>(data));
+      EXPECT_EQ(fletcher16.update(std::uint16_t{0x1234}, data), fletcher_update(std::uint16_t{0x1234}, data));
+      EXPECT_EQ(fletcher64.update(fletcher_state<64>{}, data), fletcher_update(fletcher_state<64>{}, data));
+      EXPECT_EQ(fletcher4.compute(data), fletcher4_compute(data));
+      EXPECT_EQ(fletcher4.update(fletcher4_state{}, data), fletcher4_update(fletcher4_state{}, data));
+      EXPECT_EQ(xxh3_64.compute(data, 5), xxh3_compute<64>(data, 5));
+      EXPECT_EQ(xxh3_128.finalize(xxh3_128.update(xxh3_state<128>{}, data)), xxh3_128_compute(data));
+      EXPECT_EQ(xxh32.compute(data, 3), xxh32_compute(data, 3));
+      EXPECT_EQ(xxhash_finalize(xxh32.update(xxhash_state<32>{}, data)), xxh32_compute(data));
+      EXPECT_EQ(murmur3_128.compute(data, 2), murmur3_128_compute(data, 2));
+      EXPECT_EQ(murmur3_finalize(murmur3_128.update(murmur3_state<128>{}, data)), murmur3_128_compute(data));
+    }
+  }
+  std::list<std::byte> const list(buffer.begin(), buffer.begin() + 300);
+  EXPECT_EQ(internet.compute(list), internet_compute(list));
+}
+
+// Default-constructed engines detect the CPU themselves.
+TEST(dispatch, DefaultEnginesChooseTheDetectedPreset) {
+  isa const best = isa_detail::select(detect_isa());
+  EXPECT_EQ(internet_dispatch_engine{}.preset(), best);
+  EXPECT_EQ(adler32_dispatch_engine{}.preset(), best);
+  EXPECT_EQ(fletcher_dispatch_engine<32>{}.preset(), best);
+  EXPECT_EQ(fletcher4_dispatch_engine{}.preset(), best);
+  EXPECT_EQ(xxh3_dispatch_engine<64>{}.preset(), best);
+  EXPECT_EQ(xxhash_dispatch_engine<64>{}.preset(), best);
+  EXPECT_EQ(murmur3_dispatch_engine<32>{}.preset(), best);
+  auto const crc = crc_dispatch_engine<std::uint32_t>::create(crc32_iso_hdlc);
+  ASSERT_TRUE(crc.has_value());
+  EXPECT_EQ(crc->preset(), isa_detail::select(detect_isa(), isa::riscv_zbc));
+  EXPECT_FALSE(crc_dispatch_engine<std::uint8_t>::create(crc32_iso_hdlc).has_value());
+  auto const data = random_bytes(5000, 14);
+  EXPECT_EQ(crc->compute(data), (crc_engine_for<crc32_iso_hdlc, crc_lut_byte>.compute(data)));
+}
+
 TEST(dispatch, DetectedSetMatchesGeneric) {
   auto const buffer = random_bytes(70'008, 11);
   check_overloads(detect_isa(), buffer);
+  check_engines(detect_isa(), buffer);
   check_crcs(detect_isa(), buffer);
 }
 
@@ -159,6 +220,7 @@ TEST(dispatch, PresetsOfOtherArchitecturesRunGeneric) {
     }
   }
   check_overloads(isa_set{}, buffer);
+  check_engines(isa_set{}, buffer);
 }
 
 // Each preset of this build named alone, as a caller that picks the preset itself does.
@@ -170,6 +232,7 @@ TYPED_TEST(dispatch_presets, ExplicitPresetMatchesGeneric) {
   EXPECT_EQ(isa_detail::select(preset), preset);
   auto const buffer = random_bytes(70'008, 13);
   check_overloads(preset, buffer);
+  check_engines(preset, buffer);
   check_crcs(preset, buffer);
 }
 

@@ -17,8 +17,8 @@ How algorithms use CPU instructions and which architectures are worth it, per al
   `-march=native` select no kernel by themselves. GCC on RISC-V has no target pragma, so the RVV kernel carries its own
   target attribute.
 - **Run-time choice on top.** `detect_isa()` (`src/isa/detect.cpp`, the only source with CPU queries) returns an
-  `isa_set`; the value overloads and `crc_dispatch_engine` turn a set into one compiled preset with
-  `isa_detail::select()` and call the template through `isa_detail::dispatch()`. A new preset needs a CPU check there
+  `isa_set`, the default argument of every `*_dispatch_engine`. An engine turns the set into one compiled preset with
+  `isa_detail::select()` and calls the templates through `isa_detail::dispatch()`. A new preset needs a CPU check there
   (a `static_assert` enforces it) and, if it starts a second line on one architecture, a preference in `select()`.
 - **One interface per algorithm.** Every architecture header defines the same constants (`*_available`, size
   thresholds) and, where they are true, the same functions; callers use them only in `if constexpr` branches.

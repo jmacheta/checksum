@@ -10,7 +10,7 @@ below when the task touches their area.
 | [doc/design/build_and_tooling.md](doc/design/build_and_tooling.md) | Touching CMake, presets, dependencies or CI; before finishing an edit (formatting, spelling, clang-tidy). |
 | [doc/design/testing.md](doc/design/testing.md) | Writing tests, or deciding which presets to run for a change. |
 | [doc/design/acceleration.md](doc/design/acceleration.md) | Touching architecture headers or table loops, or considering a new CPU target. |
-| [checksum/isa.hpp](src/include/checksum/isa.hpp), [acceleration.md "Rules"](doc/design/acceleration.md#rules) | Working on the instruction-set presets or their mechanism (`checksum_private/presets.hpp`, `target_begin.hpp`, `target_end.hpp`) the run-time layer (`isa_set`, `detect_isa()` in `src/isa/detect.cpp`, the value overloads, `crc_dispatch_engine`). |
+| [checksum/isa.hpp](src/include/checksum/isa.hpp), [acceleration.md "Rules"](doc/design/acceleration.md#rules) | Working on the instruction-set presets or their mechanism (`checksum_private/presets.hpp`, `target_begin.hpp`, `target_end.hpp`) the run-time layer (`isa_set`, `detect_isa()` in `src/isa/detect.cpp`, the dispatch engines). |
 | [doc/crc.md](doc/crc.md) | Working on the CRC: user-visible behavior, strategies, performance guidelines, limitations. Keep it true when behavior changes. |
 | [doc/internet.md](doc/internet.md) | Working on the Internet checksum: API, behavior, acceleration, performance guidelines, limitations. Keep it true when behavior changes. |
 | [doc/fletcher.md](doc/fletcher.md) | Working on the Fletcher checksums or the shared Fletcher/Adler-32 kernels: API, behavior, acceleration, performance guidelines, limitations. Keep it true when behavior changes. |

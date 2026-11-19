@@ -70,9 +70,8 @@ are rejected, so the `'\0'` of a string literal is never summed: pass text as `s
 Every state value is valid, so nothing has preconditions: a sum equal to M counts as 0, and `block_offset` is taken
 modulo the block size.
 
-Every function that takes `Isa` also has a value overload with an `isa_set` first, e.g. `fletcher_compute<32>(cpu, data)` with
-`cpu = checksum::detect_isa()`: it runs the best preset of this build in the set; see
-[Instruction-set presets](../README.md#instruction-set-presets).
+`fletcher_dispatch_engine<Width>` chooses the preset at run time, for the running CPU by default, and offers
+`compute` and `update` as above; see [Instruction-set presets](../README.md#instruction-set-presets).
 
 ## 4. Behavior
 

@@ -65,6 +65,30 @@ template <std::same_as<std::uint32_t> Checksum, byte_range Range>
 
 /// adler32_compute<Isa>(data) for the best preset Isa of this build in cpu.
 template <byte_range Range> [[nodiscard]] constexpr std::uint32_t adler32_compute(isa_set cpu, Range &&data) noexcept;
+
+/// The Adler-32 with the run-time loop of one preset, chosen when the engine is made, by default for the running CPU.
+class adler32_dispatch_engine {
+public:
+  /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
+  constexpr explicit adler32_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
+
+  /// The preset whose loop the engine runs.
+  [[nodiscard]] constexpr isa preset() const noexcept;
+
+  /// adler32_update() as the free function, with the preset this engine chose.
+  template <byte_range Range> [[nodiscard]] constexpr adler32_state update(adler32_state state, Range &&data) const noexcept;
+
+  /// adler32_update() for a checksum as the free function, with the preset this engine chose.
+  template <std::same_as<std::uint32_t> Checksum, byte_range Range>
+  [[nodiscard]] constexpr std::uint32_t update(Checksum checksum, Range &&data) const noexcept;
+
+  /// adler32_compute() as the free function, with the preset this engine chose.
+  template <byte_range Range> [[nodiscard]] constexpr std::uint32_t compute(Range &&data) const noexcept;
+
+private:
+  isa chosen;
+};
+
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -155,6 +179,23 @@ constexpr std::uint32_t adler32_update(isa_set cpu, Checksum checksum, Range &&d
 
 template <byte_range Range> constexpr std::uint32_t adler32_compute(isa_set cpu, Range &&data) noexcept {
   return isa_detail::dispatch(cpu, [&]<isa Isa>() { return adler32_compute<Isa>(std::forward<Range>(data)); });
+}
+
+constexpr adler32_dispatch_engine::adler32_dispatch_engine(isa_set cpu) noexcept : chosen(isa_detail::select(cpu)) {}
+
+constexpr isa adler32_dispatch_engine::preset() const noexcept { return chosen; }
+
+template <byte_range Range> constexpr adler32_state adler32_dispatch_engine::update(adler32_state state, Range &&data) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return adler32_update<Isa>(state, std::forward<Range>(data)); });
+}
+
+template <std::same_as<std::uint32_t> Checksum, byte_range Range>
+constexpr std::uint32_t adler32_dispatch_engine::update(Checksum checksum, Range &&data) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return adler32_update<Isa>(checksum, std::forward<Range>(data)); });
+}
+
+template <byte_range Range> constexpr std::uint32_t adler32_dispatch_engine::compute(Range &&data) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return adler32_compute<Isa>(std::forward<Range>(data)); });
 }
 
 } // namespace checksum

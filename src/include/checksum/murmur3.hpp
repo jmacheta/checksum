@@ -91,6 +91,30 @@ template <byte_range Range>
 /// murmur3_128_compute<Isa>(data, seed) for the best preset Isa of this build in cpu.
 template <byte_range Range>
 [[nodiscard]] constexpr murmur3_128_state::value_type murmur3_128_compute(isa_set cpu, Range &&data, std::uint32_t seed = 0) noexcept;
+
+/// The MurmurHash3 of Width bits with the run-time loop of one preset, chosen when the engine is made, by default
+/// for the running CPU.
+template <unsigned Width>
+  requires(Width == 32 || Width == 128)
+class murmur3_dispatch_engine {
+public:
+  /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
+  constexpr explicit murmur3_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
+
+  /// The preset whose loop the engine runs.
+  [[nodiscard]] constexpr isa preset() const noexcept;
+
+  /// murmur3_update() as the free function, with the preset this engine chose.
+  template <byte_range Range> [[nodiscard]] constexpr murmur3_state<Width> update(murmur3_state<Width> state, Range &&data) const noexcept;
+
+  /// murmur3_compute() as the free function, with the preset this engine chose.
+  template <byte_range Range>
+  [[nodiscard]] constexpr typename murmur3_state<Width>::value_type compute(Range &&data, std::uint32_t seed = 0) const noexcept;
+
+private:
+  isa chosen;
+};
+
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -369,6 +393,30 @@ template <byte_range Range> constexpr murmur3_32_state::value_type murmur3_32_co
 
 template <byte_range Range> constexpr murmur3_128_state::value_type murmur3_128_compute(isa_set cpu, Range &&data, std::uint32_t seed) noexcept {
   return isa_detail::dispatch(cpu, [&]<isa Isa>() { return murmur3_128_compute<Isa>(std::forward<Range>(data), seed); });
+}
+
+template <unsigned Width>
+  requires(Width == 32 || Width == 128)
+constexpr murmur3_dispatch_engine<Width>::murmur3_dispatch_engine(isa_set cpu) noexcept : chosen(isa_detail::select(cpu)) {}
+
+template <unsigned Width>
+  requires(Width == 32 || Width == 128)
+constexpr isa murmur3_dispatch_engine<Width>::preset() const noexcept {
+  return chosen;
+}
+
+template <unsigned Width>
+  requires(Width == 32 || Width == 128)
+template <byte_range Range>
+constexpr murmur3_state<Width> murmur3_dispatch_engine<Width>::update(murmur3_state<Width> state, Range &&data) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return murmur3_update<Width, Isa>(state, std::forward<Range>(data)); });
+}
+
+template <unsigned Width>
+  requires(Width == 32 || Width == 128)
+template <byte_range Range>
+constexpr typename murmur3_state<Width>::value_type murmur3_dispatch_engine<Width>::compute(Range &&data, std::uint32_t seed) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return murmur3_compute<Width, Isa>(std::forward<Range>(data), seed); });
 }
 
 } // namespace checksum

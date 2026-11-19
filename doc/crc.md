@@ -125,10 +125,11 @@ it contains no table-building code. Equal parameter values name the same object:
 context). `Register` is `std::uint8_t`, `std::uint16_t`, `std::uint32_t` or `std::uint64_t`. A wider register than
 the CRC needs gives the same results, so one engine type can serve run-time parameter sets of any width up to 64.
 
-`crc_dispatch_engine<Register, Strategy = crc_lut_sliced>::create(parameters, cpu)` builds an engine whose preset is
-chosen at run time: the best one of this build in the `isa_set` `cpu`, e.g. `detect_isa()`, with `riscv_zbc` first on
-RISC-V. It has the members of the table above plus `preset()`, keeps one table for every preset, and costs one or two
-cycles per call to switch to the chosen loop; see [Instruction-set presets](../README.md#instruction-set-presets).
+`crc_dispatch_engine<Register, Strategy = crc_lut_sliced>::create(parameters)` builds an engine whose preset is chosen
+at run time: the best one of this build that the running CPU executes (`detect_isa()`), with `riscv_zbc` first on
+RISC-V. An `isa_set` as second argument chooses explicitly. It has the members of the table above plus `preset()`,
+keeps one table for every preset, and costs one or two cycles per call to switch to the chosen loop; see
+[Instruction-set presets](../README.md#instruction-set-presets).
 
 Splitting a message anywhere gives the same CRC: `finalize(update(update(initial(), a), b)) == compute(a ++ b)`.
 `crc_accumulator<Register, Strategy, Isa>` wraps that: it holds a pointer to the engine and a state, and offers
@@ -279,6 +280,5 @@ column there is the `isa::x86_vpclmul` preset.
 - **Widths 1..64** only, and only polynomials with an x^0 term.
 - **Initial values are direct**: the register content before the first message bit, never the "augmented" form.
 - **A preset in a template argument is not checked.** Calling it on a CPU without its instructions is undefined
-  (illegal instruction); `crc_dispatch_engine` with `detect_isa()` checks the CPU. `crc_accumulator` takes a
-  `crc_engine` only.
+  (illegal instruction); `crc_dispatch_engine` checks the CPU. `crc_accumulator` takes a `crc_engine` only.
 - **Not thread-safe.** A `const` engine can be shared between threads; an accumulator cannot.

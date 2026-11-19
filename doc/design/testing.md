@@ -37,8 +37,8 @@ Preset tests run every preset the build has, from the range `isa_detail::first_b
 `checksum/isa.hpp`, and skip the presets the CPU cannot run, as the library's `detect_isa()` reports
 (`tests/include/isa_cpu.hpp`). `src/isa/detect.cpp` fails to compile for a built preset without a CPU check, and
 `ut_isa.cpp` fails for one without a name in `isa_cpu.hpp`, so a new preset adds both. `ut_dispatch.cpp` checks the
-value overloads and `crc_dispatch_engine` against `isa::generic` for the detected set and every preset alone. CI runs `native-gcc` and `native-clang` on
-GitHub's AArch64 runner too, where the AArch64 presets run on hardware.
+value overloads and the dispatch engines against `isa::generic` for the detected set and every preset alone. CI runs
+`native-gcc` and `native-clang` on GitHub's AArch64 runner too, where the AArch64 presets run on hardware.
 
 ## Coverage expectations
 

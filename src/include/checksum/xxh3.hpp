@@ -96,6 +96,33 @@ template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh3_64_comput
 
 /// xxh3_128_compute<Isa>(data, seed) for the best preset Isa of this build in cpu.
 template <byte_range Range> [[nodiscard]] constexpr hash128 xxh3_128_compute(isa_set cpu, Range &&data, std::uint64_t seed = 0) noexcept;
+
+/// The XXH3 of Width bits with the run-time loop of one preset, chosen when the engine is made, by default
+/// for the running CPU.
+template <unsigned Width>
+  requires(Width == 64 || Width == 128)
+class xxh3_dispatch_engine {
+public:
+  /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
+  constexpr explicit xxh3_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
+
+  /// The preset whose loop the engine runs.
+  [[nodiscard]] constexpr isa preset() const noexcept;
+
+  /// xxh3_update() as the free function, with the preset this engine chose.
+  template <byte_range Range> [[nodiscard]] constexpr xxh3_state<Width> update(xxh3_state<Width> state, Range &&data) const noexcept;
+
+  /// xxh3_finalize() as the free function, with the preset this engine chose.
+  [[nodiscard]] constexpr typename xxh3_state<Width>::value_type finalize(xxh3_state<Width> const &state) const noexcept;
+
+  /// xxh3_compute() as the free function, with the preset this engine chose.
+  template <byte_range Range>
+  [[nodiscard]] constexpr typename xxh3_state<Width>::value_type compute(Range &&data, std::uint64_t seed = 0) const noexcept;
+
+private:
+  isa chosen;
+};
+
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
@@ -676,6 +703,36 @@ template <byte_range Range> constexpr std::uint64_t xxh3_64_compute(isa_set cpu,
 
 template <byte_range Range> constexpr hash128 xxh3_128_compute(isa_set cpu, Range &&data, std::uint64_t seed) noexcept {
   return isa_detail::dispatch(cpu, [&]<isa Isa>() { return xxh3_128_compute<Isa>(std::forward<Range>(data), seed); });
+}
+
+template <unsigned Width>
+  requires(Width == 64 || Width == 128)
+constexpr xxh3_dispatch_engine<Width>::xxh3_dispatch_engine(isa_set cpu) noexcept : chosen(isa_detail::select(cpu)) {}
+
+template <unsigned Width>
+  requires(Width == 64 || Width == 128)
+constexpr isa xxh3_dispatch_engine<Width>::preset() const noexcept {
+  return chosen;
+}
+
+template <unsigned Width>
+  requires(Width == 64 || Width == 128)
+template <byte_range Range>
+constexpr xxh3_state<Width> xxh3_dispatch_engine<Width>::update(xxh3_state<Width> state, Range &&data) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return xxh3_update<Width, Isa>(state, std::forward<Range>(data)); });
+}
+
+template <unsigned Width>
+  requires(Width == 64 || Width == 128)
+constexpr typename xxh3_state<Width>::value_type xxh3_dispatch_engine<Width>::finalize(xxh3_state<Width> const &state) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return xxh3_finalize<Width, Isa>(state); });
+}
+
+template <unsigned Width>
+  requires(Width == 64 || Width == 128)
+template <byte_range Range>
+constexpr typename xxh3_state<Width>::value_type xxh3_dispatch_engine<Width>::compute(Range &&data, std::uint64_t seed) const noexcept {
+  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return xxh3_compute<Width, Isa>(std::forward<Range>(data), seed); });
 }
 
 } // namespace checksum
