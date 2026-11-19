@@ -7,13 +7,14 @@
 #include <array>
 #include <cstddef>
 
-constexpr checksum::crc_parameters parameters{.polynomial = *checksum::crc_polynomial::create(0x1021, 16)};
+constexpr checksum::crc_parameters test_parameters{.polynomial = *checksum::crc_polynomial::create(0x1021, 16)};
 
 #ifdef CHECKSUM_EXPECT_COMPILE_ERROR
-constexpr std::size_t bit_length = 9; // more bits than the one byte holds
+constexpr std::size_t test_bit_length = 9; // more bits than the one byte holds
 #else
-constexpr std::size_t bit_length = 8;
+constexpr std::size_t test_bit_length = 8;
 #endif
 
-constexpr std::array<std::byte, 1> data{std::byte{0x5A}};
-[[maybe_unused]] constexpr auto state = checksum::crc_engine_for<parameters>.update(checksum::crc_engine_for<parameters>.initial(), data, bit_length);
+constexpr std::array<std::byte, 1> test_data{std::byte{0x5A}};
+[[maybe_unused]] constexpr auto test_state =
+    checksum::crc_engine_for<test_parameters>.update(checksum::crc_engine_for<test_parameters>.initial(), test_data, test_bit_length);

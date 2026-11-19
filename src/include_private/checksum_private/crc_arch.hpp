@@ -105,25 +105,25 @@ typename Kernel::vector fold_tail_with(typename Kernel::vector accumulator, fold
 template <isa Isa, std::uint32_t Polynomial, class Kernel>
 std::uint32_t fold_crc32_with(folding_constants const &constants, std::uint32_t remainder, std::span<std::byte const> data) noexcept;
 
-template <std::size_t Count, class Body> [[gnu::always_inline]] inline void unrolled(Body body) noexcept {
-  [&]<std::size_t... Index> [[gnu::always_inline]] (std::index_sequence<Index...>) {
+template <std::size_t Count, class Body> CHECKSUM_ALWAYS_INLINE inline void unrolled(Body body) noexcept {
+  [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (body(std::integral_constant<std::size_t, Index>{}), ...);
   }(std::make_index_sequence<Count>{});
 }
 
-template <std::size_t Size> [[gnu::always_inline]] inline std::uint64_t load_little_endian(std::span<std::byte const> data) noexcept {
-  return [&]<std::size_t... Index> [[gnu::always_inline]] (std::index_sequence<Index...>) {
+template <std::size_t Size> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load_little_endian(std::span<std::byte const> data) noexcept {
+  return [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     return ((std::uint64_t{std::to_integer<std::uint8_t>(data[Index])} << (byte_bits * Index)) | ...);
   }(std::make_index_sequence<Size>{});
 }
 
-template <bool Reflected> [[gnu::always_inline]] inline std::uint64_t load_word(std::span<std::byte const> data) noexcept {
+template <bool Reflected> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load_word(std::span<std::byte const> data) noexcept {
   std::uint64_t const word = load_little_endian<word_size>(data);
   return Reflected ? word : std::byteswap(word);
 }
 
 template <bool Reflected, class Kernel>
-[[gnu::always_inline]] inline typename Kernel::vector fold_tail_with(typename Kernel::vector accumulator, folding_constants const &constants,
+CHECKSUM_ALWAYS_INLINE inline typename Kernel::vector fold_tail_with(typename Kernel::vector accumulator, folding_constants const &constants,
                                                                      std::span<std::byte const> data, std::span<std::byte const> last) noexcept {
   typename Kernel::vector const by_one = Kernel::pair(constants.by_one);
   for(; data.size() >= folding_block_size; data = data.subspan(folding_block_size)) {
@@ -136,7 +136,7 @@ template <bool Reflected, class Kernel>
 }
 
 template <bool Reflected, class Kernel>
-[[gnu::always_inline]] inline typename Kernel::vector fold_four_with(std::array<typename Kernel::vector, 4> accumulators,
+CHECKSUM_ALWAYS_INLINE inline typename Kernel::vector fold_four_with(std::array<typename Kernel::vector, 4> accumulators,
                                                                      folding_constants const &constants, std::span<std::byte const> data,
                                                                      std::span<std::byte const> last) noexcept {
   typename Kernel::vector const by_four = Kernel::pair(constants.by_four);
@@ -152,7 +152,7 @@ template <bool Reflected, class Kernel>
 }
 
 template <bool Reflected, class Kernel>
-[[gnu::always_inline]] inline typename Kernel::vector fold_blocks_with(folding_constants const &constants, std::uint64_t remainder,
+CHECKSUM_ALWAYS_INLINE inline typename Kernel::vector fold_blocks_with(folding_constants const &constants, std::uint64_t remainder,
                                                                        std::span<std::byte const> data) noexcept {
   constexpr std::size_t block = folding_block_size;
   if constexpr(Kernel::wide) {
@@ -171,7 +171,7 @@ template <bool Reflected, class Kernel>
 }
 
 template <isa Isa, std::uint32_t Polynomial, class Kernel>
-[[gnu::always_inline]] inline std::uint32_t fold_crc32_with(folding_constants const &constants, std::uint32_t remainder,
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t fold_crc32_with(folding_constants const &constants, std::uint32_t remainder,
                                                             std::span<std::byte const> data) noexcept {
   typename Kernel::vector const accumulator = fold_blocks_with<true, Kernel>(constants, remainder, data);
   return crc32_word<Isa, Polynomial>(crc32_word<Isa, Polynomial>(0, Kernel::template lane<0>(accumulator)), Kernel::template lane<1>(accumulator));

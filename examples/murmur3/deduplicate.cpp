@@ -48,6 +48,8 @@ int main() {
   }
   std::println("{} unique, {} duplicates", seen.size(), duplicates);
   // The streamed hash equals the hash of the whole record in one call.
-  bool const streaming_matches = record_hash(records[0]) == checksum::murmur3_128_compute("sensor-1\03721.5 C"sv, 0x5EED);
+  bool const streaming_matches = record_hash(records[0]) == checksum::murmur3_128_compute("sensor-1\037"
+                                                                                          "21.5 C"sv,
+                                                                                          0x5EED);
   return seen.size() == 3 && duplicates == 2 && streaming_matches ? 0 : 1;
 }

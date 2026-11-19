@@ -64,23 +64,23 @@ template <isa Isa> uint64x2_t load_vector(std::byte const *data) noexcept;
 // Mixes the vectors Index and Index + 1 of one stripe into their lanes: one unzip gives the low and the high 32-bit halves of
 // data ^ secret for four lanes.
 template <isa Isa, std::size_t Index>
-[[gnu::always_inline]] inline void accumulate_vector_pair(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
+CHECKSUM_ALWAYS_INLINE inline void accumulate_vector_pair(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
                                                           std::byte const *secret) noexcept;
 
 // Scrambles vector Index. The 32-bit products with the prime in the high halves give the high word of the 64-bit product; the low
 // halves add their full product.
 template <isa Isa, std::size_t Index>
-[[gnu::always_inline]] inline void scramble_vector(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept;
+CHECKSUM_ALWAYS_INLINE inline void scramble_vector(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept;
 
 #if defined(__aarch64__)
 // Mixes scalar lane Index of one stripe into the scalars, as accumulate_lane() does.
 template <isa Isa, std::size_t Index>
-[[gnu::always_inline]] inline void accumulate_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
+CHECKSUM_ALWAYS_INLINE inline void accumulate_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
                                                      std::byte const *secret) noexcept;
 
 // Scrambles scalar lane Index, as portable_kernel::scramble() does.
 template <isa Isa, std::size_t Index>
-[[gnu::always_inline]] inline void scramble_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept;
+CHECKSUM_ALWAYS_INLINE inline void scramble_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept;
 #endif
 
 template <isa Isa> uint64x2_t load_vector(std::byte const *data) noexcept {
@@ -89,7 +89,7 @@ template <isa Isa> uint64x2_t load_vector(std::byte const *data) noexcept {
 }
 
 template <isa Isa, std::size_t Index>
-[[gnu::always_inline]] inline void accumulate_vector_pair(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
+CHECKSUM_ALWAYS_INLINE inline void accumulate_vector_pair(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
                                                           std::byte const *secret) noexcept {
   uint64x2_t const first = load_vector<Isa>(stripe + (16 * Index));
   uint64x2_t const second = load_vector<Isa>(stripe + (16 * Index) + 16);
@@ -107,7 +107,7 @@ template <isa Isa, std::size_t Index>
 }
 
 template <isa Isa, std::size_t Index>
-[[gnu::always_inline]] inline void scramble_vector(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void scramble_vector(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept {
   uint32x2_t const prime = vdup_n_u32(primes_32::prime_1);
   uint32x4_t const prime_high = vreinterpretq_u32_u64(vdupq_n_u64(std::uint64_t{primes_32::prime_1} << 32U));
   uint64x2_t &vector = std::get<Index>(values.vectors);
@@ -118,7 +118,7 @@ template <isa Isa, std::size_t Index>
 
 #if defined(__aarch64__)
 template <isa Isa, std::size_t Index>
-[[gnu::always_inline]] inline void accumulate_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
+CHECKSUM_ALWAYS_INLINE inline void accumulate_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
                                                      std::byte const *secret) noexcept {
   constexpr std::size_t lane = (2 * vector_count) + Index;
   auto const word = xxh3_detail::load<std::uint64_t>(stripe + (8 * lane));
@@ -128,7 +128,7 @@ template <isa Isa, std::size_t Index>
 }
 
 template <isa Isa, std::size_t Index>
-[[gnu::always_inline]] inline void scramble_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void scramble_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept {
   constexpr std::size_t lane = (2 * vector_count) + Index;
   std::uint64_t &scalar = std::get<Index>(values.scalars);
   scalar = (scalar ^ (scalar >> scramble_shift) ^ xxh3_detail::load<std::uint64_t>(secret + (8 * lane))) * primes_32::prime_1;
@@ -161,22 +161,22 @@ template <isa Isa> void stripe_kernel<Isa>::store(accumulator_array &accumulator
 
 // Spelled out per vector and lane: at -O2, GCC keeps the lanes of a loop that it does not unroll in memory.
 template <isa Isa> void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
-  [&]<std::size_t... Pair> [[gnu::always_inline]] (std::index_sequence<Pair...>) {
+  [&]<std::size_t... Pair> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Pair...>) {
     (accumulate_vector_pair<Isa, 2 * Pair>(values, stripe, secret), ...);
   }(std::make_index_sequence<vector_count / 2>{});
 #if defined(__aarch64__)
-  [&]<std::size_t... Index> [[gnu::always_inline]] (std::index_sequence<Index...>) {
+  [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (accumulate_scalar<Isa, Index>(values, stripe, secret), ...);
   }(std::make_index_sequence<std::tuple_size_v<decltype(values.scalars)>>{});
 #endif
 }
 
 template <isa Isa> void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
-  [&]<std::size_t... Index> [[gnu::always_inline]] (std::index_sequence<Index...>) {
+  [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (scramble_vector<Isa, Index>(values, secret), ...);
   }(std::make_index_sequence<vector_count>{});
 #if defined(__aarch64__)
-  [&]<std::size_t... Index> [[gnu::always_inline]] (std::index_sequence<Index...>) {
+  [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (scramble_scalar<Isa, Index>(values, secret), ...);
   }(std::make_index_sequence<std::tuple_size_v<decltype(values.scalars)>>{});
 #endif

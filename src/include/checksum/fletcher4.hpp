@@ -54,12 +54,10 @@ template <isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr fletcher4_value fletcher4_finalize(fletcher4_state state) noexcept;
 
 /// fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, data)).
-template <isa Isa = isa::generic>
-[[nodiscard]] constexpr fletcher4_value fletcher4_compute(std::span<std::byte const> data) noexcept;
+template <isa Isa = isa::generic> [[nodiscard]] constexpr fletcher4_value fletcher4_compute(std::span<std::byte const> data) noexcept;
 
 /// fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, data)) for a byte range. A std::span<std::byte const> takes the overload above.
-template <isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept;
+template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept;
 
 } // namespace checksum
 
@@ -168,9 +166,12 @@ template <isa Isa, byte_range Range> constexpr fletcher4_value fletcher4_compute
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
       return fletcher4_compute<Isa>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
+    } else {
+      return fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, std::forward<Range>(data)));
     }
+  } else {
+    return fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, std::forward<Range>(data)));
   }
-  return fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, std::forward<Range>(data)));
 }
 
 } // namespace checksum

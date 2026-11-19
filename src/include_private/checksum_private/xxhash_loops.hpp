@@ -5,8 +5,8 @@
 // src/xxhash/ defines CHECKSUM_PRESET (see target_begin.hpp) and includes this header once.
 
 // Every std header of this file comes before the target region, so that their inline functions compile for the build's own target.
-#include <checksum/xxhash.hpp>
 #include <checksum/isa.hpp>
+#include <checksum/xxhash.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -18,13 +18,12 @@ namespace checksum::xxhash_detail {
 
 // Not inlined: the aliasing that keeps the lanes scalar holds only behind a call (with LTO, Clang vectorized XXH32 and lost 38 %).
 template <isa Isa, unsigned Width>
-[[gnu::noinline]] word<Width> stripe_loop_any(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
+CHECKSUM_NOINLINE word<Width> stripe_loop_any(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
 
 // The run-time hash for preset Isa; run_time_hash() forwards to it.
 template <isa Isa, unsigned Width> word<Width> run_time_hash_any(std::span<std::byte const> data, word<Width> seed) noexcept;
 
-template <isa Isa, unsigned Width>
-word<Width> stripe_loop_any(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept {
+template <isa Isa, unsigned Width> word<Width> stripe_loop_any(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept {
   fold_stripes<Width>(lanes, data);
   return converged ? converge<Width>(lanes) : 0;
 }

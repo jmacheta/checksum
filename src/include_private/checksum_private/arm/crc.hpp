@@ -72,7 +72,7 @@ template <isa Isa> struct pmull_kernel {
 // One CRC32 or CRC32C instruction (two for 8 bytes on 32-bit Arm) over a 1-, 2-, 4- or 8-byte value. GCC declares the ACLE
 // intrinsics on 32-bit Arm only if the whole build has the CRC extension, so there the builtins serve thumb2_crc.
 template <std::uint32_t Polynomial, class Value>
-[[gnu::always_inline]] inline std::uint32_t crc32_step(std::uint32_t remainder, Value value) noexcept {
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_step(std::uint32_t remainder, Value value) noexcept {
   constexpr bool castagnoli = Polynomial == crc32c_reflected_polynomial;
 #if defined(__aarch64__)
   if constexpr(sizeof(Value) == 8) {
@@ -98,13 +98,13 @@ template <std::uint32_t Polynomial, class Value>
 }
 
 template <isa Isa, std::uint32_t Polynomial>
-[[gnu::always_inline]] inline std::uint32_t crc32_word(std::uint32_t remainder, std::uint64_t word) noexcept {
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_word(std::uint32_t remainder, std::uint64_t word) noexcept {
   static_assert(crc32_instructions_available<Isa, Polynomial>);
   return crc32_step<Polynomial>(remainder, word);
 }
 
 template <isa Isa, std::uint32_t Polynomial>
-[[gnu::always_inline]] inline std::uint32_t crc32_instructions(std::uint32_t remainder, std::span<std::byte const> data) noexcept {
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_instructions(std::uint32_t remainder, std::span<std::byte const> data) noexcept {
   static_assert(crc32_instructions_available<Isa, Polynomial>);
   constexpr std::size_t word = 8;
   auto const update_word = [&](std::span<std::byte const> bytes) {
@@ -149,7 +149,7 @@ template <isa Isa, std::uint32_t Polynomial>
 #if defined(__aarch64__) && !defined(__AARCH64EB__)
 template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::load(std::span<std::byte const> data) noexcept {
+CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::load(std::span<std::byte const> data) noexcept {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): byte view for the vector load.
   uint8x16_t const block = vld1q_u8(reinterpret_cast<std::uint8_t const *>(data.data()));
   if constexpr(Reflected) {
@@ -160,20 +160,20 @@ template <bool Reflected>
   }
 }
 
-template <isa Isa> [[gnu::always_inline]] inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::pair(folding_pair const &constants) noexcept {
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::pair(folding_pair const &constants) noexcept {
   return vld1q_u64(constants.data());
 }
 
 template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::first_block(std::span<std::byte const> data,
+CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::first_block(std::span<std::byte const> data,
                                                                                        std::uint64_t remainder) noexcept {
   vector const state = Reflected ? vcombine_u64(vcreate_u64(remainder), vcreate_u64(0)) : vcombine_u64(vcreate_u64(0), vcreate_u64(remainder));
   return veorq_u64(load<Reflected>(data), state);
 }
 
 template <isa Isa>
-[[gnu::always_inline]] inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::fold(vector accumulator, vector constants, vector next) noexcept {
+CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::fold(vector accumulator, vector constants, vector next) noexcept {
   poly128_t const low = vmull_p64(vgetq_lane_u64(accumulator, 0), vgetq_lane_u64(constants, 0));
   poly128_t const high = vmull_high_p64(vreinterpretq_p64_u64(accumulator), vreinterpretq_p64_u64(constants));
   return veorq_u64(veorq_u64(vreinterpretq_u64_p128(low), vreinterpretq_u64_p128(high)), next);
@@ -181,7 +181,7 @@ template <isa Isa>
 
 template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::partial(vector accumulator, vector by_one, std::span<std::byte const> last,
+CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::partial(vector accumulator, vector by_one, std::span<std::byte const> last,
                                                                                    std::size_t size) noexcept {
   auto const reverse = [](uint8x16_t bytes) {
     uint8x16_t const swapped = vrev64q_u8(bytes);
@@ -202,13 +202,13 @@ template <bool Reflected>
 }
 
 template <isa Isa>
-[[gnu::always_inline]] inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::multiply(std::uint64_t first, std::uint64_t second) noexcept {
+CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::multiply(std::uint64_t first, std::uint64_t second) noexcept {
   return vreinterpretq_u64_p128(vmull_p64(first, second));
 }
 
 template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline std::uint64_t pmull_kernel<Isa>::reduce(vector accumulator, folding_constants const &constants) noexcept {
+CHECKSUM_ALWAYS_INLINE inline std::uint64_t pmull_kernel<Isa>::reduce(vector accumulator, folding_constants const &constants) noexcept {
   constexpr unsigned top_bit = 63;
   std::uint64_t const low = vgetq_lane_u64(accumulator, 0);
   std::uint64_t const high = vgetq_lane_u64(accumulator, 1);
@@ -227,7 +227,7 @@ template <bool Reflected>
 }
 
 template <isa Isa, bool Reflected>
-[[gnu::always_inline]] inline std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder,
+CHECKSUM_ALWAYS_INLINE inline std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder,
                                                         std::span<std::byte const> data) noexcept {
   return pmull_kernel<Isa>::template reduce<Reflected>(fold_blocks_with<Reflected, pmull_kernel<Isa>>(constants, remainder, data), constants);
 }

@@ -8,6 +8,10 @@ Applies to `src/` and the helper headers of `tests/`; examples follow it where i
 - A header lists its public API first, then implementation details, then definitions. Every function defined in a
   header is declared first and defined at the end of the file, callee before caller; `= default` and `= delete`
   stay inline.
+- Inlining attributes are `CHECKSUM_ALWAYS_INLINE` and `CHECKSUM_NOINLINE` (`byte_range.hpp`), never `[[gnu::...]]`
+  directly: MSVC warns about attributes of another compiler.
+- A branch like `if !consteval { return ...; }` gets an `else` for the rest instead of code after it: MSVC reports
+  that code as unreachable in run-time instantiations.
 
 ## Naming
 

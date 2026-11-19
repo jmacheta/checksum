@@ -8,8 +8,8 @@
 
 // Every std header of this file and of the architecture headers comes before the target region, so that their inline
 // functions compile for the build's own target.
-#include <checksum/fletcher.hpp>
 #include <checksum/adler32.hpp>
+#include <checksum/fletcher.hpp>
 #include <checksum/isa.hpp>
 
 #include <algorithm>
@@ -70,21 +70,21 @@ template <isa Isa, class State> State make_state(std::uint64_t sum1, std::uint64
 // Adds the whole kernel blocks at the start of data to the sums of state, a chunk of at most max_blocks blocks per kernel call, each sum
 // reduced after every chunk. Returns the number of bytes taken; inlined into its one caller.
 template <isa Isa, class Kernel, class Value, std::uint64_t Modulus, class State>
-[[gnu::always_inline]] inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept;
+CHECKSUM_ALWAYS_INLINE inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept;
 
 // The portable loop over the whole Values of data, which is shorter than Limit bytes. On 64-bit targets, if no input of that
 // length can overflow the sums, it is one run without reducing them first: no loop over runs and no stack frame.
 template <isa Isa, class Value, std::uint64_t Modulus, std::size_t Limit = std::numeric_limits<std::size_t>::max(), class State>
-[[gnu::always_inline]] inline State sum_portable(State state, std::span<std::byte const> data) noexcept;
+CHECKSUM_ALWAYS_INLINE inline State sum_portable(State state, std::span<std::byte const> data) noexcept;
 
 // The CPU kernel, then the portable loop over what it left. Not inlined, so that short inputs run sum_portable() without a call.
 // From the minimum size of group_kernel, a tail call to sum_groups() instead.
 template <isa Isa, class Value, std::uint64_t Modulus, class State>
-[[gnu::noinline]] State sum_long(State state, std::span<std::byte const> data) noexcept;
+CHECKSUM_NOINLINE State sum_long(State state, std::span<std::byte const> data) noexcept;
 
 // group_kernel, then the portable loop. A separate function, so that its registers cost sum_long() nothing.
 template <isa Isa, class Value, std::uint64_t Modulus, class State>
-[[gnu::noinline]] State sum_groups(State state, std::span<std::byte const> data) noexcept;
+CHECKSUM_NOINLINE State sum_groups(State state, std::span<std::byte const> data) noexcept;
 
 // Whether size bytes go to sum_long(): from the minimum size of the kernel, if there is one. Callers branch on it themselves,
 // so that the call of sum_long() stays a tail call.
@@ -97,22 +97,24 @@ template <unsigned Width> using sums_of = sum_pair<typename fletcher_state<Width
 
 // The whole blocks of data with the shared loops, from the start of a block.
 template <isa Isa, unsigned Width>
-[[gnu::always_inline]] inline sums_of<Width> sum_blocks(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
+CHECKSUM_ALWAYS_INLINE inline sums_of<Width> sum_blocks(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
 
 // The state word of finished blocks with these sums. sum_pair holds them in the order of the word on little-endian targets,
 // so that GCC copies the register instead of taking the sums apart.
 template <isa Isa, unsigned Width> state_word<Width> word_of(sums_of<Width> sums) noexcept;
 
 // update_bytes() out of line, so that the byte loop takes no registers from the block loops.
-template <isa Isa, unsigned Width> [[gnu::noinline]] fletcher_state<Width> add_bytes(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
+template <isa Isa, unsigned Width>
+CHECKSUM_NOINLINE fletcher_state<Width> add_bytes(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
 
 // Finishes an unfinished block byte by byte, sums the whole blocks, and adds the bytes of a last unfinished block to sum1,
 // with the byte loops out of line: for Fletcher-64 and on 32-bit targets, inside fletcher_sum_any().
 template <isa Isa, unsigned Width>
-[[gnu::always_inline]] inline fletcher_state<Width> sum_mixed(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
+CHECKSUM_ALWAYS_INLINE inline fletcher_state<Width> sum_mixed(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
 
 // The same out of line, with the byte loops inline: Fletcher-16 and -32 on 64-bit targets.
-template <isa Isa, unsigned Width> [[gnu::noinline]] state_word<Width> sum_unfinished(state_word<Width> word, std::span<std::byte const> data) noexcept;
+template <isa Isa, unsigned Width>
+CHECKSUM_NOINLINE state_word<Width> sum_unfinished(state_word<Width> word, std::span<std::byte const> data) noexcept;
 
 // Whole blocks from the start of a block go to sum_blocks() here, everything else to sum_unfinished(), so that this path
 // makes no call that needs a frame. Empty data goes there too: knowing data is not empty saves sum_portable() a register.
@@ -206,7 +208,7 @@ template <isa Isa, class State> State make_state(std::uint64_t sum1, std::uint64
 }
 
 template <isa Isa, class Kernel, class Value, std::uint64_t Modulus, class State>
-[[gnu::always_inline]] inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept {
+CHECKSUM_ALWAYS_INLINE inline std::size_t sum_chunks(State &state, std::span<std::byte const> data) noexcept {
   constexpr unsigned bits = std::numeric_limits<Value>::digits;
   using chunk_kernel = Kernel;
   constexpr std::uint64_t values_per_block = chunk_kernel::block_size / sizeof(Value);
@@ -256,7 +258,7 @@ template <isa Isa, class Kernel, class Value, std::uint64_t Modulus, class State
 }
 
 template <isa Isa, class Value, std::uint64_t Modulus, std::size_t Limit, class State>
-[[gnu::always_inline]] inline State sum_portable(State state, std::span<std::byte const> data) noexcept {
+CHECKSUM_ALWAYS_INLINE inline State sum_portable(State state, std::span<std::byte const> data) noexcept {
   // The widest integer the target adds natively, or 64 bits for 32-bit values. AArch64 sums 16-bit values in 32 bits:
   // Fletcher-32 at 20 bytes ran 7 % faster on a Cortex-A72 (a reduction every 360 values costs little), but 9 % slower on x86-64.
   using accumulator =
@@ -377,7 +379,7 @@ template <isa Isa, class Value, std::uint64_t Modulus, std::size_t Limit, class 
 }
 
 template <isa Isa, class Value, std::uint64_t Modulus, class State>
-[[gnu::noinline]] State sum_long(State state, std::span<std::byte const> data) noexcept {
+CHECKSUM_NOINLINE State sum_long(State state, std::span<std::byte const> data) noexcept {
   constexpr unsigned bits = std::numeric_limits<Value>::digits;
   if constexpr(group_kernel<bits, Isa>::available) {
     if(data.size() >= group_kernel<bits, Isa>::minimum_size) {
@@ -392,7 +394,7 @@ template <isa Isa, class Value, std::uint64_t Modulus, class State>
 }
 
 template <isa Isa, class Value, std::uint64_t Modulus, class State>
-[[gnu::noinline]] State sum_groups(State state, std::span<std::byte const> data) noexcept {
+CHECKSUM_NOINLINE State sum_groups(State state, std::span<std::byte const> data) noexcept {
   std::size_t const size = sum_chunks<Isa, group_kernel<std::numeric_limits<Value>::digits, Isa>, Value, Modulus>(state, data);
   return sum_portable<Isa, Value, Modulus>(state, data.subspan(size));
 }

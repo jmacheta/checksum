@@ -57,7 +57,7 @@ template <isa Isa> struct clmul_kernel {
 
 template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::load(std::span<std::byte const> data) noexcept {
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::load(std::span<std::byte const> data) noexcept {
   constexpr std::size_t half = 8;
   std::uint64_t const first = load_little_endian<half>(data);
   std::uint64_t const second = load_little_endian<half>(data.subspan(half));
@@ -68,25 +68,25 @@ template <bool Reflected>
   }
 }
 
-template <isa Isa> [[gnu::always_inline]] inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::pair(folding_pair const &constants) noexcept {
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::pair(folding_pair const &constants) noexcept {
   return (vector{constants[1]} << 64U) | constants[0];
 }
 
 template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::first_block(std::span<std::byte const> data,
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::first_block(std::span<std::byte const> data,
                                                                                        std::uint64_t remainder) noexcept {
   return load<Reflected>(data) ^ (Reflected ? vector{remainder} : vector{remainder} << 64U);
 }
 
 template <isa Isa>
-[[gnu::always_inline]] inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::fold(vector accumulator, vector constants, vector next) noexcept {
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::fold(vector accumulator, vector constants, vector next) noexcept {
   return multiply(lane<0>(accumulator), lane<0>(constants)) ^ multiply(lane<1>(accumulator), lane<1>(constants)) ^ next;
 }
 
 template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::partial(vector accumulator, vector by_one, std::span<std::byte const> last,
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::partial(vector accumulator, vector by_one, std::span<std::byte const> last,
                                                                                    std::size_t size) noexcept {
   // Reflected, byte i is bits 8i..8i+7, so moving bytes towards the message end shifts left; in normal order byte i is
   // bits 120-8i..127-8i and the shift directions swap.
@@ -103,7 +103,7 @@ template <bool Reflected>
 }
 
 template <isa Isa>
-[[gnu::always_inline]] inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::multiply(std::uint64_t first, std::uint64_t second) noexcept {
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::multiply(std::uint64_t first, std::uint64_t second) noexcept {
   // The build may lack Zbc and GCC has no target pragma on RISC-V, so enable it locally in the asm.
   std::uint64_t low = 0;
   std::uint64_t high = 0;
@@ -112,13 +112,13 @@ template <isa Isa>
   return (vector{high} << 64U) | low;
 }
 
-template <isa Isa> template <int Lane> [[gnu::always_inline]] inline std::uint64_t clmul_kernel<Isa>::lane(vector value) noexcept {
+template <isa Isa> template <int Lane> CHECKSUM_ALWAYS_INLINE inline std::uint64_t clmul_kernel<Isa>::lane(vector value) noexcept {
   return static_cast<std::uint64_t>(value >> (64U * Lane));
 }
 
 template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline std::uint64_t clmul_kernel<Isa>::reduce(vector accumulator, folding_constants const &constants) noexcept {
+CHECKSUM_ALWAYS_INLINE inline std::uint64_t clmul_kernel<Isa>::reduce(vector accumulator, folding_constants const &constants) noexcept {
   constexpr unsigned top_bit = 63;
   std::uint64_t const low = lane<0>(accumulator);
   std::uint64_t const high = lane<1>(accumulator);
@@ -137,7 +137,7 @@ template <bool Reflected>
 }
 
 template <isa Isa, bool Reflected>
-[[gnu::always_inline]] inline std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder,
+CHECKSUM_ALWAYS_INLINE inline std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder,
                                                         std::span<std::byte const> data) noexcept {
   return clmul_kernel<Isa>::template reduce<Reflected>(fold_blocks_with<Reflected, clmul_kernel<Isa>>(constants, remainder, data), constants);
 }

@@ -254,7 +254,8 @@ constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::
 
 namespace checksum {
 
-template <unsigned Width, isa Isa> constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, std::span<std::byte const> data) noexcept {
+template <unsigned Width, isa Isa>
+constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, std::span<std::byte const> data) noexcept {
   static_assert(isa_available(Isa),
                 "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   constexpr std::size_t block_size = murmur3_detail::block_size<Width>;
@@ -282,8 +283,7 @@ template <unsigned Width, isa Isa> constexpr murmur3_state<Width> murmur3_update
 
 template <unsigned Width, isa Isa, byte_range Range>
 constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data),
-                         [&](std::span<std::byte const> chunk) { state = murmur3_update<Width, Isa>(state, chunk); });
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = murmur3_update<Width, Isa>(state, chunk); });
   return state;
 }
 
@@ -322,9 +322,12 @@ constexpr murmur3_state<Width>::value_type murmur3_compute(Range &&data, std::ui
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
       return murmur3_compute<Width, Isa>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
+    } else {
+      return murmur3_finalize(murmur3_update<Width, Isa>(murmur3_state<Width>{.seed = seed}, std::forward<Range>(data)));
     }
+  } else {
+    return murmur3_finalize(murmur3_update<Width, Isa>(murmur3_state<Width>{.seed = seed}, std::forward<Range>(data)));
   }
-  return murmur3_finalize(murmur3_update<Width, Isa>(murmur3_state<Width>{.seed = seed}, std::forward<Range>(data)));
 }
 
 template <isa Isa, byte_range Range> constexpr murmur3_32_state::value_type murmur3_32_compute(Range &&data, std::uint32_t seed) noexcept {

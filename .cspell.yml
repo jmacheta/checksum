@@ -34,6 +34,7 @@ words:
 - adccp
 - adcs
 - addc
+- addcarry
 - addcll
 - addtogroup
 - aixm
@@ -62,6 +63,7 @@ words:
 - constexpr
 - cplusplus
 - cpmaddpackage
+- cpuidex
 - CRACEN
 - crc
 - crccheck
@@ -148,6 +150,7 @@ words:
 - Neoverse
 - newlib
 - noexcept
+- noinline
 - nolint
 - nolintbegin
 - nolintend
@@ -243,6 +246,7 @@ words:
 - vsdownload
 - vsetvl
 - vsetvlmax
+- vshlq
 - vshrq
 - vsrl
 - vswhere
@@ -254,6 +258,7 @@ words:
 - werror
 - winedebug
 - xfer
+- xgetbv
 - xlen
 - xmodem
 - xored

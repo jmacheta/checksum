@@ -61,14 +61,14 @@ template <isa Isa> word add_carry(word left, word right, word &carry) noexcept;
 template <isa Isa> void add_with_carry(word &sum, word &carries, word value) noexcept;
 
 // Adds Count words from data to sum in one carry chain, counting the carries out.
-template <isa Isa, std::size_t Count> [[gnu::always_inline]] inline void add_words(word &sum, word &carries, std::byte const *data) noexcept;
+template <isa Isa, std::size_t Count> CHECKSUM_ALWAYS_INLINE inline void add_words(word &sum, word &carries, std::byte const *data) noexcept;
 
 // The portable loop over data, plus a sum of native-order words already taken (unfolded); folded, in native byte order.
-template <isa Isa> [[gnu::always_inline]] inline std::uint16_t sum_words(std::span<std::byte const> data, std::uint64_t blocks) noexcept;
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline std::uint16_t sum_words(std::span<std::byte const> data, std::uint64_t blocks) noexcept;
 
 // The CPU kernel, then the portable loop over what it left; swapped like sum_any(). Not inlined, so that short inputs
 // run the entry without a call: a call in it saved registers on every input and cost 13-23 % below 256 bytes on x86-64.
-template <isa Isa> [[gnu::noinline]] std::uint16_t sum_long(std::span<std::byte const> data) noexcept;
+template <isa Isa> CHECKSUM_NOINLINE std::uint16_t sum_long(std::span<std::byte const> data) noexcept;
 
 // The sum in native byte order to big-endian order.
 template <isa Isa> std::uint16_t to_big_endian(std::uint16_t sum) noexcept;
@@ -112,7 +112,7 @@ template <isa Isa> void add_with_carry(word &sum, word &carries, word value) noe
   }
 }
 
-template <isa Isa, std::size_t Count> [[gnu::always_inline]] inline void add_words(word &sum, word &carries, std::byte const *data) noexcept {
+template <isa Isa, std::size_t Count> CHECKSUM_ALWAYS_INLINE inline void add_words(word &sum, word &carries, std::byte const *data) noexcept {
   // A carry flag chain adds its carry back at once: one that starts without a carry leaves a sum below the word's maximum if
   // it carries out.
   word carry = 0;
@@ -129,7 +129,7 @@ template <isa Isa, std::size_t Count> [[gnu::always_inline]] inline void add_wor
   sum += carry;
 }
 
-template <isa Isa> [[gnu::always_inline]] inline std::uint16_t sum_words(std::span<std::byte const> data, std::uint64_t blocks) noexcept {
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline std::uint16_t sum_words(std::span<std::byte const> data, std::uint64_t blocks) noexcept {
   // Two independent carry chains: one is limited by the latency of add-with-carry.
   std::array<word, 2> sums{};
   std::array<word, 2> carries{};
@@ -190,7 +190,7 @@ template <isa Isa> std::uint16_t to_big_endian(std::uint16_t sum) noexcept {
   return std::endian::native == std::endian::little ? std::byteswap(sum) : sum;
 }
 
-template <isa Isa> [[gnu::noinline]] std::uint16_t sum_long(std::span<std::byte const> data) noexcept {
+template <isa Isa> CHECKSUM_NOINLINE std::uint16_t sum_long(std::span<std::byte const> data) noexcept {
   block_total const total = block_sum<Isa>(data);
   return to_big_endian<Isa>(sum_words<Isa>(data.subspan(total.size), total.sum));
 }

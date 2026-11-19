@@ -131,7 +131,7 @@ template <isa Isa, bool Reflected, class Register> constexpr bool uses_crc32_ins
 
 // At least folding_block_size bytes; only where folding_available<Isa>.
 template <isa Isa, bool Reflected, class Register>
-[[gnu::always_inline]] inline Register fold_message(folding_constants const &folding, Register remainder, std::span<std::byte const> data) noexcept {
+CHECKSUM_ALWAYS_INLINE inline Register fold_message(folding_constants const &folding, Register remainder, std::span<std::byte const> data) noexcept {
   // The kernel takes the register in 64-bit form: a non-reflected register is top-aligned.
   constexpr unsigned extension = 64 - register_bits<Register>;
   std::uint64_t const wide = Reflected ? std::uint64_t{remainder} : std::uint64_t{remainder} << extension;
@@ -142,13 +142,13 @@ template <isa Isa, bool Reflected, class Register>
 // Not inlined: the call to the wide loop gives every caller a stack frame and saved registers (~20 % at 16-64 bytes on
 // x86-64). Split off, the inlined fold_message() sees only inputs too short for it and drops the call.
 template <isa Isa, bool Reflected, class Register>
-[[gnu::noinline]] Register fold_long_message(folding_constants const &folding, Register remainder, std::span<std::byte const> data) noexcept {
+CHECKSUM_NOINLINE Register fold_long_message(folding_constants const &folding, Register remainder, std::span<std::byte const> data) noexcept {
   return fold_message<Isa, Reflected>(folding, remainder, data);
 }
 
 // Not inlined, for the same reason as fold_long_message().
 template <isa Isa, std::uint32_t Polynomial>
-[[gnu::noinline]] std::uint32_t fold_long_crc32(folding_constants const &folding, std::uint32_t remainder, std::span<std::byte const> data) noexcept {
+CHECKSUM_NOINLINE std::uint32_t fold_long_crc32(folding_constants const &folding, std::uint32_t remainder, std::span<std::byte const> data) noexcept {
   return fold_crc32<Isa, Polynomial>(folding, remainder, data);
 }
 

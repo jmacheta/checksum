@@ -42,39 +42,39 @@ template <isa Isa> inline constexpr bool word_pairs = arm32_target && !isa_detai
 // Shortest input for the lanes. The portable ones overtake the word loop on a Cortex-A72 at 128 bytes with GCC but stay below
 // Clang's unrolled word loop; on 32-bit targets their 64-bit sums run out of registers, 3 times slower there.
 template <isa Isa>
-inline constexpr std::size_t lanes_minimum_size = lane_kernel_available<Isa>
-                                                      ? lane_kernel_minimum_size<Isa>
-                                                      : (std::numeric_limits<std::size_t>::digits == 64 ? 256 : std::numeric_limits<std::size_t>::max());
+inline constexpr std::size_t lanes_minimum_size =
+    lane_kernel_available<Isa> ? lane_kernel_minimum_size<Isa>
+                               : (std::numeric_limits<std::size_t>::digits == 64 ? 256 : std::numeric_limits<std::size_t>::max());
 
 // The little-endian word at data, from byte loads that compilers merge where unaligned loads are allowed: no memcpy call elsewhere.
-template <isa Isa> [[gnu::always_inline]] inline std::uint64_t load(std::byte const *data) noexcept;
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load(std::byte const *data) noexcept;
 
 // The portable lanes over groups groups of words at data.
-template <isa Isa> [[gnu::always_inline, maybe_unused]] inline lane_sums sum_lanes(std::byte const *data, std::size_t groups) noexcept;
+template <isa Isa> CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline lane_sums sum_lanes(std::byte const *data, std::size_t groups) noexcept;
 
 // lanes[1] + 2 * lanes[2] + 3 * lanes[3], a weight that grows by one per lane.
 template <isa Isa> [[maybe_unused]] inline std::uint64_t ramp(std::array<std::uint64_t, lane_count> const &lanes) noexcept;
 
 // The state after the words that lanes summed, a multiple of lane_count; the earlier sums add to the later ones once per word.
 template <isa Isa>
-[[gnu::always_inline, maybe_unused]] inline fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint64_t words) noexcept;
+CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint64_t words) noexcept;
 
 // One word at a time (two with word_pairs), then the bytes of an unfinished word.
-template <isa Isa> [[gnu::always_inline]] inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept;
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
 // The lanes of the CPU kernel, else the portable ones, then sum_words() over what they left.
 template <isa Isa>
-[[gnu::always_inline, maybe_unused]] inline fletcher4_state sum_lanes_then_words(fletcher4_state state, std::span<std::byte const> data) noexcept;
+CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline fletcher4_state sum_lanes_then_words(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
 // sum_lanes_then_words(). Not inlined, so that short inputs run the entry without a call.
-template <isa Isa> [[gnu::noinline]] fletcher4_state sum_long(fletcher4_state state, std::span<std::byte const> data) noexcept;
+template <isa Isa> CHECKSUM_NOINLINE fletcher4_state sum_long(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
 // compute_loop() from lanes_minimum_size bytes, into value. The empty state is built here, so the short path of compute_loop()
 // stores none; and value is the caller's return value, where a returned array would be a local copy behind a stack protector check.
-template <isa Isa> [[gnu::noinline]] void compute_long(std::span<std::byte const> data, fletcher4_value &value) noexcept;
+template <isa Isa> CHECKSUM_NOINLINE void compute_long(std::span<std::byte const> data, fletcher4_value &value) noexcept;
 
 // Whether data is long enough for the lanes.
-template <isa Isa> [[gnu::always_inline]] inline bool use_lanes(std::span<std::byte const> data) noexcept;
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline bool use_lanes(std::span<std::byte const> data) noexcept;
 
 // The run-time fletcher4 fold for preset Isa; sum_loop() forwards to it.
 template <isa Isa> fletcher4_state fletcher4_sum_any(fletcher4_state state, std::span<std::byte const> data) noexcept;
@@ -82,12 +82,12 @@ template <isa Isa> fletcher4_state fletcher4_sum_any(fletcher4_state state, std:
 // The run-time fletcher4 compute for preset Isa; compute_loop() forwards to it.
 template <isa Isa> fletcher4_value fletcher4_compute_any(std::span<std::byte const> data) noexcept;
 
-template <isa Isa> [[gnu::always_inline]] inline std::uint64_t load(std::byte const *data) noexcept {
-  return std::to_integer<std::uint32_t>(data[0]) | (std::to_integer<std::uint32_t>(data[1]) << 8) |
-         (std::to_integer<std::uint32_t>(data[2]) << 16) | (std::to_integer<std::uint32_t>(data[3]) << 24);
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load(std::byte const *data) noexcept {
+  return std::to_integer<std::uint32_t>(data[0]) | (std::to_integer<std::uint32_t>(data[1]) << 8) | (std::to_integer<std::uint32_t>(data[2]) << 16) |
+         (std::to_integer<std::uint32_t>(data[3]) << 24);
 }
 
-template <isa Isa> [[gnu::always_inline, maybe_unused]] inline lane_sums sum_lanes(std::byte const *data, std::size_t groups) noexcept {
+template <isa Isa> CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline lane_sums sum_lanes(std::byte const *data, std::size_t groups) noexcept {
   lane_sums lanes{};
   for(; groups != 0; --groups, data += group_size) {
     for(std::size_t lane = 0; lane < lane_count; ++lane) {
@@ -105,7 +105,7 @@ template <isa Isa> [[maybe_unused]] inline std::uint64_t ramp(std::array<std::ui
 }
 
 template <isa Isa>
-[[gnu::always_inline, maybe_unused]] inline fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint64_t words) noexcept {
+CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint64_t words) noexcept {
   // C(n+1, 2) and C(n+2, 3) modulo 2^64 for an even n; the second divides exactly by 3, a product with its inverse modulo 2^64.
   std::uint64_t const triangular = (words / 2) * (words + 1);
   std::uint64_t const tetrahedral = triangular * (words + 2) * 0xAAAA'AAAA'AAAA'AAABU;
@@ -127,7 +127,7 @@ template <isa Isa>
                   (width * tail2) - lanes[0][3]};
 }
 
-template <isa Isa> [[gnu::always_inline]] inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept {
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept {
   std::byte const *position = data.data();
   std::size_t words = data.size() / word_size;
   if constexpr(word_pairs<Isa>) {
@@ -155,7 +155,7 @@ template <isa Isa> [[gnu::always_inline]] inline fletcher4_state sum_words(fletc
 }
 
 template <isa Isa>
-[[gnu::always_inline, maybe_unused]] inline fletcher4_state sum_lanes_then_words(fletcher4_state state, std::span<std::byte const> data) noexcept {
+CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline fletcher4_state sum_lanes_then_words(fletcher4_state state, std::span<std::byte const> data) noexcept {
   std::size_t const groups = data.size() / group_size;
   if constexpr(lane_kernel_available<Isa>) {
     state = combine<Isa>(state, lane_kernel<Isa>(data.data(), groups), groups * lane_count);
@@ -165,15 +165,15 @@ template <isa Isa>
   return sum_words<Isa>(state, data.subspan(groups * group_size));
 }
 
-template <isa Isa> [[gnu::noinline]] fletcher4_state sum_long(fletcher4_state state, std::span<std::byte const> data) noexcept {
+template <isa Isa> CHECKSUM_NOINLINE fletcher4_state sum_long(fletcher4_state state, std::span<std::byte const> data) noexcept {
   return sum_lanes_then_words<Isa>(state, data);
 }
 
-template <isa Isa> [[gnu::noinline]] void compute_long(std::span<std::byte const> data, fletcher4_value &value) noexcept {
+template <isa Isa> CHECKSUM_NOINLINE void compute_long(std::span<std::byte const> data, fletcher4_value &value) noexcept {
   value = fletcher4_finalize(sum_lanes_then_words<Isa>(fletcher4_state{}, data));
 }
 
-template <isa Isa> [[gnu::always_inline]] inline bool use_lanes(std::span<std::byte const> data) noexcept {
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline bool use_lanes(std::span<std::byte const> data) noexcept {
   // Without lanes, the long functions are not even linked.
   return lanes_minimum_size<Isa> != std::numeric_limits<std::size_t>::max() && data.size() >= lanes_minimum_size<Isa>;
 }

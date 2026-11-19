@@ -10,6 +10,15 @@
 #include <span>
 #include <type_traits>
 
+// Inlining attributes of the library's loops, in the spelling of the compiler: MSVC warns about the gnu:: ones (C5030).
+#if defined(_MSC_VER) && !defined(__clang__)
+#define CHECKSUM_ALWAYS_INLINE [[msvc::forceinline]]
+#define CHECKSUM_NOINLINE [[msvc::noinline]]
+#else
+#define CHECKSUM_ALWAYS_INLINE [[gnu::always_inline]]
+#define CHECKSUM_NOINLINE [[gnu::noinline]]
+#endif
+
 /**
  * @addtogroup checksum
  * @{
@@ -52,29 +61,34 @@ namespace checksum::detail {
 // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
 template <byte_range Range, class Visitor> constexpr void for_each_chunk(Range &&data, Visitor visit) noexcept {
   using value_type = std::remove_cv_t<std::ranges::range_value_t<Range>>;
+  auto const chunked = [&] {
+    constexpr std::size_t chunk_size = 64;
+    std::array<std::byte, chunk_size> chunk{};
+    std::size_t used = 0;
+    for(auto &&value : data) {
+      chunk[used++] = static_cast<std::byte>(static_cast<unsigned char>(value));
+      if(used == chunk_size) {
+        visit(std::span<std::byte const>(chunk.data(), used));
+        used = 0;
+      }
+    }
+    if(used != 0) {
+      visit(std::span<std::byte const>(chunk.data(), used));
+    }
+  };
+  // No early returns: MSVC reports the code after them as unreachable (C4702) in every instantiation.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if constexpr(std::same_as<value_type, std::byte>) {
       visit(std::span<std::byte const>(std::ranges::data(data), std::ranges::size(data)));
-      return;
     } else {
       if !consteval {
         visit(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
-        return;
+      } else {
+        chunked();
       }
     }
-  }
-  constexpr std::size_t chunk_size = 64;
-  std::array<std::byte, chunk_size> chunk{};
-  std::size_t used = 0;
-  for(auto &&value : data) {
-    chunk[used++] = static_cast<std::byte>(static_cast<unsigned char>(value));
-    if(used == chunk_size) {
-      visit(std::span<std::byte const>(chunk.data(), used));
-      used = 0;
-    }
-  }
-  if(used != 0) {
-    visit(std::span<std::byte const>(chunk.data(), used));
+  } else {
+    chunked();
   }
 }
 

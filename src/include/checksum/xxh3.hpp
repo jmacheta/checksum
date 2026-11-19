@@ -78,8 +78,7 @@ template <isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
 /// The XXH3-128 hash of data: xxh3_compute<128, Isa>(data, seed).
-template <isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
 } // namespace checksum
 
@@ -260,13 +259,19 @@ template <class Integer> constexpr Integer secret_xor(std::byte const *secret) n
 }
 
 constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) noexcept {
+  auto const portable = [&] {
+    hash128 const product = multiply(left, right);
+    return product.low ^ product.high;
+  };
 #ifndef __SIZEOF_INT128__
   if !consteval {
     return run_time_multiply_fold(left, right);
+  } else {
+    return portable();
   }
+#else
+  return portable();
 #endif
-  hash128 const product = multiply(left, right);
-  return product.low ^ product.high;
 }
 
 constexpr std::uint64_t avalanche(std::uint64_t hash) noexcept {
@@ -457,7 +462,7 @@ constexpr portable_kernel::lanes portable_kernel::load(accumulator_array const &
 constexpr void portable_kernel::store(accumulator_array &accumulators, lanes const &values) noexcept { accumulators = values; }
 
 constexpr void portable_kernel::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
-  [&]<std::size_t... Lane> [[gnu::always_inline]] (std::index_sequence<Lane...>) {
+  [&]<std::size_t... Lane> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Lane...>) {
     (accumulate_lane<Lane>(values, stripe, secret), ...);
   }(std::make_index_sequence<std::tuple_size_v<lanes>>{});
 }
@@ -567,8 +572,7 @@ template <unsigned Width, isa Isa> constexpr xxh3_state<Width> xxh3_update(xxh3_
   return state;
 }
 
-template <unsigned Width, isa Isa, byte_range Range>
-constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, Range &&data) noexcept {
+template <unsigned Width, isa Isa, byte_range Range> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, Range &&data) noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = xxh3_update<Width, Isa>(state, chunk); });
   return state;
 }
@@ -598,7 +602,8 @@ template <unsigned Width, isa Isa> constexpr xxh3_state<Width>::value_type xxh3_
   });
 }
 
-template <unsigned Width, isa Isa> constexpr xxh3_state<Width>::value_type xxh3_compute(std::span<std::byte const> data, std::uint64_t seed) noexcept {
+template <unsigned Width, isa Isa>
+constexpr xxh3_state<Width>::value_type xxh3_compute(std::span<std::byte const> data, std::uint64_t seed) noexcept {
   static_assert(isa_available(Isa),
                 "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   if(data.size() <= xxh3_detail::small_max) {
@@ -620,9 +625,12 @@ constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
       return xxh3_compute<Width, Isa>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
+    } else {
+      return xxh3_finalize<Width, Isa>(xxh3_update<Width, Isa>(xxh3_state<Width>{.seed = seed}, std::forward<Range>(data)));
     }
+  } else {
+    return xxh3_finalize<Width, Isa>(xxh3_update<Width, Isa>(xxh3_state<Width>{.seed = seed}, std::forward<Range>(data)));
   }
-  return xxh3_finalize<Width, Isa>(xxh3_update<Width, Isa>(xxh3_state<Width>{.seed = seed}, std::forward<Range>(data)));
 }
 
 template <isa Isa, byte_range Range> constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed) noexcept {

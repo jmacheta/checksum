@@ -29,8 +29,7 @@ template <isa Isa> std::uint64_t lane_total(uint32x4_t value) noexcept;
 template <isa Isa> std::uint64_t lane_total(uint64x2_t value) noexcept;
 
 template <isa Isa> struct kernel<8, Isa> {
-  static constexpr bool available =
-      std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
+  static constexpr bool available = std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
   static constexpr std::size_t block_size = 16;
   // A 16-bit lane of the column sums gains at most 255 per block.
   static constexpr std::size_t max_blocks = 256;
@@ -59,8 +58,7 @@ template <isa Isa> struct group_kernel<8, Isa> {
 #endif
 
 template <isa Isa> struct kernel<16, Isa> {
-  static constexpr bool available =
-      std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
+  static constexpr bool available = std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
   static constexpr std::size_t block_size = 16;
   // A 32-bit lane of the previous sums gains at most 2 * 65535 * j at block j.
   static constexpr std::size_t max_blocks = 128;
@@ -71,8 +69,7 @@ template <isa Isa> struct kernel<16, Isa> {
 };
 
 template <isa Isa> struct kernel<32, Isa> {
-  static constexpr bool available =
-      std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
+  static constexpr bool available = std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
   static constexpr std::size_t block_size = 16;
   // The 64-bit lanes have room for far more; 65536 values per chunk keep the weighted sum of the chunk within 64 bits.
   static constexpr std::size_t max_blocks = 65'536 / 4;
@@ -261,7 +258,7 @@ template <isa Isa> std::uint32_t load_word(std::byte const *data) noexcept {
 
 // Per 8 bytes: weighted += 8 * sum, usada8 adds the bytes to sum, and smlad adds bytes 0 and 2 (uxtb16) and 1 and 3 (after a
 // rotation) of each word with their weights 8 .. 1. Not inlined: inside the chunk loop, GCC reloaded two weights in every iteration.
-template <isa Isa> [[gnu::noinline]] chunk_sums kernel<8, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
+template <isa Isa> CHECKSUM_NOINLINE chunk_sums kernel<8, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
   std::uint32_t sum = 0;
   std::uint32_t weighted = 0;
   for(; blocks != 0; --blocks, data += block_size) {

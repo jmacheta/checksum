@@ -297,6 +297,11 @@ template <class Register> struct lookup_table<Register, no_table_size> {
   register_form<Register> form;
 };
 
+// The padding before the 16-byte aligned constants is intended; MSVC warns about it (C4324).
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
 template <class Register, std::size_t Size>
   requires has_folding<Size>
 struct lookup_table<Register, Size> {
@@ -304,6 +309,9 @@ struct lookup_table<Register, Size> {
   std::array<Register, Size> entries{};
   folding_constants folding{};
 };
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma warning(pop)
+#endif
 
 // True if the width is 1..register_bits<Register>.
 template <class Register> constexpr bool fits_register(crc_parameters const &parameters) noexcept;

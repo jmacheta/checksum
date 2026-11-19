@@ -3,11 +3,11 @@
 
 #include <cstdint>
 
-constexpr checksum::crc_parameters parameters{.polynomial = *checksum::crc_polynomial::create(0x1021, 16)};
+constexpr checksum::crc_parameters test_parameters{.polynomial = *checksum::crc_polynomial::create(0x1021, 16)};
 
 #ifdef CHECKSUM_EXPECT_COMPILE_ERROR
-auto accumulator = checksum::crc_accumulator{*checksum::crc_engine<std::uint16_t>::create(parameters)};
+auto accumulator = checksum::crc_accumulator{*checksum::crc_engine<std::uint16_t>::create(test_parameters)};
 #else
-auto const engine = *checksum::crc_engine<std::uint16_t>::create(parameters);
+auto const engine = *checksum::crc_engine<std::uint16_t>::create(test_parameters);
 auto accumulator = checksum::crc_accumulator{engine};
 #endif
