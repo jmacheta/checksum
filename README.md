@@ -67,7 +67,7 @@ that drives the CRC peripheral of an STM32.
 With [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake):
 
 ```cmake
-CPMAddPackage("gh:jmacheta/checksum@1.0.0")
+CPMAddPackage("gh:jmacheta/checksum@2.0.0")
 target_link_libraries(my_app PRIVATE checksum::checksum)
 ```
 
@@ -132,6 +132,16 @@ std::uint32_t const value = crc->compute(data);
   explicit set: `constexpr checksum::internet_dispatch_engine engine(checksum::isa_set{})` (generic) or a preset. This
   is deliberate: a constant-evaluable detection would silently make every `static` engine generic.
 - Programs that make no dispatch engine link none of this: `detect_isa()` is a source of its own.
+
+## Migrating from 1.x
+
+- **CPU kernels are no longer chosen by compiler flags.** A 1.x build with `-march=native` or `-mavx2` ran the
+  kernels; in 2.0 the default `isa::generic` runs only the architecture baseline (SSE2, AArch64 NEON). Name a preset
+  (`internet_compute<checksum::isa::x86_avx2>(data)`) or use a dispatch engine to get them back.
+- **The CMake option `CHECKSUM_ACCELERATION` is gone**; `isa::generic` is the portable choice.
+- **Explicit template arguments moved:** the preset is now the first template parameter (after the width, where there is
+  one), so a call such as `internet_update<std::uint16_t>(checksum, data)` drops the explicit type. Results are
+  unchanged everywhere.
 
 ## Contributing
 
