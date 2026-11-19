@@ -26,7 +26,7 @@ template <isa Isa> block_total block_sum(std::span<std::byte const> data) noexce
 
 } // namespace checksum::internet_detail
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_X64)
 #include <checksum_private/x86_64/internet.hpp>
 #elif defined(__aarch64__) || defined(__arm__)
 #include <checksum_private/arm/internet.hpp>

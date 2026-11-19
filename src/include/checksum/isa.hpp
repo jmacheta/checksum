@@ -33,7 +33,8 @@ enum class isa : std::uint8_t {
   riscv_v,       ///< RV64 with the V extension.
 };
 
-/// Whether this build has the variants of preset: generic always, other presets on their architecture with GCC or Clang.
+/// Whether this build has the variants of preset: generic always, other presets on their architecture with GCC or Clang,
+/// and with MSVC on x64 and ARM64.
 /// On 32-bit Arm, GCC only: thumb2 where the build's flags compile Thumb-2 code, thumb2_dsp where they also have the DSP
 /// extension, thumb2_neon and thumb2_crc for A-profile ARMv7 and later with a hardware floating-point ABI. Naming a
 /// preset it rejects is a compile error; the answer is the same in every translation unit.
@@ -52,10 +53,10 @@ constexpr bool includes(isa have, isa want) noexcept;
 
 // The presets besides generic that this architecture and compiler build, a range of the enumeration; the preset
 // sources (checksum_private/presets.hpp) check the same macros.
-#if defined(__GNUC__) && defined(__x86_64__)
+#if (defined(__GNUC__) && defined(__x86_64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64) && !defined(_M_ARM64EC))
 inline constexpr isa first_built = isa::x86_pclmul;
 inline constexpr isa last_built = isa::x86_avxvnni;
-#elif defined(__GNUC__) && defined(__aarch64__)
+#elif (defined(__GNUC__) && defined(__aarch64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64))
 inline constexpr isa first_built = isa::aarch64_crc;
 inline constexpr isa last_built = isa::aarch64_pmull;
 #elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' && !defined(__SOFTFP__)

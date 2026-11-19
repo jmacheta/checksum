@@ -9,8 +9,8 @@ static_assert(checksum::isa_available(checksum::isa::CHECKSUM_PRESET), "presets.
 #define CHECKSUM_PRAGMA(text) CHECKSUM_PRAGMA_TEXT(text)
 #define CHECKSUM_PRAGMA_TEXT(text) _Pragma(#text)
 
-// GCC 15 has no target pragma on RISC-V: there the kernels carry their target attribute themselves.
-#if defined(CHECKSUM_PRESET_TARGET) && !defined(__riscv)
+// GCC 15 has no target pragma on RISC-V: there the kernels carry their target attribute themselves. MSVC needs none.
+#if defined(CHECKSUM_PRESET_TARGET) && defined(__GNUC__) && !defined(__riscv)
 #if defined(__clang__)
 CHECKSUM_PRAGMA(clang attribute push(__attribute__((target(CHECKSUM_PRESET_TARGET))), apply_to = function))
 #else

@@ -41,6 +41,15 @@
 #elif defined(__GNUC__) && defined(__riscv) && __riscv_xlen == 64
 #define CHECKSUM_TARGET_RISCV_ZBC "arch=+zbc"
 #define CHECKSUM_TARGET_RISCV_V "arch=+v"
+#elif defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64) && !defined(_M_ARM64EC)
+// MSVC compiles intrinsics without target options, so target_begin.hpp ignores these.
+#define CHECKSUM_TARGET_X86_PCLMUL ""
+#define CHECKSUM_TARGET_X86_AVX2 ""
+#define CHECKSUM_TARGET_X86_VPCLMUL ""
+#define CHECKSUM_TARGET_X86_AVXVNNI ""
+#elif defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64)
+#define CHECKSUM_TARGET_AARCH64_CRC ""
+#define CHECKSUM_TARGET_AARCH64_PMULL ""
 #endif
 
 #endif // CHECKSUM_PRIVATE_PRESETS_HPP

@@ -8,6 +8,10 @@
 
 #include <gtest/gtest.h>
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
+
 #include <array>
 #include <cstddef>
 #include <string>
@@ -55,6 +59,23 @@ inline bool cpu_runs(checksum::isa preset) {
   bool const pclmul = __builtin_cpu_supports("sse4.2") && __builtin_cpu_supports("pclmul");
   bool const avx2 = pclmul && __builtin_cpu_supports("avx2");
   bool const vpclmul = avx2 && __builtin_cpu_supports("vpclmulqdq");
+  bool const avxvnni = vpclmul && __builtin_cpu_supports("avxvnni");
+#elif defined(_M_X64)
+  // CPUID leaf 1, leaf 7 and leaf 7 subleaf 1 as EAX, EBX, ECX, EDX; AVX also needs the OS to save the YMM registers.
+  std::array<int, 4> leaf1{};
+  std::array<int, 4> leaf7{};
+  std::array<int, 4> leaf7_1{};
+  __cpuid(leaf1.data(), 1);
+  __cpuidex(leaf7.data(), 7, 0);
+  __cpuidex(leaf7_1.data(), 7, 1);
+  auto const bit = [](int value, unsigned index) { return ((static_cast<unsigned>(value) >> index) & 1U) != 0; };
+  bool const ymm_saved = bit(leaf1[2], 27) && (_xgetbv(0) & 6U) == 6U;
+  bool const pclmul = bit(leaf1[2], 20) && bit(leaf1[2], 1);
+  bool const avx2 = pclmul && ymm_saved && bit(leaf7[1], 5);
+  bool const vpclmul = avx2 && bit(leaf7[2], 10);
+  bool const avxvnni = vpclmul && bit(leaf7_1[0], 4);
+#endif
+#if defined(__x86_64__) || defined(_M_X64)
   switch(preset) {
   case checksum::isa::x86_pclmul:
     return pclmul;
@@ -63,7 +84,7 @@ inline bool cpu_runs(checksum::isa preset) {
   case checksum::isa::x86_vpclmul:
     return vpclmul;
   case checksum::isa::x86_avxvnni:
-    return vpclmul && __builtin_cpu_supports("avxvnni");
+    return avxvnni;
   default:
     return true;
   }

@@ -8,11 +8,7 @@
 using namespace std::literals;
 
 // A preset of another architecture.
-#if defined(__x86_64__)
-constexpr checksum::isa preset = checksum::isa::riscv_v;
-#else
-constexpr checksum::isa preset = checksum::isa::x86_avx2;
-#endif
+constexpr checksum::isa preset = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::riscv_v : checksum::isa::x86_avx2;
 
 static_assert(!checksum::isa_available(preset));
 

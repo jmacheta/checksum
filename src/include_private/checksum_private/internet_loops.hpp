@@ -19,6 +19,10 @@
 #include <limits>
 #include <span>
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
+
 #include <checksum_private/target_begin.hpp>
 
 #include <checksum_private/internet_arch.hpp>
@@ -33,8 +37,11 @@ static_assert(std::endian::native == std::endian::little || std::endian::native 
 
 inline constexpr std::size_t word_size = sizeof(word);
 
-// GCC and Clang turn __builtin_addcll into an adc chain on x86-64; GCC 14 on Arm materializes every carry instead.
-#if defined(__x86_64__) && defined(__has_builtin)
+// GCC and Clang turn __builtin_addcll into an adc chain on x86-64, MSVC _addcarry_u64 (and _addcarry_u32 on x86); GCC 14 on
+// Arm materializes every carry instead.
+#if defined(_MSC_VER) && !defined(__clang__) && (defined(_M_X64) || defined(_M_IX86))
+inline constexpr bool carry_flag_chain = true;
+#elif defined(__x86_64__) && defined(__has_builtin)
 #if __has_builtin(__builtin_addcll)
 inline constexpr bool carry_flag_chain = true;
 #else
@@ -46,6 +53,9 @@ inline constexpr bool carry_flag_chain = false;
 
 // Every function below is a template on the preset, so that each preset's copy has its own name.
 template <isa Isa, class Integer> Integer load(std::byte const *data) noexcept;
+
+// left + right + carry (0 or 1) as one add with carry, the carry out in carry; only where carry_flag_chain.
+template <isa Isa> word add_carry(word left, word right, word &carry) noexcept;
 
 // sum + value, counting the carry out in carries, or adding it back at once with a carry flag chain.
 template <isa Isa> void add_with_carry(word &sum, word &carries, word value) noexcept;
@@ -72,10 +82,29 @@ template <isa Isa, class Integer> Integer load(std::byte const *data) noexcept {
   return value;
 }
 
+template <isa Isa> word add_carry(word left, word right, word &carry) noexcept {
+  word sum = 0;
+#if defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64)
+  carry = _addcarry_u64(static_cast<unsigned char>(carry), left, right, &sum);
+#elif defined(_MSC_VER) && !defined(__clang__) && defined(_M_IX86)
+  carry = _addcarry_u32(static_cast<unsigned char>(carry), left, right, &sum);
+#elif defined(_MSC_VER) && !defined(__clang__)
+  // MSVC on ARM64 has no add-with-carry intrinsic and never runs the chain, but parses this body.
+  word const partial = left + right;
+  sum = partial + carry;
+  carry = (partial < left || sum < partial) ? 1U : 0U;
+#else
+  unsigned long long carry_out = 0;
+  sum = __builtin_addcll(left, right, carry, &carry_out);
+  carry = carry_out;
+#endif
+  return sum;
+}
+
 template <isa Isa> void add_with_carry(word &sum, word &carries, word value) noexcept {
   if constexpr(carry_flag_chain) {
-    unsigned long long carry = 0;
-    sum = __builtin_addcll(sum, value, 0, &carry);
+    word carry = 0;
+    sum = add_carry<Isa>(sum, value, carry);
     sum += carry;
   } else {
     sum += value;
@@ -84,20 +113,20 @@ template <isa Isa> void add_with_carry(word &sum, word &carries, word value) noe
 }
 
 template <isa Isa, std::size_t Count> [[gnu::always_inline]] inline void add_words(word &sum, word &carries, std::byte const *data) noexcept {
-  if constexpr(carry_flag_chain) {
-    // The carry is added back at once: a chain that starts without one leaves a sum below 2^64 - 1 if it carries out.
-    unsigned long long carry = 0;
+  // A carry flag chain adds its carry back at once: one that starts without a carry leaves a sum below the word's maximum if
+  // it carries out.
+  word carry = 0;
+#if defined(__GNUC__)
 #pragma GCC unroll 8
-    for(std::size_t index = 0; index < Count; ++index) {
-      sum = __builtin_addcll(sum, load<Isa, word>(data + (index * word_size)), carry, &carry);
-    }
-    sum += carry;
-  } else {
-#pragma GCC unroll 8
-    for(std::size_t index = 0; index < Count; ++index) {
+#endif
+  for(std::size_t index = 0; index < Count; ++index) {
+    if constexpr(carry_flag_chain) {
+      sum = add_carry<Isa>(sum, load<Isa, word>(data + (index * word_size)), carry);
+    } else {
       add_with_carry<Isa>(sum, carries, load<Isa, word>(data + (index * word_size)));
     }
   }
+  sum += carry;
 }
 
 template <isa Isa> [[gnu::always_inline]] inline std::uint16_t sum_words(std::span<std::byte const> data, std::uint64_t blocks) noexcept {

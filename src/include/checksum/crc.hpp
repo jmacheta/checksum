@@ -147,7 +147,7 @@ private:
 /// Engine for Parameters with the smallest register, built at compile time and stored in read-only data, e.g.
 /// crc_engine_for<checksum::crc32, checksum::crc_lut_byte>. Ill-formed (std::bad_optional_access) if create() rejects the parameters.
 template <crc_parameters Parameters, class Strategy = crc_lut_none>
-inline constexpr crc_engine<crc_register_for<Parameters.polynomial.width()>, Strategy> crc_engine_for =
+inline constexpr auto crc_engine_for =
     crc_engine<crc_register_for<Parameters.polynomial.width()>, Strategy>::create(Parameters).value();
 
 /// An engine pointer plus a running state, for incremental computations. The engine must outlive the accumulator.

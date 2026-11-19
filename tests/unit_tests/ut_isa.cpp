@@ -19,9 +19,9 @@ static_assert(includes(isa::riscv_v, isa::generic) && includes(isa::generic, isa
 static_assert(!includes(isa::aarch64_pmull, isa::x86_pclmul) && !includes(isa::thumb2, isa::aarch64_crc));
 
 // A build has the presets of its own architecture only.
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_X64)
 static_assert(isa_available(isa::x86_pclmul) && isa_available(isa::x86_avxvnni) && !isa_available(isa::aarch64_crc) && !isa_available(isa::thumb2));
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(_M_ARM64)
 static_assert(isa_available(isa::aarch64_crc) && isa_available(isa::aarch64_pmull) && !isa_available(isa::x86_avx2) && !isa_available(isa::thumb2));
 #elif defined(__riscv)
 static_assert(isa_available(isa::riscv_zbc) && isa_available(isa::riscv_v) && !isa_available(isa::x86_avx2));

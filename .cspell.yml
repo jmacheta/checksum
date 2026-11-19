@@ -59,6 +59,7 @@ words:
 - cmakelists
 - consteval
 - constexpr
+- cplusplus
 - cpmaddpackage
 - CRACEN
 - crc
@@ -137,6 +138,8 @@ words:
 - mispredicted
 - modbus
 - mpclmul
+- msitools
+- mspdbsrv
 - msse
 - mssse
 - msvc
@@ -235,6 +238,7 @@ words:
 - vreinterpret
 - vreinterpretq
 - vrgather
+- vsdownload
 - vsetvl
 - vsetvlmax
 - vshrq
@@ -245,6 +249,7 @@ words:
 - wassert
 - wcdma
 - werror
+- winedebug
 - xfer
 - xlen
 - xmodem

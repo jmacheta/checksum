@@ -4,7 +4,8 @@
         "cmake/common_presets.json",
         "cmake/emulator_presets.json",
         "cmake/x86_64_presets.json",
-        "cmake/benchmark_presets.json"
+        "cmake/benchmark_presets.json",
+        "cmake/msvc_wine_presets.json"
     ],
     "configurePresets": [
         {
@@ -62,6 +63,21 @@
             "cacheVariables": {
                 "CMAKE_EXE_LINKER_FLAGS": "-stdlib=libc++ -Wl,--gc-sections"
             }
+        },
+        {
+            "name": "windows-msvc",
+            "displayName": "Windows native (MSVC)",
+            "description": "Native Windows x64 build using MSVC, from a developer command prompt (cl and ninja on PATH); static CRT to match GoogleTest's default",
+            "inherits": "common",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl",
+                "CMAKE_CXX_COMPILER": "cl",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+            },
+            "environment": {
+                "CFLAGS": "/W4 /permissive- /utf-8",
+                "CXXFLAGS": "/W4 /permissive- /Zc:__cplusplus /utf-8"
+            }
         }
     ],
     "buildPresets": [
@@ -112,6 +128,12 @@
             "displayName": "all [Debug]",
             "configurePreset": "native-clang-libcxx",
             "configuration": "Debug"
+        },
+        {
+            "name": "windows-msvc-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "windows-msvc",
+            "configuration": "Debug"
         }
     ],
     "testPresets": [
@@ -155,6 +177,13 @@
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "native-clang-libcxx",
+            "configuration": "Debug"
+        },
+        {
+            "name": "windows-msvc-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "windows-msvc",
             "configuration": "Debug"
         }
     ],
@@ -270,6 +299,25 @@
                 {
                     "type": "test",
                     "name": "native-clang-libcxx-debug"
+                }
+            ]
+        },
+        {
+            "name": "windows-msvc",
+            "displayName": "Windows native (MSVC)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "windows-msvc"
+                },
+                {
+                    "type": "build",
+                    "name": "windows-msvc-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "windows-msvc-debug"
                 }
             ]
         }

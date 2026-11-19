@@ -18,8 +18,10 @@
 #include <utility>
 
 // std::array of __m128i or uint64x2_t drops their __may_alias__ attribute, which arrays of accumulators do not need.
+#if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-attributes"
+#endif
 
 namespace checksum::crc_detail {
 
@@ -185,6 +187,8 @@ template <std::uint32_t Polynomial, class Kernel>
 #include <checksum_private/generic/crc.hpp>
 #endif
 
+#if defined(__GNUC__)
 #pragma GCC diagnostic pop
+#endif
 
 #endif // CHECKSUM_PRIVATE_CRC_ARCH_HPP

@@ -77,3 +77,23 @@ jobs:
 
       - name: Configure, build and test
         run: cmake --workflow --preset ${{ matrix.preset }}
+
+  build-and-test-msvc:
+    name: build-and-test (windows-msvc, MSVC)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Cache CPM packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
+        with:
+          path: .cpm-cache
+          key: cpm-windows-${{ hashFiles('cmake/requirements.cmake') }}
+
+      # The newest Visual Studio on the runner; its developer environment puts cl, ninja and cmake on PATH.
+      - name: Configure, build and test
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          cmake --workflow --preset windows-msvc

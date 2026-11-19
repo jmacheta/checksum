@@ -1,0 +1,70 @@
+{
+    "version": 8,
+    "include": [
+        "common_presets.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "windows-msvc-wine",
+            "displayName": "Windows x64 (MSVC in Wine)",
+            "description": "Cross build with MSVC from msvc-wine installed in ~/.local/opt/msvc, tests run in Wine; static CRT to match GoogleTest's default and to need no debug CRT DLLs in Wine, /Z7 to avoid mspdbsrv",
+            "inherits": "common",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_NAME": "Windows",
+                "CMAKE_SYSTEM_PROCESSOR": "AMD64",
+                "CMAKE_C_COMPILER": "$env{HOME}/.local/opt/msvc/bin/x64/cl",
+                "CMAKE_CXX_COMPILER": "$env{HOME}/.local/opt/msvc/bin/x64/cl",
+                "CMAKE_LINKER": "$env{HOME}/.local/opt/msvc/bin/x64/link",
+                "CMAKE_AR": "$env{HOME}/.local/opt/msvc/bin/x64/lib",
+                "CMAKE_RC_COMPILER": "$env{HOME}/.local/opt/msvc/bin/x64/rc",
+                "CMAKE_MT": "$env{HOME}/.local/opt/msvc/bin/x64/mt",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+                "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded",
+                "CMAKE_CROSSCOMPILING_EMULATOR": "wine"
+            },
+            "environment": {
+                "CFLAGS": "/W4 /permissive- /utf-8",
+                "CXXFLAGS": "/W4 /permissive- /Zc:__cplusplus /utf-8",
+                "WINEDEBUG": "-all"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "windows-msvc-wine-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "windows-msvc-wine",
+            "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "windows-msvc-wine-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "windows-msvc-wine",
+            "configuration": "Debug"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "windows-msvc-wine",
+            "displayName": "Windows x64 (MSVC in Wine)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "windows-msvc-wine"
+                },
+                {
+                    "type": "build",
+                    "name": "windows-msvc-wine-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "windows-msvc-wine-debug"
+                }
+            ]
+        }
+    ]
+}

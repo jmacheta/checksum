@@ -22,6 +22,10 @@
 - Cross builds have no toolchain files: system, processor, compilers, QEMU emulator and flags are set in the presets.
   Emulator settings are never CMake options.
 - Examples are built, not registered as tests.
+- `msvc_wine_presets.json` has `windows-msvc-wine`: real MSVC x64 run through Wine, tests too. Set it up once, outside
+  the repo, with [msvc-wine](https://github.com/mstorsjo/msvc-wine): `vsdownload.py --accept-license --dest
+  ~/.local/opt/msvc` then `install.sh ~/.local/opt/msvc` (needs `msitools`). It uses the static CRT (GoogleTest's
+  default; Wine has no debug CRT DLLs) and `/Z7` (no `mspdbsrv`).
 
 ## Formatting and linting
 
