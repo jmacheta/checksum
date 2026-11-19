@@ -40,8 +40,8 @@ enum class isa : std::uint8_t {
 /// floating-point ABI. Naming a preset it rejects is a compile error; the answer is the same in every translation unit.
 [[nodiscard]] constexpr bool isa_available(isa preset) noexcept;
 
-/// A set of presets that a CPU runs, for the run-time overloads of every algorithm (e.g. internet_compute(cpu, data)), which
-/// run the best variant this build has inside the set. It always contains generic.
+/// A set of presets that a CPU runs, for the dispatch engines of every algorithm (e.g. internet_dispatch_engine), which run
+/// the best variant this build has inside the set. It always contains generic.
 class isa_set {
 public:
   /// generic alone.
@@ -104,11 +104,11 @@ inline constexpr isa first_built = isa::generic;
 inline constexpr isa last_built = isa::generic;
 #endif
 
-// The preset of cpu that a run-time overload runs: preferred (not generic) if this build has it and cpu contains it, else the
+// The preset of cpu that a dispatch engine runs: preferred (not generic) if this build has it and cpu contains it, else the
 // latest preset of this build in cpu, else generic. Only RISC-V builds presets of two lines, which preferred settles for CRC.
 constexpr isa select(isa_set cpu, isa preferred = isa::generic) noexcept;
 
-// function.template operator()<select(cpu, Preferred)>(): the run-time overloads' switch over the presets of this build.
+// function.template operator()<select(cpu, Preferred)>(): the dispatch engines' switch over the presets of this build.
 template <isa Preferred = isa::generic, class Function> constexpr auto dispatch(isa_set cpu, Function &&function);
 
 // function.template operator()<preset>() if preset is Candidate or a later preset of this build, else for generic.

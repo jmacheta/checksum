@@ -2,48 +2,65 @@
 
 [![CI](https://github.com/jmacheta/checksum/actions/workflows/ci.yml/badge.svg)](https://github.com/jmacheta/checksum/actions/workflows/ci.yml)
 
-A C++23 library of checksums and fast hashes, from microcontrollers to servers. Every algorithm works at
-compile time and at run time, gives the same result on every platform, and never allocates.
+A C++23 library of non-cryptographic checksums and hashes, from microcontrollers to servers: CRC of any width,
+the Internet checksum, Adler-32, Fletcher, ZFS fletcher4, xxHash and MurmurHash3. Every algorithm runs at compile time
+and at run time with the same result on every platform, never allocates, and uses CPU instructions where they pay off.
+
+## Why this one
+
+- **Plain C++23.** Header-first API, one namespace, no macros to configure; the run-time loops are compiled once in a
+  small static library.
+- **`constexpr` everywhere.** A checksum computed in a `static_assert` equals the run-time one, on every CPU and byte
+  order. Named CRC engines and their tables are constants in read-only data.
+- **No allocation, no global state, no exceptions or RTTI.** Builds with `-fno-exceptions -fno-rtti` on bare-metal
+  toolchains; a CRC-32 engine takes 32 bytes without a table or 8 KiB of tables for full speed, your choice.
+- **Microcontroller-friendly linking.** Each algorithm, strategy and CPU preset is its own object, so a static link
+  keeps only what the program calls.
+- **Fast.** CPU kernels per [instruction-set preset](#instruction-set-presets): carry-less multiplication, CRC
+  instructions and vector units on x86-64, Arm and RISC-V, and the DSP instructions of Cortex-M4/M7/M33. CRC-32 runs at
+  about 75 000 MB/s on a laptop CPU, on par with Intel ISA-L. Optional run-time dispatch picks the preset for the
+  running CPU.
+- **Checked against the references.** Values match zlib, OpenZFS, xxHash and SMHasher. CI tests natively on x86-64
+  and AArch64, with MSVC on Windows, and in QEMU for AArch64, 32-bit Arm, RISC-V and big-endian AArch64.
+
+Out of scope: cryptographic hashes and message authentication (SHA, SipHash), and a C API.
+
+## Algorithms
+
+| Algorithm | Use it for | Header | Guide |
+| --- | --- | --- | --- |
+| CRC, widths 1-64, 112 named variants | Error detection in protocols, files, flash images | `checksum/crc_catalog.hpp` | [crc.md](doc/crc.md) |
+| Internet checksum (RFC 1071) | IPv4, ICMP, UDP, TCP | `checksum/internet.hpp` | [internet.md](doc/internet.md) |
+| Adler-32 (RFC 1950) | zlib, PNG | `checksum/adler32.hpp` | [adler32.md](doc/adler32.md) |
+| Fletcher-16, -32, -64 | Protocols that specify them | `checksum/fletcher.hpp` | [fletcher.md](doc/fletcher.md) |
+| fletcher4 | ZFS | `checksum/fletcher4.hpp` | [fletcher4.md](doc/fletcher4.md) |
+| XXH3-64, XXH3-128, XXH32, XXH64 | Hash tables, deduplication, cache keys | `checksum/xxh3.hpp`, `checksum/xxhash.hpp` | [xxhash.md](doc/xxhash.md) |
+| MurmurHash3 x86_32, x64_128 | Compatibility with existing MurmurHash3 values | `checksum/murmur3.hpp` | [murmur3.md](doc/murmur3.md) |
+
+Measured speed and code size on x86-64, Cortex-A72, Cortex-M4 and Cortex-M33: [doc/performance.md](doc/performance.md).
+
+## Quick start
 
 ```cpp
 #include <checksum/crc_catalog.hpp>
 #include <checksum/xxh3.hpp>
 using namespace std::literals;
 
-// At compile time...
+// Compile time.
 static_assert(checksum::crc_engine_for<checksum::crc32>.compute("123456789"sv) == 0xCBF43926);
 
-// ...or at run time, on any span or range of bytes.
+// Run time, on any span or range of bytes; crc_lut_sliced trades 8 KiB of tables for speed.
 std::vector<std::byte> data = read_file("firmware.bin");
 std::uint32_t crc = checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_sliced>.compute(data);
-std::uint64_t hash = checksum::xxh3_64_compute(data);
+
+// The best CPU kernel for the running CPU, detected once at program start.
+static checksum::xxh3_dispatch_engine<64> const xxh3;
+std::uint64_t hash = xxh3.compute(data);
 ```
 
-## What is in it
-
-| You need | Use | Header | Guide |
-| --- | --- | --- | --- |
-| Error detection in a protocol, file format or flash image | **CRC**, any width 1-64, 112 named variants (CRC-32, CRC-16/MODBUS, CRC-15/CAN, ...) | `checksum/crc_catalog.hpp` | [crc.md](doc/crc.md) |
-| IPv4, ICMP, UDP or TCP checksums | **Internet checksum** (RFC 1071) | `checksum/internet.hpp` | [internet.md](doc/internet.md) |
-| zlib / PNG compatibility | **Adler-32** (RFC 1950) | `checksum/adler32.hpp` | [adler32.md](doc/adler32.md) |
-| A cheap check where a protocol asks for it | **Fletcher-16, -32, -64** | `checksum/fletcher.hpp` | [fletcher.md](doc/fletcher.md) |
-| ZFS compatibility | **fletcher4** | `checksum/fletcher4.hpp` | [fletcher4.md](doc/fletcher4.md) |
-| Hash tables, deduplication, cache keys | **XXH3-64, XXH3-128**, or **XXH32, XXH64** | `checksum/xxh3.hpp`, `checksum/xxhash.hpp` | [xxhash.md](doc/xxhash.md) |
-| Compatibility with existing MurmurHash3 values | **MurmurHash3** x86_32 and x64_128 | `checksum/murmur3.hpp` | [murmur3.md](doc/murmur3.md) |
-
-## Why this one
-
-- **Fast where it counts.** Portable loops that hold their own, plus CPU instructions chosen by naming an
-  [instruction-set preset](#instruction-set-presets): carry-less multiplication, CRC instructions and vector units on
-  x86-64, Arm and RISC-V, and the DSP instructions of Cortex-M4/M7/M33. CRC-32 with `isa::x86_vpclmul` runs at about
-  75 000 MB/s on a laptop CPU, on par with Intel ISA-L.
-  [doc/performance.md](doc/performance.md) has the measurements, from servers down to 64 MHz microcontrollers.
-- **You choose the memory.** A CRC-32 engine takes 32 bytes without a table, or 8 KiB of tables for full
-  speed. Nothing allocates, there is no global state, and the linker drops what you do not call.
-- **Embedded-friendly.** No exceptions, RTTI or OS calls; builds with `-fno-exceptions -fno-rtti` for bare-metal
-  targets, on little- and big-endian CPUs.
-- **Checked against the references.** Values match zlib, OpenZFS, xxHash and SMHasher. CI runs the tests natively
-  on x86-64 and AArch64, with MSVC on Windows, and in QEMU for AArch64, 32-bit Arm, RISC-V and big-endian AArch64.
+[examples/](examples) has small complete programs for every algorithm: files read in chunks, a MODBUS frame, an IPv4
+header and UDP datagram, a zlib trailer, a ZFS block, a Bloom filter, a seeded hash table, and a custom CRC strategy
+that drives the CRC peripheral of an STM32.
 
 ## Getting it
 
@@ -54,87 +71,76 @@ CPMAddPackage("gh:jmacheta/checksum@1.0.0")
 target_link_libraries(my_app PRIVATE checksum::checksum)
 ```
 
-Or download [release 1.0.0](https://github.com/jmacheta/checksum/releases/tag/v1.0.0), put it next to your code and
-use `add_subdirectory(checksum)` with the same `target_link_libraries`.
+`FetchContent` from `https://github.com/jmacheta/checksum.git`, or a copy of the repository with
+`add_subdirectory(checksum)`, works the same way. Tests and examples build only when checksum is the top-level project
+(`CHECKSUM_TESTS`, `CHECKSUM_EXAMPLES`).
 
-You need GCC 14 or newer, Clang 18 or newer (with libstdc++ 14 or libc++ 18 or newer), or MSVC for x64 or ARM64 (CI
-tests x64).
+Compile with `-ffunction-sections -fdata-sections` and link with `-Wl,--gc-sections`, so the binary keeps only the
+algorithms you use.
 
-Two build tips:
-
-- CPU acceleration is a template argument, not a compiler flag: see [Instruction-set presets](#instruction-set-presets).
-- Compile with `-ffunction-sections -fdata-sections` and link with `-Wl,--gc-sections`, so the binary keeps only
-  the algorithms you use.
+Requirements: CMake 3.25, and GCC 14 or newer, Clang 18 or newer (with libstdc++ 14 or libc++ 18), or MSVC for x64 or
+ARM64 (CI tests x64).
 
 ## Instruction-set presets
 
 Every algorithm takes an instruction-set preset, `checksum::isa` (`checksum/isa.hpp`), as its last explicit template
 parameter. The default `isa::generic` runs on every CPU of the architecture: the portable loops plus what the
 architecture guarantees, SSE2 on x86-64 and NEON on little-endian AArch64 with GCC or Clang. The other presets add CPU
-extensions, and each includes the ones before it on its line:
+extensions; each includes the ones before it on its line:
 
 | Architecture | Presets |
 | --- | --- |
 | x86-64 | `x86_pclmul` → `x86_avx2` → `x86_vpclmul` → `x86_avxvnni` |
 | AArch64 | `aarch64_crc` → `aarch64_pmull` |
 | 32-bit Arm (GCC) | `thumb2` → `thumb2_dsp` → `thumb2_neon` → `thumb2_crc` |
-| RISC-V RV64 | `riscv_zbc` and `riscv_v`, independent |
+| RISC-V RV64 (GCC, Clang) | `riscv_zbc` and `riscv_v`, independent |
 
-The library compiles every algorithm once per preset that `isa_available()` accepts for the architecture and compiler,
-each into its own object, so a static link keeps only the presets a program names. `isa_available()` is `constexpr`
-and works in `if constexpr`; naming a preset it rejects is a compile error. Compiler flags such as `-march=native`
-select no kernel, every preset gives the same result, and constant evaluation always runs the portable code. On 32-bit
-Arm the presets need a build that compiles Thumb-2 code; `thumb2_dsp` also needs the DSP extension, and `thumb2_neon`
-and `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-point ABI, so a Cortex-M0 build has only
-`isa::generic`. Which preset enables which kernel is in each algorithm's guide.
+- **A preset is a compile-time choice and a promise.** `internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2
+  kernel; on a CPU without AVX2 that is undefined behavior (an illegal instruction). Compiler flags such as
+  `-march=native` select no kernel, every preset gives the same result, and constant evaluation runs the portable code.
+- **What a build has:** `isa_available(preset)` is `constexpr`; naming a preset it rejects is a compile error. On
+  32-bit Arm the presets need a Thumb-2 build; `thumb2_dsp` also needs the DSP extension, and `thumb2_neon` and
+  `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-point ABI. A Cortex-M0 build has only
+  `isa::generic`. Each guide lists which preset enables which kernel.
 
-A preset in a template argument is the caller's promise that the CPU runs it; calling it on a CPU without its
-instructions is undefined (illegal instruction). To choose at run time, make a dispatch engine: it detects the CPU when
-it is made and runs the best variant of this build from then on.
+To choose at run time, make a dispatch engine. It detects the CPU when it is made and runs the best preset of this build
+from then on; each call costs one or two cycles to switch to the chosen loop.
 
 ```cpp
-checksum::internet_dispatch_engine const internet;   // detects the CPU
-checksum::xxh3_dispatch_engine<64> const xxh3;
-auto const crc = checksum::crc_dispatch_engine<std::uint32_t>::create(checksum::crc32_iso_hdlc);
+static checksum::internet_dispatch_engine const internet;  // detects the CPU at program start
+static auto const crc = checksum::crc_dispatch_engine<std::uint32_t>::create(checksum::crc32);
 
 std::uint16_t const sum = internet.compute(data);
-std::uint64_t const hash = xxh3.compute(data, seed);
 std::uint32_t const value = crc->compute(data);
 ```
 
 - Every algorithm has one: `internet_dispatch_engine`, `adler32_dispatch_engine`, `fletcher_dispatch_engine<Width>`,
   `fletcher4_dispatch_engine`, `xxh3_dispatch_engine<Width>`, `xxhash_dispatch_engine<Width>`,
-  `murmur3_dispatch_engine<Width>` and `crc_dispatch_engine<Register, Strategy = crc_lut_sliced>`. Their `compute` and
-  `update` match the free functions; `preset()` names the preset they chose. The CRC engine keeps one table for every
-  preset.
-- The CPU check is `detect_isa()`, the default argument of every constructor and of `crc_dispatch_engine::create`:
-  CPUID on x86-64, the Linux auxiliary vector (and `riscv_hwprobe` for Zbc) on Arm and RISC-V,
-  `IsProcessorFeaturePresent` on Windows ARM64. Where the operating system has no feature query, bare metal included,
-  it reports every preset of the build. Make engines once, not per message: each one queries the CPU.
-- Passing an `isa_set` instead chooses explicitly, e.g. from a configuration: `internet_dispatch_engine(isa::x86_avx2)`
+  `murmur3_dispatch_engine<Width>` (constructor `explicit engine(isa_set cpu = detect_isa())`), and
+  `crc_dispatch_engine<Register, Strategy = crc_lut_sliced>::create(parameters, isa_set cpu = detect_isa())`, which
+  returns `std::optional` and keeps one table for every preset. `compute` and `update` (and `finalize` for XXH3 and
+  CRC) match the free functions; `preset()` names the chosen preset.
+- `detect_isa()` asks the CPU or the operating system on every call: the CPU identification instruction on x86-64,
+  the Linux auxiliary vector and system calls on Arm and RISC-V, `IsProcessorFeaturePresent` on Windows ARM64. Without
+  an operating-system feature query, bare metal included, it reports every preset of the build. Make engines once, not
+  per message: a `static` or global engine detects the CPU during program start-up.
+- An explicit `isa_set` chooses instead, e.g. from a configuration: `internet_dispatch_engine(checksum::isa::x86_avx2)`
   runs the AVX2 variant, falls back one rung at a time where the build lacks it, and runs `isa::generic` on another
-  architecture. A preset converts to the set of its line up to it; sets combine with `|`. With two lines in one build
-  (RISC-V), CRC takes `riscv_zbc` and the others `riscv_v`.
-- Each call switches to the chosen loop in one or two cycles. Constant evaluation runs the portable code; an engine
-  made from an explicit set is `constexpr`.
+  architecture. A preset converts to the set of its line up to it; sets combine with `|`. On RISC-V, where both lines
+  are built, CRC prefers `riscv_zbc` and the others `riscv_v`.
+- **constexpr:** `detect_isa()` runs only at run time, so a default-constructed engine cannot be `constexpr`. Give an
+  explicit set: `constexpr checksum::internet_dispatch_engine engine(checksum::isa_set{})` (generic) or a preset. This
+  is deliberate: a constant-evaluable detection would silently make every `static` engine generic.
 - Programs that make no dispatch engine link none of this: `detect_isa()` is a source of its own.
-
-## Examples
-
-Every algorithm has small complete programs in [examples/](examples): compile-time values, checksums of files read in
-chunks, a MODBUS frame, an IPv4 header and UDP datagram, a zlib trailer, a ZFS block, a Bloom filter, a seeded hash
-table and a custom CRC strategy that drives the CRC peripheral of an STM32.
 
 ## Contributing
 
-Build and run the tests with a CMake workflow preset:
-
 ```sh
-cmake --workflow --preset native-gcc
+cmake --workflow --preset native-gcc   # configure, build and run the tests
 ```
 
-Design rules, code style, tooling and testing are described in [doc/design](doc/design), indexed by
-[AGENTS.md](AGENTS.md).
+[AGENTS.md](AGENTS.md) is the map for contributors, human or not: code layout, commands, and the design documents in
+[doc/design](doc/design).
 
 ## License
 

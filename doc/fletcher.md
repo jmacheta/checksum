@@ -1,11 +1,7 @@
 # Fletcher checksum user guide
 
-`checksum` computes Fletcher-16, Fletcher-32 and Fletcher-64, at compile time or at run time. Everything is in one
-header, `checksum/fletcher.hpp`. Adler-32, a close relative with its own modulus, has its own guide:
-[adler32.md](adler32.md).
-
-The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, Clang ≥ 18, or MSVC (x64, ARM64). It has
-no tables, allocates no memory and has no global state.
+Fletcher-16, Fletcher-32 and Fletcher-64, at compile time or at run time. One header, `checksum/fletcher.hpp`; no
+tables. Adler-32 and ZFS fletcher4 have their own guides: [adler32.md](adler32.md), [fletcher4.md](fletcher4.md).
 
 ## 1. Quick start
 
@@ -42,36 +38,29 @@ Fletcher-N reads the message as blocks of N/2 bits and keeps two sums modulo M =
 | Fletcher-32 | 16-bit little-endian word | 65535 | `std::uint32_t` |
 | Fletcher-64 | 32-bit little-endian word | 2^32 − 1 | `std::uint64_t` |
 
-A last incomplete block is padded with zero bytes. The values match the examples of the Wikipedia article
-"Fletcher's checksum", which reads words in little-endian order.
+A last incomplete block is padded with zero bytes. The values match the Wikipedia article "Fletcher's checksum",
+which reads words little-endian.
 
 ## 3. API
 
-`Width` is 16, 32 or 64. `fletcher_update` and `fletcher_finalize` take the width from the state or the checksum
-type, so only the state and `fletcher_compute` have aliases per width. `Isa` is an instruction-set preset from
-`checksum/isa.hpp`; the default is `isa::generic`.
+`Width` is 16, 32 or 64; `fletcher_update` and `fletcher_finalize` take it from the state or checksum type.
 
 | Name | What it does |
 | --- | --- |
-| `fletcher_state<Width>` | `sum1`, `sum2` and `block_offset`, the bytes of an unfinished block already in `sum1`. A plain value: copy it, compare it, store it. The default is the empty message. |
-| `fletcher_update<Width, Isa>(state, data)` | Folds `data` into `state` and returns the new state. `Isa` selects the run-time loop; see section 5. |
-| `fletcher_update<Isa>(checksum, data)` | Folds `data` into the message whose checksum is `checksum` and returns the new checksum; `std::uint16_t`, `std::uint32_t` or `std::uint64_t` selects the width. That message must end on a whole block. |
+| `fletcher_state<Width>` | `sum1`, `sum2` and `block_offset` (bytes of an unfinished block already in `sum1`). A plain value; the default is the empty message. `value_type` is the checksum type, `sum_type` the type of one sum. |
+| `fletcher_update<Width, Isa>(state, data)` | Folds `data` into `state` and returns the new state. |
+| `fletcher_update<Isa>(checksum, data)` | Folds `data` into the message whose checksum is `checksum` and returns the new checksum; see section 4. |
 | `fletcher_finalize(state)` | The checksum, an unfinished block padded with zero bytes. |
 | `fletcher_compute<Width, Isa>(data)` | `fletcher_finalize(fletcher_update<Width, Isa>(fletcher_state<Width>{}, data))`. |
-| `fletcher16_state`, `fletcher32_state`, `fletcher64_state` | `fletcher_state<16>`, `fletcher_state<32>`, `fletcher_state<64>`. |
-| `fletcher16_compute<Isa>(data)`, `fletcher32_compute<Isa>(data)`, `fletcher64_compute<Isa>(data)` | `fletcher_compute<16, Isa>(data)`, `fletcher_compute<32, Isa>(data)`, `fletcher_compute<64, Isa>(data)`. |
+| `fletcher16_state`, `fletcher32_state`, `fletcher64_state` | Aliases of `fletcher_state<16>` and so on. |
+| `fletcher16_compute<Isa>(data)`, `fletcher32_compute<Isa>(data)`, `fletcher64_compute<Isa>(data)` | `fletcher_compute<16, Isa>(data)` and so on. |
+| `fletcher_dispatch_engine<Width>` | `compute` and `update` with the preset chosen at run time. |
 
-`fletcher_state<Width>::value_type` is the checksum type and `sum_type` the type of one sum (`std::uint8_t`,
-`std::uint16_t`, `std::uint32_t`). All functions are `constexpr` and `noexcept`. `data` is a
-`std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`, `signed char` or `char8_t`, as for
-the other algorithms. Contiguous ranges are passed on as one span and other ranges in 64-byte chunks. Arrays of `char`
-are rejected, so the `'\0'` of a string literal is never summed: pass text as `std::string_view`.
-
-Every state value is valid, so nothing has preconditions: a sum equal to M counts as 0, and `block_offset` is taken
-modulo the block size.
-
-`fletcher_dispatch_engine<Width>` chooses the preset at run time, for the running CPU by default, and offers
-`compute` and `update` as above; see [Instruction-set presets](../README.md#instruction-set-presets).
+`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
+`noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
+`signed char` or `char8_t`; arrays of `char` are rejected so a literal's `'\0'` is never summed (pass
+`std::string_view`). Every state value is valid, so nothing has preconditions: a sum equal to M counts as 0, and
+`block_offset` is taken modulo the block size.
 
 ## 4. Behavior
 
@@ -79,61 +68,47 @@ modulo the block size.
 - **Zero:** the empty message and an all-zero message give 0.
 - **Ones and zeros:** a sum never equals M, so a block of all one bits counts as a block of zeros. For Fletcher-16,
   bytes 0x00 and 0xFF give the same checksum, and neither byte of the result is ever 0xFF.
-- **Byte order:** words are read little-endian on every target, and the result is a number; the protocol decides how
-  it goes into a frame.
-
-**Continuing from a stored checksum.** `fletcher_update(value, data)` continues a message whose checksum is `value`
-and returns the new checksum. The type of `value` selects the width: `std::uint16_t` for Fletcher-16, `std::uint32_t`
-for Fletcher-32, `std::uint64_t` for Fletcher-64. Other integer types, `int` and `unsigned char` included, do not
-compile rather than pick a width, so write `std::uint32_t{0xF04FC729}` for a literal; `{}` does not compile either,
-name the state type (`fletcher32_state{}`). Fletcher-32 and Fletcher-64 continue correctly only after whole blocks,
-an even length or a multiple of 4: the checksum already counts an unfinished block as padded with zeros, so after such
-a length keep the state instead. Fletcher-16 continues after any length.
+- **Byte order:** words are read little-endian on every target; the result is a number.
+- **Continuing from a stored checksum:** `fletcher_update(value, data)` returns the new checksum; the type of `value`
+  selects the width (`std::uint16_t`, `std::uint32_t`, `std::uint64_t`). Other integer types and `{}` do not compile:
+  write `std::uint32_t{0xF04FC729}`, or name the state (`fletcher32_state{}`). Fletcher-32 and -64 continue correctly
+  only after whole blocks (a multiple of 2 or 4 bytes), since the checksum counts an unfinished block as padded; keep
+  the state otherwise. Fletcher-16 continues after any length.
 
 ## 5. CPU acceleration
 
-The portable loop adds blocks into the widest native integer and reduces modulo M only when an overflow could
-otherwise happen: on 64-bit targets after 380 million bytes for Fletcher-16, on 32-bit targets after 5 802 bytes. It
-adds four blocks per step, so `sum1` has one addition per four blocks in its dependency chain. On 32-bit targets
-Fletcher-32 sums 32-bit words, two blocks at a time; on AArch64 it sums its 16-bit blocks in 32-bit sums, reduced every
-360 blocks.
-
-From a minimum size, a kernel sums whole vectors of blocks. It returns the sum of the blocks and their weighted sum,
-and `sum2` gains both at the end of each chunk, 2 KiB to 256 KiB depending on the kernel.
+The portable loop adds four blocks per step into the widest native integer and reduces only when a sum could
+overflow. From a minimum size per call, a kernel sums whole vectors of blocks. Presets are explained in
+[Instruction-set presets](../README.md#instruction-set-presets).
 
 | Preset | Fletcher-16 | Fletcher-32 | Fletcher-64 |
 | --- | --- | --- | --- |
-| `isa::x86_avxvnni` | `vpdpbusd`, 128 bytes per iteration, from 64 B | as AVX2 | as AVX2 |
+| `isa::x86_avxvnni` | `vpdpbusd`, from 64 B | as AVX2 | as AVX2 |
 | `isa::x86_avx2`, `x86_vpclmul` | 32-byte vectors, from 64 B | from 128 B | from 384 B |
-| `isa::generic`, `x86_pclmul` on x86-64 (SSE2 baseline; SSSE3 weighting from `x86_pclmul`) | 16-byte vectors, from 64 B | from 128 B | portable loop |
-| every preset of little-endian AArch64 with GCC or Clang, `isa::generic` included (NEON is always there) | NEON, from 64 B; 64 bytes per iteration from 320 B | from 128 B | from 256 B |
+| `isa::generic`, `x86_pclmul` on x86-64 | 16-byte vectors, from 64 B | from 128 B | portable loop |
+| every preset of little-endian AArch64 with GCC or Clang, `isa::generic` included | NEON from 64 B; 64 bytes per iteration from 320 B | from 128 B | from 256 B |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 64 B | from 128 B | from 256 B |
-| `isa::thumb2_dsp` on little-endian 32-bit Arm, any profile (for Cortex-M4/M7/M33; slower than the portable loop on a Cortex-A72) | `usada8` + `smlad`, from 64 B | portable loop | portable loop |
-| everything else: `isa::thumb2`, `isa::riscv_zbc`, `isa::riscv_v`, big-endian targets, MSVC ARM64 | portable loop | portable loop | portable loop |
+| `isa::thumb2_dsp` on little-endian 32-bit Arm (for Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B | portable loop | portable loop |
+| everything else: `isa::thumb2`, `riscv_zbc`, `riscv_v`, big-endian targets, MSVC ARM64 | portable loop | portable loop | portable loop |
 
-`fletcher32_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 kernel; how presets work and what to check before
-calling one is in [Instruction-set presets](../README.md#instruction-set-presets). The DSP kernel first sums single
-bytes up to a 4-byte aligned address, so the start address hardly matters. Adler-32 uses the same byte kernels. The
-measurements behind each choice are in [design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
+Adler-32 uses the same byte kernels. Decisions per preset:
+[design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
 
 ## 6. Performance guidelines
 
-Measured figures are in [performance.md](performance.md#fletcher-16--32-and--64).
+Measured figures: [performance.md](performance.md#fletcher-16--32-and--64).
 
-- **Kernels start at a minimum size** of one `fletcher_update` call (section 5): 64 B for Fletcher-16, 128 B for
-  Fletcher-32, 256-384 B for Fletcher-64. Pass data in chunks of at least that size, and preferably a few KiB.
-- **On x86-64, use `isa::x86_avx2`** on CPUs with AVX2. The `isa::generic` and `x86_pclmul` presets have no
-  Fletcher-64 kernel, and AVX2 is 2.4× faster than SSE2 for Fletcher-16 and Fletcher-32 at 4 KiB.
-- **On Cortex-M, wider is faster.** Fletcher-64 runs 44 MB/s and Fletcher-32 38 MB/s at 4 KiB on an 80 MHz
-  Cortex-M4, against 30 MB/s for Fletcher-16 with its DSP kernel. If the protocol lets you choose, choose the wider
-  one.
-- **On Cortex-M, align buffers for Fletcher-32 and Fletcher-64:** their word loads are 11-22 % slower from an odd
-  address. Fletcher-16 does not care.
-- **Use a kernel preset with Clang:** its portable loop on x86-64 is 2.1-2.3× slower than GCC's.
+- **Pass data in chunks of a few KiB**, at least the kernel's minimum size (64-384 B) per `fletcher_update` call.
+- **On x86-64 use `isa::x86_avx2`** where the CPU has it: 2.4× faster than the SSE2 kernel of `isa::generic` for
+  Fletcher-16 and -32 at 4 KiB, and the only Fletcher-64 kernel. With Clang a kernel matters more: its portable loop is
+  2.1-2.3× slower than GCC's.
+- **On Cortex-M wider is faster:** at 4 KiB on an 80 MHz Cortex-M4 Fletcher-64 runs 44 MB/s and Fletcher-32 38 MB/s,
+  against 30 MB/s for Fletcher-16 with its DSP kernel. Align buffers for Fletcher-32 and -64: from an odd address they
+  are 11-22 % slower.
 
 ## 7. Limitations
 
-- **Weaker error detection than a CRC:** a Fletcher checksum cannot tell a block of zeros from a block of ones. Use a
-  CRC where errors must be detected reliably.
-- **Little-endian words only:** a protocol that reads Fletcher-32 or Fletcher-64 blocks big-endian needs its bytes
-  swapped first.
+- **Weaker error detection than a CRC:** a block of zeros and a block of ones look the same. Use a CRC where errors
+  must be detected reliably.
+- **Little-endian words only:** a protocol that reads Fletcher-32 or -64 blocks big-endian needs its bytes swapped
+  first.

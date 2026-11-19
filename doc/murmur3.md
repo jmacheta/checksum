@@ -1,11 +1,7 @@
 # MurmurHash3 user guide
 
-`checksum` computes the non-cryptographic hashes MurmurHash3_x86_32 and MurmurHash3_x64_128 with a 32-bit seed, at
-compile time or at run time. The values are those of the reference implementation (`MurmurHash3.cpp` of SMHasher) on
-every target. Everything is in one header, `checksum/murmur3.hpp`.
-
-The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, Clang ≥ 18, or MSVC (x64, ARM64). It has
-no tables, allocates no memory and has no global state.
+The non-cryptographic hashes MurmurHash3_x86_32 and MurmurHash3_x64_128 with a 32-bit seed, at compile time or at run
+time. One header, `checksum/murmur3.hpp`. For new designs prefer [xxHash](xxhash.md).
 
 ## 1. Quick start
 
@@ -31,76 +27,60 @@ static_assert(checksum::murmur3_32_compute("Hello, world!"sv, 1234) == 0xFAF6CDB
 `examples/murmur3` has complete programs: command dispatch on hashes computed at compile time, a Bloom filter and
 deduplication of records by their 128-bit hash.
 
-## 2. API
+## 2. Definition
 
-`Width` is 32 for MurmurHash3_x86_32 and 128 for MurmurHash3_x64_128. `Isa` is an instruction-set preset from
-`checksum/isa.hpp`; the default is `isa::generic`.
+The hashes of the reference implementation, `MurmurHash3.cpp` of SMHasher: the values are equal on every target.
+MurmurHash3_x86_128 is not provided.
+
+## 3. API
+
+`Width` is 32 for MurmurHash3_x86_32 and 128 for MurmurHash3_x64_128.
 
 | Name | What it does |
 | --- | --- |
-| `murmur3_state<Width>` | The hash lanes, the number of bytes folded (`length`), the `seed` and the bytes of an unfinished block (`buffer`). A plain value: copy it, store it. The default is the empty message with seed 0; `murmur3_state<Width>{.seed = seed}` starts one with another seed. |
-| `murmur3_update<Width, Isa>(state, data)` | Folds `data` into `state` and returns the new state. `Isa` selects the run-time loop; see section 4. |
-| `murmur3_finalize(state)` | The hash of the message folded into `state`; the state is unchanged. |
+| `murmur3_state<Width>` | The lanes, the byte count (`length`), the `seed` and an unfinished block (`buffer`). A plain value; the default is the empty message with seed 0, `murmur3_state<Width>{.seed = seed}` starts another. |
+| `murmur3_update<Width, Isa>(state, data)` | Folds `data` into `state` and returns the new state. |
+| `murmur3_finalize(state)` | The hash of the message folded into `state`. |
 | `murmur3_compute<Width, Isa>(data, seed = 0)` | `murmur3_finalize(murmur3_update<Width, Isa>(murmur3_state<Width>{.seed = seed}, data))`. |
-| `murmur3_32_state`, `murmur3_128_state` | `murmur3_state<32>` and `murmur3_state<128>`. |
-| `murmur3_32_compute<Isa>(data, seed = 0)`, `murmur3_128_compute<Isa>(data, seed = 0)` | `murmur3_compute<32, Isa>(data, seed)` and `murmur3_compute<128, Isa>(data, seed)`. |
+| `murmur3_32_state`, `murmur3_128_state`, `murmur3_32_compute<Isa>`, `murmur3_128_compute<Isa>` | Aliases for Width 32 and 128. |
+| `murmur3_dispatch_engine<Width>` | `compute` and `update` with the preset chosen at run time. |
 
-`murmur3_state<Width>::value_type` is the hash: `std::uint32_t` for Width 32, and `hash128` for Width 128, the same
-type as XXH3-128 returns. Its `low` half is h1 and its `high` half h2, so it is the 128-bit number the reference
-implementation writes out least significant byte first. All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any range of
-`std::byte`, `char`, `unsigned char`, `signed char` or `char8_t`, as for the other algorithms. At run time
-`murmur3_compute` hashes contiguous ranges directly, without the state's buffer; other ranges are folded in 64-byte
-chunks. Arrays of `char` are rejected, so the `'\0'` of a string literal is never hashed: pass text as
-`std::string_view`.
+`value_type` is `std::uint32_t` for Width 32 and `hash128` (shared with XXH3-128) for Width 128, with h1 in `low` and
+h2 in `high`. `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr`
+and `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
+`signed char` or `char8_t`; arrays of `char` are rejected so a literal's `'\0'` is never hashed (pass
+`std::string_view`). `compute` hashes contiguous ranges directly. Every state value is valid, so nothing has
+preconditions.
 
-Every state value is valid, so nothing has preconditions. Before the first whole block (4 or 16 bytes), the lanes and
-the unused bytes of the buffer are ignored.
-
-`murmur3_dispatch_engine<Width>` chooses the preset at run time, for the running CPU by default, and offers
-`compute` and `update` as above; see [Instruction-set presets](../README.md#instruction-set-presets).
-
-## 3. Behavior
+## 4. Behavior
 
 - **Splits:** a message may be split anywhere; the result is the same as for one call.
-- **Seed:** different seeds give unrelated hashes; the empty message with seed 0 hashes to 0 (and to {0, 0} for
-  Width 128).
-- **Byte order:** blocks are read little-endian on every target, so a big-endian target gives the same hashes. The
-  result is a number; serializing the 128-bit hash as the reference does means writing `low`, then `high`, each least
-  significant byte first.
-- **Long messages:** MurmurHash3_x86_32 mixes in the length modulo 2^32, MurmurHash3_x64_128 the 64-bit length. The
-  reference implementation takes the length as an `int`, so it cannot hash messages of 2 GiB or more.
+- **Seed:** different seeds give unrelated hashes; the empty message with seed 0 hashes to 0 (`{0, 0}` for Width 128).
+- **Byte order:** blocks are read little-endian on every target. To serialize the 128-bit hash as the reference does,
+  write `low`, then `high`, each least significant byte first.
+- **Long messages:** x86_32 mixes in the length modulo 2^32, x64_128 the 64-bit length. The reference takes an `int`
+  length, so it cannot hash 2 GiB or more.
 
-## 4. CPU acceleration
+## 5. CPU acceleration
 
-MurmurHash3 has no kernel, on any target. The `isa` preset
-([Instruction-set presets](../README.md#instruction-set-presets)) compiles the portable block loop for its instruction
-set. Every block updates the hash lanes through a rotation, a multiplication and an addition of their previous values,
-and in MurmurHash3_x64_128 the second lane also takes the first lane of the same block. Blocks cannot be processed in
-parallel, so vector instructions have nothing to work on. The block loop is compiled once per width and preset in
-`src/murmur3/`; MurmurHash3_x64_128 inputs under 256 bytes fold inline instead, which saves the call, and the one-shot
-MurmurHash3_x86_32 runs a function there that keeps its lane in a register. On 32-bit Arm with any preset but
-`thumb2_neon` and `thumb2_crc`, `isa::generic` included (for Cortex-M and small in-order A-profile cores),
-MurmurHash3_x86_32 takes four blocks per iteration: their multiplications do not depend on the lane, so an in-order core
-runs them while the earlier blocks update it. That made it 1.66× faster at 4 KiB on a Cortex-M33 and 1.20× on a
-Cortex-M4; out-of-order cores already overlap the blocks.
+MurmurHash3 has no kernel on any target: every block updates the lanes from their previous values, one serial chain.
+The preset compiles the portable block loop for its instruction set
+([Instruction-set presets](../README.md#instruction-set-presets)). On 32-bit Arm with any preset but `thumb2_neon` and
+`thumb2_crc`, x86_32 takes four blocks per iteration so in-order cores overlap the multiplications. Details:
+[design/acceleration.md](design/acceleration.md#murmurhash3).
 
-MurmurHash3_x64_128 needs 64-bit multiplications, which 32-bit targets build from several 32-bit ones. On 32-bit
-targets MurmurHash3_x86_32 is the faster of the two; on 64-bit targets MurmurHash3_x64_128 is at least as fast at 20
-bytes and faster from 64 bytes.
+## 6. Performance guidelines
 
-## 5. Performance guidelines
+Measured figures: [performance.md](performance.md#murmurhash3).
 
-Measured figures are in [performance.md](performance.md#murmurhash3).
+- **Pick the variant for the CPU:** x64_128 on 64-bit CPUs (at least as fast at 20 bytes, faster from 64); x86_32 on
+  32-bit ones, where x64_128 builds 64-bit multiplications from 32-bit ones.
+- **For new designs prefer xxHash** unless you need MurmurHash3 values: XXH3 is about 5× faster on x86-64 at 1 MiB,
+  and XXH32 1.6× faster than x86_32 on a Cortex-M4.
 
-- **Pick the variant for the CPU:** MurmurHash3_x64_128 on 64-bit CPUs, where it is at least as fast at 20 bytes and
-  faster from 64 bytes; MurmurHash3_x86_32 on 32-bit ones, where x64_128 builds its 64-bit multiplications from 32-bit
-  ones.
-- **For new designs, prefer xxHash** ([xxhash.md](xxhash.md)) unless you need MurmurHash3 values: XXH3 is about
-  5× faster on x86-64 at 1 MiB, and XXH32 1.6× faster than MurmurHash3_x86_32 on a Cortex-M4.
-
-## 6. Limitations
+## 7. Limitations
 
 - **Not cryptographic:** MurmurHash3 does not resist inputs crafted to collide, even with a secret seed. Do not use it
   for message authentication or to protect hash tables from hostile keys.
-- **Not an error check:** unlike a CRC, it guarantees the detection of no class of errors, burst errors included.
+- **Not an error check:** unlike a CRC, it guarantees the detection of no class of errors.
 - **Two variants only:** MurmurHash3_x86_128 is not provided.

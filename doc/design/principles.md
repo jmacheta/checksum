@@ -1,7 +1,6 @@
 # Project principles
 
-What every checksum algorithm in this repository has to satisfy. CRC is the first; the others follow the same
-rules.
+What every algorithm in this repository has to satisfy.
 
 ## Goals
 
@@ -35,5 +34,8 @@ rules.
 
 ## Out of scope
 
-A C API, and features users can build from the public API (frame verification, residue checks). Run-time CPU
-detection is an optional layer on top of the compile-time presets: programs that do not call it link none of it.
+- Cryptographic hashes, message authentication and keyed hashes meant to resist attackers (SHA, SipHash): the library
+  is for non-cryptographic checksums and hashes only.
+- A C API, and features users can build from the public API (frame verification, residue checks).
+- Mandatory run-time CPU detection: it is an optional layer on top of the compile-time presets, and programs that make
+  no dispatch engine link none of it.
