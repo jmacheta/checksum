@@ -44,6 +44,16 @@ in [performance.md](../performance.md) only.
   checksum's `ldm` + `adcs` kernel also runs on big-endian 32-bit Arm).
 - **No call below the threshold.** Where a kernel exists, the kernel and the loop after it sit in a separate
   non-inlined function, so short inputs run the inline portable loop without a call or a stack frame.
+- **One shared AArch64 test.** `CHECKSUM_ARM64` from `arm/target.hpp` (`__aarch64__` with GCC/Clang, `_M_ARM64` with
+  MSVC and clang-cl), so every compiler builds the same AArch64 kernels. MSVC distinguishes no NEON vector types (all
+  are `__n128`): no overloads on them.
+- **clang-cl target pragma.** clang-cl builds Clang's presets and kernels with Clang's target pragma; `detect_isa()`
+  uses CPUID through `<intrin.h>` under `_M_X64` (MSVC and clang-cl), so clang-cl needs no compiler-rt.
+- **No SIMD vectors in `std::array`.** Do not use SIMD vectors in `std::array` (or another MS STL template): the MS STL
+  declares them under `#pragma pack(8)`, which clang-cl applies to vector arguments, so they are under-aligned; use
+  `isa_detail::vector_array`.
+- **AArch64 thresholds.** The thresholds of the AArch64 kernels were measured with GCC and Clang (Cortex-A72); the MSVC
+  ARM64 builds use them unmeasured.
 
 ## Adding a preset
 
