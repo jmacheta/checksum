@@ -19,6 +19,11 @@ permissions:
 env:
   SDE_URL: https://downloadmirror.intel.com/924984/sde-external-10.13.1-2026-07-28-lin.tar.xz
   SDE_SHA256: 94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50
+  # QEMU 10.2.1 user mode for the RISC-V jobs: Ubuntu 26.04's qemu-user (statically linked), pinned by sha256; the release
+  # pocket's file stays in the archive while 26.04 is supported. Ubuntu 24.04's QEMU 8.2 has no Zbc key in riscv_hwprobe
+  # (QEMU 9.0 added it, commit a3432cf2), so detect_isa() would not report riscv_zbc there.
+  QEMU_DEB_URL: https://archive.ubuntu.com/ubuntu/pool/universe/q/qemu/qemu-user_10.2.1+ds-1ubuntu3_amd64.deb
+  QEMU_DEB_SHA256: e6bdaac070232a44b8657cad84ac0853d84b7167b55af82370af040291f55bd8
 
 jobs:
   build-and-test:
@@ -37,8 +42,6 @@ jobs:
           # earlier rungs of its line), so that their tests fail instead of skipping. GitHub's x86-64 runners have AVX2, not always
           # VPCLMULQDQ or AVX-VNNI: sde runs the unit tests again in Intel SDE with that CPU model, which has both.
           # vlen_checks: RVV vector lengths besides QEMU's default 128 bits, for the RVV, detection and dispatch tests.
-          # assume: CHECKSUM_ASSUME_ISA, presets the emulator runs that detect_isa() cannot see: Ubuntu 24.04's QEMU 8.2 has no
-          # Zbc key in riscv_hwprobe, so its tests run on the assumption and the detection test leaves Zbc out.
           - { preset: native-gcc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", emulator: qemu-x86_64, cpu_checks: "Nehalem:generic Westmere:x86_pclmul Haswell:x86_avx2", required: x86_avx2, sde: -adl }
           - { preset: native-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14", required: x86_avx2, sde: -adl }
           - { preset: native-clang-libcxx, cc: clang-18, cxx: clang++-18, packages: "clang-18 libc++-18-dev libc++abi-18-dev", required: x86_avx2 }
@@ -56,7 +59,7 @@ jobs:
           # Clang on 32-bit Arm: the thumb2 presets in Thumb-2 builds with the build's own NEON ("thumb,crc" adds CRC in cross-arm-clang).
           - { preset: cross-arm-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 lld-18 g++-14-arm-linux-gnueabihf qemu-user", emulator: qemu-arm, cpu_checks: "cortex-a9:thumb2_neon", required: thumb2_crc }
           - { preset: cross-arm-crc32-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 lld-18 g++-14-arm-linux-gnueabihf qemu-user", required: thumb2_crc }
-          - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu, emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v", required: "riscv_zbc,riscv_v", vlen_checks: "256 512", assume: riscv_zbc }
+          - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu", cross: riscv64-linux-gnu, emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v", required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
           # Big-endian AArch64: Ubuntu has no cross compiler for it; the Arm GNU Toolchain comes from setup-gcc-toolchain (cached).
           - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1, required: aarch64_pmull }
           # Newest compilers, so that a new release that breaks the build shows up here: GCC (xPack) and Clang (apt.llvm.org)
@@ -64,7 +67,7 @@ jobs:
           - { preset: native-gcc, compiler: GCC latest, cc: gcc, cxx: g++, packages: "", toolchain: x86_64-gcc, vendor: xpack, required: x86_avx2 }
           - { preset: native-clang, compiler: Clang latest, cc: clang-latest, cxx: clang++-latest, packages: "g++-14", llvm_latest: true, required: x86_avx2 }
           - { preset: cross-aarch64be, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, required: aarch64_pmull }
-          - { preset: cross-riscv64, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: riscv64-buildroot-linux-gnu, vendor: bootlin, cross: riscv64-linux-gnu, emulator: qemu-riscv64, required: "riscv_zbc,riscv_v", vlen_checks: "256 512", assume: riscv_zbc }
+          - { preset: cross-riscv64, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14", toolchain: riscv64-buildroot-linux-gnu, vendor: bootlin, cross: riscv64-linux-gnu, emulator: qemu-riscv64, required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -118,6 +121,17 @@ jobs:
           fi
           echo "$dir" >> "$GITHUB_PATH"
 
+      # The presets and the steps below run qemu-riscv64 by name, so it comes first on PATH.
+      - name: Install QEMU 10.2 user mode
+        if: matrix.emulator == 'qemu-riscv64'
+        timeout-minutes: 10
+        run: |
+          curl -fsSL --retry 3 --connect-timeout 30 --max-time 300 -o "$RUNNER_TEMP/qemu-user.deb" "$QEMU_DEB_URL"
+          echo "$QEMU_DEB_SHA256  $RUNNER_TEMP/qemu-user.deb" | sha256sum --check --strict
+          dpkg -x "$RUNNER_TEMP/qemu-user.deb" "$RUNNER_TEMP/qemu"
+          "$RUNNER_TEMP/qemu/usr/bin/qemu-riscv64" --version
+          echo "$RUNNER_TEMP/qemu/usr/bin" >> "$GITHUB_PATH"
+
       - name: Cache CPM packages
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
         with:
@@ -127,7 +141,6 @@ jobs:
       - name: Configure, build and test
         env:
           CHECKSUM_REQUIRED_ISA: ${{ matrix.required }}
-          CHECKSUM_ASSUME_ISA: ${{ matrix.assume }}
         run: cmake --workflow --preset ${{ matrix.preset }}
 
       - name: Detection on CPUs without the extensions
@@ -146,7 +159,6 @@ jobs:
         env:
           CHECKSUM_EXPECTED_ISA: riscv_zbc,riscv_v
           CHECKSUM_REQUIRED_ISA: riscv_zbc,riscv_v
-          CHECKSUM_ASSUME_ISA: ${{ matrix.assume }}
         run: |
           for vlen in ${{ matrix.vlen_checks }}; do
             echo "-cpu max,vlen=$vlen"

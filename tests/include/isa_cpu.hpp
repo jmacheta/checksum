@@ -66,6 +66,12 @@ constexpr std::string_view name(checksum::isa preset) noexcept {
   return {};
 }
 
+// Whether the running CPU executes the code of preset: the library's detect_isa(), queried once.
+inline bool cpu_runs(checksum::isa preset) {
+  static checksum::isa_set const cpu = checksum::detect_isa();
+  return cpu.contains(preset);
+}
+
 // The presets of a comma-separated list of preset names, e.g. "aarch64_pmull,riscv_v", each with the earlier presets of its
 // line; none if a name is unknown.
 inline std::optional<checksum::isa_set> named_presets(std::string_view names) {
@@ -114,25 +120,6 @@ inline std::optional<checksum::isa_set> required_presets() {
 inline bool required(checksum::isa preset) {
   static std::optional<checksum::isa_set> const presets = required_presets();
   return !presets || presets->contains(preset);
-}
-
-// The presets that CHECKSUM_ASSUME_ISA names: what the environment runs although detect_isa() cannot see it there (QEMU 8.2's
-// riscv_hwprobe has no Zbc key). generic alone if unset; none if it names an unknown preset.
-inline std::optional<checksum::isa_set> assumed_presets() {
-  std::optional<std::string> const names = environment("CHECKSUM_ASSUME_ISA");
-  return names ? named_presets(*names) : checksum::isa_set{};
-}
-
-// Whether CHECKSUM_ASSUME_ISA names preset.
-inline bool assumed(checksum::isa preset) {
-  static std::optional<checksum::isa_set> const presets = assumed_presets();
-  return presets && presets->contains(preset);
-}
-
-// Whether the running CPU executes the code of preset: the library's detect_isa(), queried once, or CHECKSUM_ASSUME_ISA.
-inline bool cpu_runs(checksum::isa preset) {
-  static checksum::isa_set const cpu = checksum::detect_isa();
-  return cpu.contains(preset) || assumed(preset);
 }
 
 // Whether the CPU runs preset, for benchmarks that register only what runs; ends the program if it cannot and

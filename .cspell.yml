@@ -91,6 +91,7 @@ words:
 - dect
 - dpbusd
 - DPDK
+- dpkg
 - dtcm
 - eabi
 - elen
@@ -216,7 +217,6 @@ words:
 - semihosting
 - semiregular
 - setr
-- SIGILL
 - slli
 - smbus
 - smhasher

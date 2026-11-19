@@ -67,7 +67,6 @@ TEST(isa_test_support, EveryBuiltPresetHasName) {
 TEST(isa_test_support, RequiredPresetsRun) {
   std::optional<isa_set> const required = isa_cpu::required_presets();
   ASSERT_TRUE(required) << "CHECKSUM_REQUIRED_ISA names an unknown preset";
-  ASSERT_TRUE(isa_cpu::assumed_presets()) << "CHECKSUM_ASSUME_ISA names an unknown preset";
   for(unsigned value = 1; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
     auto const preset = static_cast<isa>(value);
     if(required->contains(preset)) {
@@ -161,10 +160,6 @@ TEST(detect_isa, MatchesTheCpu) {
   }
   isa_set const detected = checksum::detect_isa();
   for(isa const preset : checksum::isa_detail::built_presets) {
-    // CHECKSUM_ASSUME_ISA names presets this environment runs without detect_isa() seeing them.
-    if(isa_cpu::assumed(preset)) {
-      continue;
-    }
     // Kernels before 6.8 and older QEMU have no Zbc key in riscv_hwprobe, so detection may miss what /proc/cpuinfo lists.
     if(!names && preset == isa::riscv_zbc && !detected.contains(preset)) {
       continue;
