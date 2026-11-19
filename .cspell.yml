@@ -44,8 +44,10 @@ words:
 - asan
 - autosar
 - avxvnni
+- bootlin
 - broadcastsi
 - bugprone
+- buildroot
 - buypass
 - byteswap
 - cassert
@@ -265,6 +267,7 @@ words:
 - xorout
 - xors
 - xorshift
+- xpack
 - xxhash
 - zcommon
 - zextsi

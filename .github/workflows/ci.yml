@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build-and-test:
-    name: build-and-test (${{ matrix.preset }}, ${{ matrix.cxx }}${{ matrix.runner && format(', {0}', matrix.runner) || '' }})
+    name: build-and-test (${{ matrix.preset }}, ${{ matrix.compiler || matrix.cxx }}${{ matrix.runner && format(', {0}', matrix.runner) || '' }})
     runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
@@ -40,7 +40,13 @@ jobs:
           - { preset: cross-arm-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf }
           - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu }
           # Big-endian AArch64: Ubuntu has no cross compiler for it; the Arm GNU Toolchain comes from setup-gcc-toolchain (cached).
-          - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", arm_toolchain: aarch64_be-none-linux-gnu }
+          - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1 }
+          # Newest compilers, so that a new release that breaks the build shows up here: GCC (xPack) and Clang (apt.llvm.org)
+          # natively, the newest Arm big-endian AArch64 and Bootlin RISC-V cross toolchains.
+          - { preset: native-gcc, compiler: GCC latest, cc: gcc, cxx: g++, packages: "", toolchain: x86_64-gcc, vendor: xpack }
+          - { preset: native-clang, compiler: Clang latest, cc: clang-latest, cxx: clang++-latest, packages: "g++-14", llvm_latest: true }
+          - { preset: cross-aarch64be, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm }
+          - { preset: cross-riscv64, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: riscv64-buildroot-linux-gnu, vendor: bootlin, cross: riscv64-linux-gnu }
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -51,26 +57,48 @@ jobs:
           apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
           sudo apt-get $apt_opts update && sudo apt-get $apt_opts install -y ninja-build ${{ matrix.packages }}
 
-      # The presets name the compilers gcc/g++, clang/clang++, c++ (native-asan) and <triplet>-gcc/g++ (the cross presets of
-      # cmake/emulator_presets.json); point those names at the versions under test, ahead of /usr/bin in PATH.
-      - name: Select compiler versions
-        run: |
-          mkdir -p "$RUNNER_TEMP/compilers"
-          for name in cc gcc clang; do ln -sf "$(command -v ${{ matrix.cc }})" "$RUNNER_TEMP/compilers/$name"; done
-          for name in c++ g++ clang++; do ln -sf "$(command -v ${{ matrix.cxx }})" "$RUNNER_TEMP/compilers/$name"; done
-          if [ -n "${{ matrix.cross }}" ]; then
-            for name in gcc g++; do ln -sf "$(command -v ${{ matrix.cross }}-$name-14)" "$RUNNER_TEMP/compilers/${{ matrix.cross }}-$name"; done
-          fi
-          echo "$RUNNER_TEMP/compilers" >> "$GITHUB_PATH"
-
-      - name: Install the Arm GNU Toolchain
-        if: matrix.arm_toolchain
+      # Cross toolchains without an Ubuntu package and the newest compilers.
+      - name: Install the GCC toolchain
+        id: toolchain
+        if: matrix.toolchain
         timeout-minutes: 10
         uses: jmacheta/setup-gcc-toolchain@902d3659aab2b37c2a76daeb17eea51c859a081a # v2.2.0
         with:
-          toolchain: ${{ matrix.arm_toolchain }}
-          vendor: arm
-          version: 14.3.rel1
+          toolchain: ${{ matrix.toolchain }}
+          vendor: ${{ matrix.vendor }}
+          version: ${{ matrix.version || 'latest' }}
+
+      # The current stable release of apt.llvm.org, as clang-latest and clang++-latest.
+      - name: Install the newest Clang
+        if: matrix.llvm_latest
+        timeout-minutes: 15
+        run: |
+          curl -fsSL --retry 3 --connect-timeout 30 --max-time 120 -o "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+          sudo bash "$RUNNER_TEMP/llvm.sh"
+          version=$(ls /usr/bin/clang-[0-9]* | sed 's|.*/clang-||' | sort -n | tail -1)
+          sudo ln -sf "/usr/bin/clang-$version" /usr/local/bin/clang-latest
+          sudo ln -sf "/usr/bin/clang++-$version" /usr/local/bin/clang++-latest
+          clang++-latest --version
+
+      # The presets name the compilers gcc/g++, clang/clang++, c++ (native-asan) and <triplet>-gcc/g++ (the cross presets of
+      # cmake/emulator_presets.json); point those names at the versions under test, ahead of /usr/bin in PATH. A toolchain
+      # of setup-gcc-toolchain gets wrapper scripts, so that its driver runs from its own directory.
+      - name: Select compiler versions
+        env:
+          PREFIX: ${{ steps.toolchain.outputs.prefix }}
+        run: |
+          dir="$RUNNER_TEMP/compilers"
+          mkdir -p "$dir"
+          link() { if [ -n "${{ matrix.toolchain }}" ]; then printf '#!/bin/sh\nexec "%s" "$@"\n' "$(command -v "$1")" > "$dir/$2"; chmod +x "$dir/$2"; else ln -sf "$(command -v "$1")" "$dir/$2"; fi; }
+          for name in cc gcc clang; do link ${{ matrix.cc }} $name; done
+          for name in c++ g++ clang++; do link ${{ matrix.cxx }} $name; done
+          if [ -n "${{ matrix.cross }}" ]; then
+            # Ubuntu's <triplet>-gcc-14, or the driver of the toolchain under its own prefix.
+            for name in gcc g++; do
+              if [ -n "$PREFIX" ]; then link "$PREFIX$name" "${{ matrix.cross }}-$name"; else link "${{ matrix.cross }}-$name-14" "${{ matrix.cross }}-$name"; fi
+            done
+          fi
+          echo "$dir" >> "$GITHUB_PATH"
 
       - name: Cache CPM packages
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0

@@ -51,5 +51,8 @@ Apply as part of every edit:
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`): the workflows of the native presets and the cross presets on Ubuntu, and
-`windows-msvc` on Windows; they build and run the correctness tests only, not the benchmarks.
+`windows-msvc` on Windows; they build and run the correctness tests only, not the benchmarks. Most jobs use the minimum
+supported compilers (GCC 14, Clang 18); the jobs named "latest" use the newest GCC (xPack), Clang (apt.llvm.org) and the
+Arm and Bootlin cross toolchains of [setup-gcc-toolchain](https://github.com/jmacheta/setup-gcc-toolchain), so a new
+compiler release can fail them without a change here.
 Formatting and spelling are checked locally, not in CI.
