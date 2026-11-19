@@ -70,6 +70,9 @@ template <isa Isa> struct pclmul_kernel {
   // Two blocks: byte 0 lowest if reflected, each block byte-reversed otherwise. Only where wide.
   template <bool Reflected> static __m256i load_two(std::span<std::byte const> data) noexcept;
 
+  // Two adjacent constant pairs, unaligned. A member, not a lambda: GCC compiles lambdas without the preset's AVX target.
+  static __m256i two_pairs(folding_pair const &longer) noexcept;
+
   // fold() of two blocks with the constants of each lane.
   static __m256i fold_two(__m256i accumulators, __m256i constants, __m256i next) noexcept;
 
@@ -228,6 +231,11 @@ CHECKSUM_ALWAYS_INLINE inline __m256i pclmul_kernel<Isa>::load_two(std::span<std
   }
 }
 
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline __m256i pclmul_kernel<Isa>::two_pairs(folding_pair const &longer) noexcept {
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned load of two adjacent constant pairs.
+  return _mm256_loadu_si256(reinterpret_cast<__m256i const *>(longer.data()));
+}
+
 template <isa Isa>
 CHECKSUM_ALWAYS_INLINE inline __m256i pclmul_kernel<Isa>::fold_two(__m256i accumulators, __m256i constants, __m256i next) noexcept {
   return _mm256_xor_si256(
@@ -286,13 +294,9 @@ CHECKSUM_ALWAYS_INLINE inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::fol
   std::size_t consumed = 0;
   std::array<__m256i, 4> const pairs = fold_wide_blocks<Reflected>(constants, remainder, data, consumed);
   // Blocks 0..5 fold onto block 7 with the constants of their own distances, in parallel; block 6 folds over one.
-  auto const distances = [](folding_pair const &longer) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned load of two adjacent constant pairs.
-    return _mm256_loadu_si256(reinterpret_cast<__m256i const *>(longer.data()));
-  };
   __m256i const block_7 = _mm256_blend_epi32(pairs[3], _mm256_setzero_si256(), 0x0F);
-  __m256i const folded = fold_two(pairs[0], distances(constants.by_seven),
-                                  fold_two(pairs[1], distances(constants.by_five), fold_two(pairs[2], distances(constants.by_three), block_7)));
+  __m256i const folded = fold_two(pairs[0], two_pairs(constants.by_seven),
+                                  fold_two(pairs[1], two_pairs(constants.by_five), fold_two(pairs[2], two_pairs(constants.by_three), block_7)));
   vector const accumulator = fold(_mm256_castsi256_si128(pairs[3]), pair(constants.by_one),
                                   _mm_xor_si128(_mm256_castsi256_si128(folded), _mm256_extracti128_si256(folded, 1)));
   if(consumed != data.size()) [[unlikely]] {

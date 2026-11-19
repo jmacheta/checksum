@@ -223,6 +223,7 @@ template <isa Isa> chunk_sums kernel<32, Isa>::sum(std::byte const *data, std::s
 
 #include <arm_acle.h>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -234,7 +235,8 @@ namespace checksum::fletcher_detail {
 template <isa Isa> std::uint32_t load_word(std::byte const *data) noexcept;
 
 template <isa Isa> struct kernel<8, Isa> {
-  static constexpr bool available = isa_detail::includes(Isa, isa::thumb2_dsp);
+  // The weights pick bytes by their position in a little-endian word.
+  static constexpr bool available = std::endian::native == std::endian::little && isa_detail::includes(Isa, isa::thumb2_dsp);
   static constexpr std::size_t block_size = 8;
   // The weighted sum of n bytes, at most 255 * n(n + 1) / 2, stays within 32 bits.
   static constexpr std::size_t max_blocks = 700;

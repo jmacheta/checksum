@@ -2,12 +2,12 @@
 #define CHECKSUM_PRIVATE_ARM_INTERNET_HPP
 
 // Arm kernels of the Internet checksum: NEON pairwise add-accumulate on little-endian AArch64 for every preset and on
-// little-endian 32-bit Arm from thumb2_neon on, else an ldm + adcs chain on 32-bit Arm from thumb2 on. Included only by
-// internet_arch.hpp.
+// little-endian 32-bit Arm from thumb2_neon on, else an ldm + adcs chain on 32-bit Arm from thumb2 on. The thumb2_neon and
+// thumb2_crc sources define CHECKSUM_PRESET_ARM_NEON to enable the NEON section. Included only by internet_arch.hpp.
 
 #include <checksum/isa.hpp>
 
-#if defined(__ARM_NEON)
+#if defined(__aarch64__) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
 #include <arm_neon.h>
 #endif
 
@@ -53,7 +53,7 @@ template <isa Isa> block_total ldm_sum(std::span<std::byte const> data) noexcept
 // A byte at an even offset: the first byte of a native 16-bit word.
 template <isa Isa> std::uint64_t first_byte_value(std::byte value) noexcept;
 
-#if defined(__ARM_NEON)
+#if defined(__aarch64__) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
 
 template <isa Isa> block_total neon_sum(std::span<std::byte const> data) noexcept {
   std::size_t const message_size = data.size();
