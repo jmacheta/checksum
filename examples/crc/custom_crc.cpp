@@ -5,7 +5,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 
 using namespace checksum;
 
@@ -23,6 +24,6 @@ constexpr auto const &sensor_engine = crc_engine_for<sensor_crc, crc_lut_nibble>
 int main() {
   constexpr std::array<std::byte, 4> reading{std::byte{0x01}, std::byte{0x04}, std::byte{0x02}, std::byte{0xFF}};
   std::uint16_t const crc = sensor_engine.compute(reading);
-  std::println("CRC of the sensor reading = 0x{:04X}", crc);
+  std::cout << "CRC of the sensor reading = 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << crc << '\n';
   return 0;
 }

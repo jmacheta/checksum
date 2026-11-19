@@ -6,17 +6,18 @@
 #include <cstddef>
 #include <cstdio> // stderr
 #include <fstream>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <span>
 
 int main(int argument_count, char **arguments) {
   if(argument_count != 2) {
-    std::println(stderr, "usage: {} <file>", arguments[0]);
+    std::cerr << "usage: " << arguments[0] << " <file>\n";
     return 1;
   }
   std::ifstream file(arguments[1], std::ios::binary);
   if(!file) {
-    std::println(stderr, "cannot open {}", arguments[1]);
+    std::cerr << "cannot open " << arguments[1] << '\n';
     return 1;
   }
 
@@ -27,6 +28,6 @@ int main(int argument_count, char **arguments) {
     state = checksum::xxh3_update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
   }
 
-  std::println("XXH3_{:016x}  {}", checksum::xxh3_finalize(state), arguments[1]);
+  std::cout << "XXH3_" << std::hex << std::setfill('0') << std::setw(16) << checksum::xxh3_finalize(state) << "  " << arguments[1] << '\n';
   return 0;
 }

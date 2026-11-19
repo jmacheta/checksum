@@ -3,7 +3,8 @@
 #include <checksum/fletcher.hpp>
 
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string>
 #include <string_view>
 
@@ -21,6 +22,7 @@ int main() {
   // The same text at run time gives the same checksum.
   std::string const version = "firmware 1.4.2";
   std::uint32_t const value = checksum::fletcher32_compute(version);
-  std::println("Fletcher-32 of \"{}\" 0x{:08X}, expected 0x{:08X}", version, value, version_checksum);
+  std::cout << "Fletcher-32 of \"" << version << "\" 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << value
+            << ", expected 0x" << std::setw(8) << version_checksum << '\n';
   return value == version_checksum ? 0 : 1;
 }

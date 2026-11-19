@@ -10,8 +10,9 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
+#include <iostream>
 #include <optional>
-#include <print>
 #include <span>
 
 using namespace checksum;
@@ -117,12 +118,13 @@ int main() {
   auto const check = [&](char const *name, crc_parameters const &parameters, std::uint32_t expected) {
     auto const engine = crc_engine<std::uint32_t, stm32_crc_unit>::create(parameters);
     if(!engine) {
-      std::println("{:16} rejected by make_table", name);
+      std::cout << std::left << std::setfill(' ') << std::setw(16) << name << " rejected by make_table\n";
       all_match = false;
       return;
     }
     std::uint32_t const crc = engine->compute(message);
-    std::println("{:16} 0x{:08X} ({})", name, crc, crc == expected ? "matches crc_lut_none" : "MISMATCH");
+    std::cout << std::left << std::setfill(' ') << std::setw(16) << name << " 0x" << std::right << std::hex << std::uppercase << std::setfill('0')
+              << std::setw(8) << crc << " (" << (crc == expected ? "matches crc_lut_none" : "MISMATCH") << ")\n";
     all_match = all_match && crc == expected;
   };
   check("CRC-32/MPEG-2", crc32_mpeg_2, crc_engine_for<crc32_mpeg_2>.compute(message));
@@ -132,6 +134,6 @@ int main() {
   check("CRC-8/SMBUS", crc8_smbus, crc_engine_for<crc8_smbus>.compute(message));
   check("CRC-7/MMC", crc7_mmc, crc_engine_for<crc7_mmc>.compute(message));
   // A width the unit cannot compute is rejected when the engine is created.
-  std::println("CRC-12/UMTS      {}", crc_engine<std::uint32_t, stm32_crc_unit>::create(crc12_umts) ? "accepted" : "rejected by make_table");
+  std::cout << "CRC-12/UMTS      " << (crc_engine<std::uint32_t, stm32_crc_unit>::create(crc12_umts) ? "accepted" : "rejected by make_table") << '\n';
   return all_match ? 0 : 1;
 }

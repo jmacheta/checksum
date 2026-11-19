@@ -4,7 +4,8 @@
 #include <checksum/adler32.hpp>
 
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string>
 #include <string_view>
 
@@ -22,6 +23,7 @@ int main() {
   // The settings as loaded into RAM, e.g. after a reset to defaults.
   std::string const settings(default_settings);
   std::uint32_t const value = checksum::adler32_compute(settings);
-  std::println("Adler-32 of the settings 0x{:08X}, expected 0x{:08X}", value, default_settings_checksum);
+  std::cout << "Adler-32 of the settings 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << value << ", expected 0x"
+            << std::setw(8) << default_settings_checksum << '\n';
   return value == default_settings_checksum ? 0 : 1;
 }

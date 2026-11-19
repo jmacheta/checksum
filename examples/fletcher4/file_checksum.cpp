@@ -6,17 +6,17 @@
 #include <cstddef>
 #include <cstdio> // stderr
 #include <fstream>
-#include <print>
+#include <iostream>
 #include <span>
 
 int main(int argument_count, char **arguments) {
   if(argument_count != 2) {
-    std::println(stderr, "usage: {} <file>", arguments[0]);
+    std::cerr << "usage: " << arguments[0] << " <file>\n";
     return 1;
   }
   std::ifstream file(arguments[1], std::ios::binary);
   if(!file) {
-    std::println(stderr, "cannot open {}", arguments[1]);
+    std::cerr << "cannot open " << arguments[1] << '\n';
     return 1;
   }
 
@@ -28,6 +28,6 @@ int main(int argument_count, char **arguments) {
 
   // A size that is not a multiple of 4 is padded with zero bytes.
   checksum::fletcher4_value const value = checksum::fletcher4_finalize(state);
-  std::println("{:x}:{:x}:{:x}:{:x}  {}", value[0], value[1], value[2], value[3], arguments[1]);
+  std::cout << std::hex << value[0] << ':' << value[1] << ':' << value[2] << ':' << value[3] << "  " << arguments[1] << '\n';
   return 0;
 }

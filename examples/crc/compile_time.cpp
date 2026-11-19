@@ -2,7 +2,8 @@
 
 #include <checksum/crc.hpp>
 
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
@@ -14,6 +15,6 @@ constexpr auto version_crc = checksum::crc_engine_for<checksum::crc32, checksum:
 static_assert(checksum::crc_engine_for<checksum::crc32>.compute("123456789"sv) == 0xCBF43926);
 
 int main() {
-  std::println("CRC-32 of \"firmware 1.4.2\" = 0x{:08X}", version_crc);
+  std::cout << "CRC-32 of \"firmware 1.4.2\" = 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << version_crc << '\n';
   return 0;
 }

@@ -4,7 +4,8 @@
 
 #include <array>
 #include <cstddef>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 #include <unordered_set>
 
@@ -44,9 +45,10 @@ int main() {
     auto const hash = record_hash(value);
     bool const is_new = seen.insert(hash).second;
     duplicates += is_new ? 0 : 1;
-    std::println("{:016x}{:016x}  {} {}{}", hash.high, hash.low, value.name, value.payload, is_new ? "" : "  (duplicate)");
+    std::cout << std::hex << std::setfill('0') << std::setw(16) << hash.high << std::setw(16) << hash.low << std::dec << "  " << value.name << ' '
+              << value.payload << (is_new ? "" : "  (duplicate)") << '\n';
   }
-  std::println("{} unique, {} duplicates", seen.size(), duplicates);
+  std::cout << seen.size() << " unique, " << duplicates << " duplicates\n";
   // The streamed hash equals the hash of the whole record in one call.
   bool const streaming_matches = record_hash(records[0]) == checksum::murmur3_128_compute("sensor-1\037"
                                                                                           "21.5 C"sv,

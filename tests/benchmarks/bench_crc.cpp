@@ -13,8 +13,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio> // stderr
-#include <print>
+#include <iostream>
 #include <span>
 #include <string>
 #include <vector>
@@ -102,7 +101,7 @@ int main(int argc, char **argv) {
   if(zlib_crc32(data) != crc_engine_for<crc32_iso_hdlc, crc_lut_braided>.compute(data) ||
      inline_iso_hdlc(data) != crc_engine_for<crc32_iso_hdlc, crc_lut_byte>.compute(data) ||
      inline_xmodem(data) != crc_engine_for<crc16_xmodem, crc_lut_byte>.compute(data)) {
-    std::println(stderr, "baseline mismatch");
+    std::cerr << "baseline mismatch\n";
     return 1;
   }
 

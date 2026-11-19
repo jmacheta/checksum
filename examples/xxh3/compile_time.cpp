@@ -6,7 +6,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
@@ -43,6 +44,6 @@ int main() {
   // A path read at run time, e.g. from a level file, hashes to the same ID.
   std::uint64_t const id = checksum::xxh3_64_compute("sounds/step.wav"sv);
   std::string_view const path = find_path(id);
-  std::println("ID 0x{:016X} -> {}", id, path);
+  std::cout << "ID 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(16) << id << " -> " << path << '\n';
   return path == "sounds/step.wav" ? 0 : 1;
 }

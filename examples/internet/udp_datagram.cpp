@@ -6,7 +6,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
@@ -50,10 +51,10 @@ int main() {
   if(value == 0) {
     value = 0xFFFF;
   }
-  std::println("UDP checksum = 0x{:04X}", value);
+  std::cout << "UDP checksum = 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << value << '\n';
 
   // The receiver sums the datagram as received and expects 0.
   bool const valid = udp_checksum(value) == 0;
-  std::println("received datagram valid: {}", valid ? "yes" : "no");
+  std::cout << "received datagram valid: " << (valid ? "yes" : "no") << '\n';
   return value == 0x67F8 && valid ? 0 : 1;
 }

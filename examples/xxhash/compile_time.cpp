@@ -3,7 +3,8 @@
 #include <checksum/xxhash.hpp>
 
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
@@ -36,7 +37,8 @@ std::string_view handler(std::string_view name) {
 
 int main() {
   for(std::string_view const name : {"sensor/temperature"sv, "sensor/humidity"sv, "sensor/pressure"sv}) {
-    std::println("{:18} 0x{:08X} -> {}", name, message_id(name), handler(name));
+    std::cout << std::left << std::setfill(' ') << std::setw(18) << name << " 0x" << std::right << std::hex << std::uppercase << std::setfill('0')
+              << std::setw(8) << message_id(name) << " -> " << handler(name) << '\n';
   }
   return handler("sensor/humidity") == "humidity handler" && handler("sensor/pressure") == "unknown message" ? 0 : 1;
 }

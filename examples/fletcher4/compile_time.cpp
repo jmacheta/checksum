@@ -5,7 +5,7 @@
 
 #include <array>
 #include <cstddef>
-#include <print>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
@@ -34,6 +34,6 @@ int main() {
   // The block as read back at run time.
   std::array<std::byte, 4096> const block = make_pattern();
   checksum::fletcher4_value const value = checksum::fletcher4_compute(block);
-  std::println("{:x}:{:x}:{:x}:{:x}", value[0], value[1], value[2], value[3]);
+  std::cout << std::hex << value[0] << ':' << value[1] << ':' << value[2] << ':' << value[3] << '\n';
   return value == pattern_checksum ? 0 : 1;
 }

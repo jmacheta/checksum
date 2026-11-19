@@ -6,7 +6,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <span>
 
 namespace {
@@ -32,11 +33,11 @@ int main() {
                                    std::byte{0xB8}, std::byte{0x61}, std::byte{0xC0}, std::byte{0xA8}, std::byte{0x00},
                                    std::byte{0x01}, std::byte{0xC0}, std::byte{0xA8}, std::byte{0x00}, std::byte{0xC7}};
   decrement_ttl(header);
-  std::println("TTL {}, checksum 0x{:02X}{:02X}", std::to_integer<unsigned>(header[8]), std::to_integer<unsigned>(header[10]),
-               std::to_integer<unsigned>(header[11]));
+  std::cout << "TTL " << std::to_integer<unsigned>(header[8]) << ", checksum 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
+            << std::to_integer<unsigned>(header[10]) << std::setw(2) << std::to_integer<unsigned>(header[11]) << '\n';
 
   // The updated header still sums to 0, and its checksum 0xB961 is what summing the whole header gives.
   bool const valid = checksum::internet_compute(std::span<std::byte const>{header}) == 0;
-  std::println("updated header valid: {}", valid ? "yes" : "no");
+  std::cout << "updated header valid: " << (valid ? "yes" : "no") << '\n';
   return valid && header[10] == std::byte{0xB9} && header[11] == std::byte{0x61} ? 0 : 1;
 }

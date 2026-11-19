@@ -3,7 +3,9 @@
 ## CMake
 
 - All options are defined and documented in the top-level `CMakeLists.txt` (`CHECKSUM_TESTS`, `CHECKSUM_BENCHMARKS`,
-  `CHECKSUM_EXAMPLES`); nothing else reads user settings. Keep comments in CMake files to the minimum.
+  `CHECKSUM_EXAMPLES`, `CHECKSUM_INSTALL`); nothing else reads user settings. Keep comments in CMake files to the minimum.
+- `CHECKSUM_INSTALL` (on by default, also as a subproject, so that a consumer can `install(EXPORT)` targets that link
+  checksum) includes `cmake/install.cmake`: the library, its public headers and the `checksum::` package.
 - Library sources are listed by hand, no globs, in `target_sources(checksum PRIVATE ...)` of `src/CMakeLists.txt`:
   every per-preset loop source and `isa/detect.cpp`. Unit tests are listed the same way in
   `tests/unit_tests/CMakeLists.txt`. The top-level `CMakeLists.txt` holds only options, dependencies and

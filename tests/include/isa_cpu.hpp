@@ -7,8 +7,8 @@
 #include <checksum/isa.hpp>
 
 #include <cstddef>
-#include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -126,11 +126,7 @@ inline bool required(checksum::isa preset) {
 // CHECKSUM_REQUIRED_ISA requires preset.
 inline bool cpu_runs_or_exit(checksum::isa preset) {
   if(!cpu_runs(preset) && required(preset)) {
-    // Not std::println: <format> of the MS STL that the clang-cl Wine preset uses does not compile with Clang 21.
-    std::string_view const preset_name = name(preset);
-    std::fputs("the CPU cannot run ", stderr);
-    std::fwrite(preset_name.data(), 1, preset_name.size(), stderr);
-    std::fputs(", which CHECKSUM_REQUIRED_ISA requires\n", stderr);
+    std::cerr << "the CPU cannot run " << name(preset) << ", which CHECKSUM_REQUIRED_ISA requires\n";
     std::exit(EXIT_FAILURE); // NOLINT(concurrency-mt-unsafe): before any benchmark thread starts
   }
   return cpu_runs(preset);

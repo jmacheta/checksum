@@ -3,7 +3,8 @@
 #include <checksum/murmur3.hpp>
 
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
@@ -34,7 +35,8 @@ std::string_view execute(std::string_view command) {
 
 int main() {
   for(std::string_view const command : {"status"sv, "stop"sv, "reboot"sv}) {
-    std::println("{:8} 0x{:08X} -> {}", command, key(command), execute(command));
+    std::cout << std::left << std::setfill(' ') << std::setw(8) << command << " 0x" << std::right << std::hex << std::uppercase << std::setfill('0')
+              << std::setw(8) << key(command) << " -> " << execute(command) << '\n';
   }
   return execute("stop") == "stopping" && execute("reboot") == "unknown command" ? 0 : 1;
 }

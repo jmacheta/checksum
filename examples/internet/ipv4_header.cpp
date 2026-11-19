@@ -6,7 +6,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <span>
 
 namespace {
@@ -32,11 +33,11 @@ int main() {
                                    std::byte{0x01}, std::byte{0xC0}, std::byte{0xA8}, std::byte{0x00}, std::byte{0xC7}};
   fill_checksum(header);
   auto const value = static_cast<std::uint16_t>((std::to_integer<unsigned>(header[10]) << 8U) | std::to_integer<unsigned>(header[11]));
-  std::println("IPv4 header checksum = 0x{:04X}", value);
+  std::cout << "IPv4 header checksum = 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << value << '\n';
 
   bool const intact = is_valid(header);
   header[15] ^= std::byte{0x01}; // a transmission error in the source address
   bool const corrupted = is_valid(header);
-  std::println("intact header valid: {}, corrupted header valid: {}", intact ? "yes" : "no", corrupted ? "yes" : "no");
+  std::cout << "intact header valid: " << (intact ? "yes" : "no") << ", corrupted header valid: " << (corrupted ? "yes" : "no") << '\n';
   return value == 0xB861 && intact && !corrupted ? 0 : 1;
 }

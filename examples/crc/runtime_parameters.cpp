@@ -5,14 +5,14 @@
 #include <cstdint>
 #include <cstdio> // stderr
 #include <cstdlib>
-#include <print>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
 
 int main(int argument_count, char **arguments) {
   if(argument_count != 4) {
-    std::println(stderr, "usage: {} <polynomial in normal form, e.g. 0x1021> <width, e.g. 16> <initial value>", arguments[0]);
+    std::cerr << "usage: " << arguments[0] << " <polynomial in normal form, e.g. 0x1021> <width, e.g. 16> <initial value>\n";
     return 1;
   }
 
@@ -20,7 +20,7 @@ int main(int argument_count, char **arguments) {
   auto const polynomial =
       checksum::crc_polynomial::create(std::strtoull(arguments[1], nullptr, 0), static_cast<unsigned>(std::strtoul(arguments[2], nullptr, 0)));
   if(!polynomial) {
-    std::println(stderr, "invalid polynomial: {} of width {}", arguments[1], arguments[2]);
+    std::cerr << "invalid polynomial: " << arguments[1] << " of width " << arguments[2] << '\n';
     return 1;
   }
   std::uint64_t const initial_value = std::strtoull(arguments[3], nullptr, 0);
@@ -31,10 +31,11 @@ int main(int argument_count, char **arguments) {
       .initial_value = initial_value,
   });
   if(!engine) {
-    std::println(stderr, "width 0 or an initial value wider than {} bits", polynomial->width());
+    std::cerr << "width 0 or an initial value wider than " << polynomial->width() << " bits\n";
     return 1;
   }
 
-  std::println("width {}, check value (CRC of \"123456789\") = 0x{:X}", polynomial->width(), engine->compute("123456789"sv));
+  std::cout << "width " << polynomial->width() << ", check value (CRC of \"123456789\") = 0x" << std::hex << std::uppercase
+            << engine->compute("123456789"sv) << '\n';
   return 0;
 }

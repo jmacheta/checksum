@@ -5,7 +5,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <span>
 
 namespace {
@@ -30,6 +31,7 @@ int main() {
   std::uint32_t const stored = load_big_endian(bytes.last<4>());
 
   std::uint32_t const computed = checksum::adler32_compute(data);
-  std::println("stored 0x{:08X}, computed 0x{:08X}: {}", stored, computed, stored == computed ? "intact" : "corrupted");
+  std::cout << "stored 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << stored << ", computed 0x" << std::setw(8) << computed
+            << ": " << (stored == computed ? "intact" : "corrupted") << '\n';
   return stored == computed && computed == 0x11E60398 ? 0 : 1;
 }

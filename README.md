@@ -76,6 +76,9 @@ target_link_libraries(my_app PRIVATE checksum::checksum)
 `add_subdirectory(checksum)`, works the same way. Tests and examples build only when checksum is the top-level project
 (`CHECKSUM_TESTS`, `CHECKSUM_EXAMPLES`).
 
+`cmake --install` puts the library, headers and a CMake package in the prefix, for `find_package(checksum CONFIG)` and
+`checksum::checksum`; `-DCHECKSUM_INSTALL=OFF` turns the install rules off (they are on by default, also as a subproject).
+
 Compile with `-ffunction-sections -fdata-sections` and link with `-Wl,--gc-sections`, so the binary keeps only the
 algorithms you use.
 

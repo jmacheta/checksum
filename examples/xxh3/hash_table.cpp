@@ -5,7 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -34,6 +35,7 @@ int main() {
   if(found == port_by_service.end() || found->second != 443) {
     return 1;
   }
-  std::println("https -> {}, hash 0x{:016X}", found->second, checksum::xxh3_64_compute("https"sv, port_by_service.hash_function().seed));
+  std::cout << "https -> " << found->second << ", hash 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(16)
+            << checksum::xxh3_64_compute("https"sv, port_by_service.hash_function().seed) << '\n';
   return 0;
 }

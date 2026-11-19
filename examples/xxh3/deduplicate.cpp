@@ -4,7 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iostream>
 #include <span>
 #include <string_view>
 #include <unordered_map>
@@ -39,6 +39,6 @@ int main() {
     first_copy.try_emplace(checksum::xxh3_128_compute(data), block);
   }
 
-  std::println("{} blocks, {} distinct, {} bytes saved", block_count, first_copy.size(), (block_count - first_copy.size()) * block_size);
+  std::cout << block_count << " blocks, " << first_copy.size() << " distinct, " << (block_count - first_copy.size()) * block_size << " bytes saved\n";
   return first_copy.size() == pattern_count ? 0 : 1;
 }

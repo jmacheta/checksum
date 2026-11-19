@@ -4,13 +4,13 @@
 
 #include <array>
 #include <cstddef>
-#include <print>
+#include <iostream>
 
 namespace {
 
 // The checksum in the notation of zdb: the four sums in hexadecimal, separated by colons.
 void print_checksum(char const *label, checksum::fletcher4_value const &value) {
-  std::println("{} {:x}:{:x}:{:x}:{:x}", label, value[0], value[1], value[2], value[3]);
+  std::cout << label << ' ' << std::hex << value[0] << ':' << value[1] << ':' << value[2] << ':' << value[3] << std::dec << '\n';
 }
 
 } // namespace
@@ -28,7 +28,7 @@ int main() {
   print_checksum("stored  ", stored);
   print_checksum("computed", computed);
   if(computed != stored) {
-    std::println("checksum mismatch");
+    std::cout << "checksum mismatch\n";
     return 1;
   }
 
@@ -36,9 +36,9 @@ int main() {
   checksum::fletcher4_value const damaged = checksum::fletcher4_compute(block);
   print_checksum("damaged ", damaged);
   if(damaged == stored) {
-    std::println("bit flip not detected");
+    std::cout << "bit flip not detected\n";
     return 1;
   }
-  std::println("bit flip detected");
+  std::cout << "bit flip detected\n";
   return 0;
 }

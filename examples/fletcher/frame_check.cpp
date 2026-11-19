@@ -6,7 +6,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <span>
 
 namespace {
@@ -34,12 +35,13 @@ int main() {
   // The message "abcde", whose Fletcher-16 is 0xC8F0, then two checksum bytes.
   std::array<std::byte, 7> frame{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}, std::byte{'d'}, std::byte{'e'}, std::byte{0}, std::byte{0}};
   append_checksum(frame);
-  std::println("checksum bytes on the wire: {:02X} {:02X}", std::to_integer<unsigned>(frame[5]), std::to_integer<unsigned>(frame[6]));
+  std::cout << "checksum bytes on the wire: " << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
+            << std::to_integer<unsigned>(frame[5]) << ' ' << std::setw(2) << std::to_integer<unsigned>(frame[6]) << '\n';
 
   bool const expected = frame[5] == std::byte{0xC8} && frame[6] == std::byte{0xF0};
   bool const intact = is_valid(frame);
   frame[2] ^= std::byte{0x01}; // a transmission error
   bool const corrupted = is_valid(frame);
-  std::println("intact frame valid: {}, corrupted frame valid: {}", intact ? "yes" : "no", corrupted ? "yes" : "no");
+  std::cout << "intact frame valid: " << (intact ? "yes" : "no") << ", corrupted frame valid: " << (corrupted ? "yes" : "no") << '\n';
   return expected && intact && !corrupted ? 0 : 1;
 }
