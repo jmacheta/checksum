@@ -14,7 +14,8 @@ in [performance.md](../performance.md) only.
 - **One source per preset.** `src/<algorithm>/<loop>_<preset>.cpp` builds only where `checksum_private/presets.hpp`
   defines the preset's target options, and compiles the loops under a target pragma (`target_begin.hpp`,
   `target_end.hpp`) after every std header. The build system adds no flags, and flags such as `-march=native` select no
-  kernel. GCC on RISC-V has no target pragma, so the RVV kernels carry their own target attribute.
+  kernel. RISC-V gets no target pragma (GCC has none there; Clang follows), so the RVV kernels carry their own target
+  attribute.
 - **Run-time choice on top.** `detect_isa()` (`src/isa/detect.cpp`, the only source with CPU queries) returns an
   `isa_set`, the default argument of every dispatch engine. An engine turns the set into one built preset with
   `isa_detail::select()` and calls the templates through `isa_detail::dispatch()`. `detect_isa()` is deliberately not
@@ -39,7 +40,8 @@ in [performance.md](../performance.md) only.
   runs, and its threshold is where it overtakes the portable loop of the same build. Kernels tested only in QEMU are
   marked "unproven" below.
 - **Little-endian vector kernels only.** NEON lane order of initializers and reinterpretations differs between GCC and
-  Clang on big-endian targets, so big-endian Arm runs the portable code (CRC keeps the CRC32 instructions).
+  Clang on big-endian targets, so big-endian Arm runs the portable code (CRC keeps the CRC32 instructions; the Internet
+  checksum's `ldm` + `adcs` kernel also runs on big-endian 32-bit Arm).
 - **No call below the threshold.** Where a kernel exists, the kernel and the loop after it sit in a separate
   non-inlined function, so short inputs run the inline portable loop without a call or a stack frame.
 

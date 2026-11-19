@@ -63,10 +63,11 @@ preconditions.
 
 ## 5. CPU acceleration
 
-MurmurHash3 has no kernel on any target: every block updates the lanes from their previous values, one serial chain.
-The preset compiles the portable block loop for its instruction set
-([Instruction-set presets](../README.md#instruction-set-presets)). On 32-bit Arm with any preset but `thumb2_neon` and
-`thumb2_crc`, x86_32 takes four blocks per iteration so in-order cores overlap the multiplications. Details:
+MurmurHash3 has no kernel on any target: every block updates the lanes from their previous values, one serial chain. The
+preset compiles the portable block loop for its instruction set ([Instruction-set
+presets](../README.md#instruction-set-presets)); with MSVC (no target options) and on RISC-V (no target pragma), each
+preset's copy is the same code as `isa::generic`. On 32-bit Arm with any preset but `thumb2_neon` and `thumb2_crc`,
+x86_32 takes four blocks per iteration so in-order cores overlap the multiplications. Details:
 [design/acceleration.md](design/acceleration.md#murmurhash3).
 
 ### 5.1 Choosing the preset at run time

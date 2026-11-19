@@ -73,7 +73,7 @@ exactly with fixed weights, in vector registers where a kernel exists. Presets a
 | every preset of little-endian AArch64, `isa::generic` included (MSVC too) | NEON, from 192 B |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 192 B |
 | other 64-bit targets: `riscv_zbc`, `riscv_v`, big-endian AArch64 | Portable lanes, from 256 B |
-| other 32-bit targets: `isa::generic`, `thumb2`, `thumb2_dsp`, big-endian 32-bit Arm | Word loop only, two words per iteration on 32-bit Arm |
+| other 32-bit targets: `isa::generic`, `thumb2`, `thumb2_dsp`, big-endian 32-bit Arm | Word loop only, two words per iteration on 32-bit Arm without `thumb2_neon`/`thumb2_crc`, one word per iteration with `thumb2_neon`/`thumb2_crc` |
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#fletcher4).
 

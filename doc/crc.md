@@ -172,7 +172,7 @@ the portable loop for every preset. Presets are explained in
 
 | Preset | Kernel |
 | --- | --- |
-| `isa::x86_pclmul`, `x86_avx2` | PCLMULQDQ folding for every parameter set from 16 B; CRC-32C also uses SSE4.2 `crc32` from 25 B. |
+| `isa::x86_pclmul`, `x86_avx2` | PCLMULQDQ folding for every parameter set from 16 B; CRC-32C uses SSE4.2 `crc32` below 25 B and folding with `crc32` from 25 B. |
 | `isa::x86_vpclmul`, `x86_avxvnni` | As above, plus the 256-bit VPCLMULQDQ loop from 256 B. |
 | `isa::aarch64_crc`, `isa::thumb2_crc` | CRC32/CRC32C instructions for CRC-32 and CRC-32C. |
 | `isa::aarch64_pmull` | CRC32/CRC32C instructions, plus PMULL folding for other parameter sets (little-endian only). |

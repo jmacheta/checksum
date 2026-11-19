@@ -91,7 +91,8 @@ does; messages up to 240 bytes are hashed from the buffer alone.
 ## 5. CPU acceleration
 
 XXH32 and XXH64 have no kernel on any target: each lane is a serial multiply-rotate chain, and the scalar loop already
-runs the four lanes side by side. Their preset compiles the portable loop for its instruction set.
+runs the four lanes side by side. Their preset compiles the portable loop for its instruction set; with MSVC (no
+target options) and on RISC-V (no target pragma), each preset's copy is the same code as `isa::generic`.
 
 XXH3 runs straight-line code up to 240 bytes, the same in every build. Longer inputs fold 64-byte stripes into eight
 accumulators, which a kernel keeps in vector registers. Presets are explained in
