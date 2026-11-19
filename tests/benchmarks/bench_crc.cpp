@@ -6,6 +6,7 @@
 #include <checksum/isa.hpp>
 
 #include <benchmark/benchmark.h>
+#include <isa_cpu.hpp>
 #include <test_data.hpp>
 #include <zlib.h>
 
@@ -60,10 +61,12 @@ template <class Strategy, isa Isa = isa::generic> void register_strategy(std::st
   register_engine<crc64_xz, Strategy, Isa>(strategy, "crc64_xz");
 }
 
-// crc_lut_sliced for a preset with a CRC kernel, named sliced_<preset>, where this build has it.
+// crc_lut_sliced for a preset with a CRC kernel, named sliced_<preset>, where this build has it and the CPU runs it.
 template <isa Preset> void register_preset(char const *name) {
   if constexpr(isa_available(Preset)) {
-    register_strategy<crc_lut_sliced, Preset>(std::string("sliced_") + name);
+    if(isa_cpu::cpu_runs(Preset).value_or(false)) {
+      register_strategy<crc_lut_sliced, Preset>(std::string("sliced_") + name);
+    }
   }
 }
 

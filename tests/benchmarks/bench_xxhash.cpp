@@ -1,7 +1,10 @@
-// Throughput of XXH32, XXH64, XXH3-64 and XXH3-128, of seeded XXH3-64 and of XXH3-64 streamed in pieces.
+// Throughput of XXH32, XXH64, XXH3-64 and XXH3-128 (these two for every preset), of seeded XXH3-64 and of XXH3-64 streamed in pieces.
 
+#include <checksum/isa.hpp>
 #include <checksum/xxh3.hpp>
 #include <checksum/xxhash.hpp>
+
+#include "bench_presets.hpp"
 
 #include <benchmark/benchmark.h>
 #include <test_data.hpp>
@@ -31,8 +34,8 @@ void xxhash64(benchmark::State &state) {
   run(state, [](std::span<std::byte const> data) { return checksum::xxh64_compute(data); });
 }
 
-void xxh3_64(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxh3_compute<64>(data); });
+template <checksum::isa Isa> void xxh3_64(benchmark::State &state) {
+  run(state, [](std::span<std::byte const> data) { return checksum::xxh3_compute<64, Isa>(data); });
 }
 
 void xxh3_64_seeded(benchmark::State &state) {
@@ -50,20 +53,26 @@ template <std::size_t Piece> void xxh3_64_streaming(benchmark::State &state) {
   });
 }
 
-void xxh3_128(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxh3_compute<128>(data); });
+template <checksum::isa Isa> void xxh3_128(benchmark::State &state) {
+  run(state, [](std::span<std::byte const> data) { return checksum::xxh3_compute<128, Isa>(data); });
 }
 
 // IPv4 and UDP headers, a cache line, a short packet, a full Ethernet payload, a page and a large buffer.
 BENCHMARK(xxhash32)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
 BENCHMARK(xxhash64)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
-// XXH3 also at 200 bytes (129-240 class) and 512 bytes (two buffers).
-BENCHMARK(xxh3_64)->Arg(20)->Arg(64)->Arg(200)->Arg(256)->Arg(512)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
 BENCHMARK(xxh3_64_seeded)->Arg(20)->Arg(200)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
 BENCHMARK(xxh3_64_streaming<64>)->Arg(std::int64_t{1} << 20);
 BENCHMARK(xxh3_64_streaming<4096>)->Arg(std::int64_t{1} << 20);
-BENCHMARK(xxh3_128)->Arg(20)->Arg(64)->Arg(200)->Arg(256)->Arg(512)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
+
+// XXH3 also at 200 bytes (129-240 class) and 512 bytes (two buffers).
+void xxh3_sizes(benchmark::Benchmark *benchmark) {
+  benchmark->Arg(20)->Arg(64)->Arg(200)->Arg(256)->Arg(512)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
+}
 
 } // namespace
 
-BENCHMARK_MAIN();
+int main(int argc, char **argv) {
+  isa_bench::register_presets("xxh3_64", [](auto preset) { return xxh3_64<decltype(preset)::value>; }, xxh3_sizes);
+  isa_bench::register_presets("xxh3_128", [](auto preset) { return xxh3_128<decltype(preset)::value>; }, xxh3_sizes);
+  return isa_bench::run(argc, argv);
+}

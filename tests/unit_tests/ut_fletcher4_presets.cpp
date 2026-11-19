@@ -3,6 +3,7 @@
 #include <checksum/fletcher4.hpp>
 #include <checksum/isa.hpp>
 
+#include <fletcher4_reference_vectors.hpp>
 #include <gtest/gtest.h>
 #include <isa_test_support.hpp>
 #include <test_data.hpp>
@@ -27,13 +28,11 @@ TYPED_TEST_SUITE(fletcher4_presets, isa_test::presets, isa_test::preset_name);
 
 TYPED_TEST(fletcher4_presets, constant_evaluation) {
   constexpr isa preset = TypeParam::value;
-  static_assert(fletcher4_compute<preset>(std::string_view("abcdefgh")) ==
-                fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
-  static_assert(fletcher4_finalize(fletcher4_update<preset>(
-                    fletcher4_update<preset>(fletcher4_state{}, std::string_view("abcdefg")), std::string_view("h"))) ==
-                fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
-  EXPECT_EQ(fletcher4_compute<preset>(std::string_view("abcdefgh")),
-            (fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9}));
+  static_assert(fletcher4_compute<preset>(std::string_view("abcdefgh")) == fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
+  static_assert(
+      fletcher4_finalize(fletcher4_update<preset>(fletcher4_update<preset>(fletcher4_state{}, std::string_view("abcdefg")), std::string_view("h"))) ==
+      fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
+  EXPECT_EQ(fletcher4_compute<preset>(std::string_view("abcdefgh")), (fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9}));
 }
 
 TYPED_TEST(fletcher4_presets, match_generic_for_every_size_to_2048) {
@@ -76,6 +75,16 @@ TYPED_TEST(fletcher4_presets, match_generic_through_updates_and_splits) {
   EXPECT_EQ(fletcher4_compute<preset>(buffer), fletcher4_compute(buffer));
   std::list<std::byte> const list(buffer.begin(), buffer.end());
   EXPECT_EQ(fletcher4_compute<preset>(list), fletcher4_compute(list));
+}
+
+// All-ones words wrap the 64-bit sums many times over: the known value, and odd tails after it.
+TYPED_TEST(fletcher4_presets, match_generic_for_all_ones) {
+  constexpr isa preset = TypeParam::value;
+  std::vector<std::byte> const ones(fletcher4_test::all_ones_size + 3, std::byte{0xFF});
+  EXPECT_EQ(fletcher4_compute<preset>(at(ones, 0, fletcher4_test::all_ones_size)), fletcher4_test::all_ones);
+  for(std::size_t const size : {fletcher4_test::all_ones_size + 1, fletcher4_test::all_ones_size + 3}) {
+    ASSERT_EQ(fletcher4_compute<preset>(at(ones, 0, size)), fletcher4_compute(at(ones, 0, size))) << "size " << size;
+  }
 }
 
 } // namespace

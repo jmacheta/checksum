@@ -2,6 +2,11 @@
 
 #include <checksum/isa.hpp>
 
+#include <gtest/gtest.h>
+#include <isa_test_support.hpp>
+
+#include <cstddef>
+
 namespace {
 
 using checksum::isa;
@@ -26,5 +31,15 @@ static_assert(isa_available(isa::aarch64_crc) && isa_available(isa::aarch64_pmul
 #elif defined(__riscv)
 static_assert(isa_available(isa::riscv_zbc) && isa_available(isa::riscv_v) && !isa_available(isa::x86_avx2));
 #endif
+
+// A preset appended to the enumeration and to the range of isa.hpp must also get a name and a CPU check in isa_test_support.hpp.
+TEST(isa_test_support, EveryBuiltPresetHasNameAndCpuCheck) {
+  for(auto index = static_cast<std::size_t>(checksum::isa_detail::first_built); index <= static_cast<std::size_t>(checksum::isa_detail::last_built);
+      ++index) {
+    auto const preset = static_cast<isa>(index);
+    EXPECT_FALSE(isa_test::name(preset).empty()) << index;
+    EXPECT_TRUE(isa_test::cpu_runs(preset).has_value()) << isa_test::name(preset);
+  }
+}
 
 } // namespace

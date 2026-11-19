@@ -15,8 +15,8 @@ permissions:
 
 jobs:
   build-and-test:
-    name: build-and-test (${{ matrix.preset }}, ${{ matrix.cxx }})
-    runs-on: ubuntu-24.04
+    name: build-and-test (${{ matrix.preset }}, ${{ matrix.cxx }}${{ matrix.runner && format(', {0}', matrix.runner) || '' }})
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +29,9 @@ jobs:
           - { preset: native-asan, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
           # Library, tests and a consumer of every header built with -fno-exceptions -fno-rtti.
           - { preset: native-gcc-no-exceptions, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
+          # Native AArch64 (GitHub's Arm runner): the aarch64 presets on real hardware, skipped where its CPU lacks them, and Clang on AArch64.
+          - { preset: native-gcc, runner: ubuntu-24.04-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
+          - { preset: native-clang, runner: ubuntu-24.04-arm, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
           # Arm and RISC-V targets, tests in QEMU user mode with -cpu max: every preset of the architecture (Arm CRC32, PMULL, NEON, ldm + adcs; RISC-V Zbc and vector).
           - { preset: cross-aarch64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu }
           - { preset: cross-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf }

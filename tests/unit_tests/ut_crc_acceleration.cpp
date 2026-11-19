@@ -1,6 +1,6 @@
 // crc_lut_sliced and crc_lut_braided of every preset must match crc_lut_byte for every catalog set, on the smallest register and
-// std::uint64_t, one-shot and split; the first set of each code path runs every length, the others the lengths around each threshold.
-// The other table strategies run three common sets at every length 0..300, and every strategy is checked at compile time per preset.
+// std::uint64_t, one-shot, split and through crc_accumulator; the first set of each code path runs every length, the others the lengths around each
+// threshold. The other table strategies run three common sets at every length 0..300, and every strategy is checked at compile time per preset.
 #include <checksum/crc.hpp>
 #include <checksum/crc_catalog.hpp>
 #include <checksum/isa.hpp>
@@ -96,10 +96,25 @@ void check_against_byte(crc_parameters const &parameters, std::span<std::byte co
       ASSERT_EQ(smallest->compute(data), expected) << "length " << length << ", offset " << offset;
       ASSERT_EQ(wide->compute(data), expected) << "length " << length << ", offset " << offset;
       std::size_t const split = length / 3;
+      std::size_t const second_split = (2 * length) / 3;
       ASSERT_EQ(smallest->finalize(smallest->update(smallest->update(smallest->initial(), data.first(split)), data.subspan(split))), expected)
           << "length " << length << ", offset " << offset << ", split " << split;
+      ASSERT_EQ(wide->finalize(wide->update(wide->update(wide->initial(), data.first(split)), data.subspan(split))), expected)
+          << "length " << length << ", offset " << offset << ", split " << split;
+      // Accumulators in three parts, so that a kernel can start and stop in the middle of a message.
+      crc_accumulator<Register, Strategy, Preset> accumulator(*smallest);
+      accumulator.update(data.first(split)).update(data.subspan(split, second_split - split)).update(data.subspan(second_split));
+      ASSERT_EQ(accumulator.value(), expected) << "length " << length << ", offset " << offset;
+      crc_accumulator<std::uint64_t, Strategy, Preset> wide_accumulator(*wide);
+      wide_accumulator.update(data.first(second_split)).update(data.subspan(second_split));
+      ASSERT_EQ(wide_accumulator.value(), expected) << "length " << length << ", offset " << offset;
     }
   }
+  crc_accumulator<Register, Strategy, Preset> accumulator(*smallest);
+  accumulator.update(message.first(lengths.back()));
+  accumulator.reset();
+  accumulator.update(message.first(lengths.back()));
+  EXPECT_EQ(accumulator.value(), reference->compute(message.first(lengths.back())));
 }
 
 template <class Strategy, isa Preset>
@@ -197,17 +212,12 @@ template <class Strategy> constexpr std::string_view strategy_name() {
 
 struct pair_name {
   template <class Pair> static std::string GetName(int /*index*/) {
-    return std::string(strategy_name<typename Pair::first_type>()) + '_' +
-           std::string(isa_test::names.at(static_cast<std::size_t>(Pair::second_type::value)));
+    return std::string(strategy_name<typename Pair::first_type>()) + '_' + std::string(isa_test::name(Pair::second_type::value));
   }
 };
 
 template <class Pair> struct crc_acceleration_typed : ::testing::Test {
-  void SetUp() override {
-    if(!isa_test::cpu_runs(Pair::second_type::value)) {
-      GTEST_SKIP() << "the CPU cannot run it";
-    }
-  }
+  void SetUp() override { isa_test::skip_unless_cpu_runs(Pair::second_type::value); }
 };
 
 TYPED_TEST_SUITE(crc_acceleration_typed, folding_pairs, pair_name);

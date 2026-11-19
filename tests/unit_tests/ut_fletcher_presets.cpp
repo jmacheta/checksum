@@ -1,7 +1,7 @@
 // Fletcher and Adler presets: every preset this build has must give bit-identical results to isa::generic, at run time and at compile time.
 
-#include <checksum/fletcher.hpp>
 #include <checksum/adler32.hpp>
+#include <checksum/fletcher.hpp>
 #include <checksum/isa.hpp>
 
 #include <gtest/gtest.h>
@@ -31,12 +31,18 @@ struct Fletcher {
   using checksum_type = state_type::value_type;
   static constexpr checksum_type check = static_cast<checksum_type>(Check);
   static constexpr state_type initial_state() noexcept { return {}; }
-  template <isa Isa = isa::generic, byte_range Range>
-  static constexpr checksum_type compute(Range &&data) noexcept { return fletcher_compute<Width, Isa>(std::forward<Range>(data)); }
-  template <isa Isa = isa::generic, byte_range Range>
-  static constexpr state_type update(state_type state, Range &&data) noexcept { return fletcher_update<Width, Isa>(state, std::forward<Range>(data)); }
-  template <isa Isa = isa::generic, byte_range Range>
-  static constexpr checksum_type update(checksum_type checksum, Range &&data) noexcept { return fletcher_update<Isa>(checksum, std::forward<Range>(data)); }
+  static constexpr state_type largest_state() noexcept {
+    return {.sum1 = static_cast<state_type::sum_type>(-1), .sum2 = static_cast<state_type::sum_type>(-1)};
+  }
+  template <isa Isa = isa::generic, byte_range Range> static constexpr checksum_type compute(Range &&data) noexcept {
+    return fletcher_compute<Width, Isa>(std::forward<Range>(data));
+  }
+  template <isa Isa = isa::generic, byte_range Range> static constexpr state_type update(state_type state, Range &&data) noexcept {
+    return fletcher_update<Width, Isa>(state, std::forward<Range>(data));
+  }
+  template <isa Isa = isa::generic, byte_range Range> static constexpr checksum_type update(checksum_type checksum, Range &&data) noexcept {
+    return fletcher_update<Isa>(checksum, std::forward<Range>(data));
+  }
 };
 
 using Fletcher16 = Fletcher<16, 0x1EDE>;
@@ -48,18 +54,23 @@ struct Adler32 {
   using checksum_type = std::uint32_t;
   static constexpr checksum_type check = 0x091E01DE;
   static constexpr state_type initial_state() noexcept { return {}; }
-  template <isa Isa = isa::generic, byte_range Range>
-  static constexpr checksum_type compute(Range &&data) noexcept { return adler32_compute<Isa>(std::forward<Range>(data)); }
-  template <isa Isa = isa::generic, byte_range Range>
-  static constexpr state_type update(state_type state, Range &&data) noexcept { return adler32_update<Isa>(state, std::forward<Range>(data)); }
-  template <isa Isa = isa::generic, byte_range Range>
-  static constexpr checksum_type update(checksum_type checksum, Range &&data) noexcept { return adler32_update<Isa>(checksum, std::forward<Range>(data)); }
+  static constexpr state_type largest_state() noexcept { return {.sum1 = 0xFFFF, .sum2 = 0xFFFF}; }
+  template <isa Isa = isa::generic, byte_range Range> static constexpr checksum_type compute(Range &&data) noexcept {
+    return adler32_compute<Isa>(std::forward<Range>(data));
+  }
+  template <isa Isa = isa::generic, byte_range Range> static constexpr state_type update(state_type state, Range &&data) noexcept {
+    return adler32_update<Isa>(state, std::forward<Range>(data));
+  }
+  template <isa Isa = isa::generic, byte_range Range> static constexpr checksum_type update(checksum_type checksum, Range &&data) noexcept {
+    return adler32_update<Isa>(checksum, std::forward<Range>(data));
+  }
 };
 
 template <class Algorithm, class Preset> void check_constant() {
   constexpr isa preset = Preset::value;
   static_assert(Algorithm::template compute<preset>(std::string_view("123456789")) == Algorithm::check);
-  static_assert(Algorithm::template update<preset>(Algorithm::template compute<preset>(std::string_view("12345678")), std::string_view("9")) == Algorithm::check);
+  static_assert(Algorithm::template update<preset>(Algorithm::template compute<preset>(std::string_view("12345678")), std::string_view("9")) ==
+                Algorithm::check);
   EXPECT_EQ(Algorithm::template compute<preset>(std::string_view("123456789")), Algorithm::check);
 }
 
@@ -104,6 +115,22 @@ template <class Algorithm, class Preset> void check_updates(std::vector<std::byt
   EXPECT_EQ(Algorithm::template compute<preset>(list), Algorithm::compute(list));
 }
 
+// All-ones bytes around the chunk sizes of every kernel, from the initial and the largest sums: the inputs that come closest to
+// overflowing a kernel's deferred sums.
+template <class Algorithm, class Preset> void check_overflow_bounds(std::vector<std::byte> const &ones) {
+  constexpr isa preset = Preset::value;
+  for(std::size_t const chunk : {1024UZ, 2048UZ, 4096UZ, 5600UZ, 5760UZ, 16UZ << 10U, 32UZ << 10U, 256UZ << 10U}) {
+    for(std::size_t const size : {chunk - 1, chunk, chunk + 1, chunk + 35, (2 * chunk) + 35}) {
+      for(std::size_t const offset : {0UZ, 1UZ, 3UZ}) {
+        auto const message = at(ones, offset, size);
+        ASSERT_EQ(Algorithm::template compute<preset>(message), Algorithm::compute(message)) << "size " << size << ", offset " << offset;
+        ASSERT_EQ(Algorithm::template update<preset>(Algorithm::largest_state(), message), Algorithm::update(Algorithm::largest_state(), message))
+            << "size " << size << ", offset " << offset;
+      }
+    }
+  }
+}
+
 template <class Preset> using fletcher_adler_presets = isa_test::preset_test<Preset>;
 TYPED_TEST_SUITE(fletcher_adler_presets, isa_test::presets, isa_test::preset_name);
 
@@ -136,6 +163,14 @@ TYPED_TEST(fletcher_adler_presets, match_generic_through_updates_and_splits) {
   check_updates<Fletcher32, TypeParam>(buffer);
   check_updates<Fletcher64, TypeParam>(buffer);
   check_updates<Adler32, TypeParam>(buffer);
+}
+
+TYPED_TEST(fletcher_adler_presets, match_generic_at_overflow_bounds) {
+  std::vector<std::byte> const ones((512UZ << 10U) + 64, std::byte{0xFF});
+  check_overflow_bounds<Fletcher16, TypeParam>(ones);
+  check_overflow_bounds<Fletcher32, TypeParam>(ones);
+  check_overflow_bounds<Fletcher64, TypeParam>(ones);
+  check_overflow_bounds<Adler32, TypeParam>(ones);
 }
 
 } // namespace
