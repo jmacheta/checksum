@@ -55,7 +55,7 @@ plain value, so one prefix can be hashed several ways.
 | `xxhash_state<Width>` | Four lanes, the byte count (`length`), the `seed` and an unfinished stripe (`buffer`, 16 or 32 bytes). The default is the empty message with seed 0; `xxhash_state<Width>{.seed = seed}` starts another. `value_type` is `std::uint32_t` or `std::uint64_t`. |
 | `xxhash_update<Width, Isa>(state, data)` | Folds `data` into `state` and returns the new state. |
 | `xxhash_finalize(state)` | The hash of the message folded into `state`. |
-| `xxhash_compute<Width, Isa>(data, seed = 0)` | `xxhash_finalize(xxhash_update<Width, Isa>(xxhash_state<Width>{.seed = seed}, data))`. |
+| `xxhash_compute<Width, Isa>(data, seed = 0)` | `xxhash_finalize(xxhash_update<Width, Isa>(xxhash_state<Width>{.seed = seed}, data))`. The seed is a `std::uint32_t` for XXH32 and a `std::uint64_t` for XXH64; XXH3 takes a `std::uint64_t`. |
 | `xxh32_state`, `xxh64_state`, `xxh32_compute<Isa>`, `xxh64_compute<Isa>` | Aliases for Width 32 and 64. |
 | `xxhash_dispatch_engine<Width>` | `compute` and `update` with the preset chosen at run time. |
 

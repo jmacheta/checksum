@@ -95,6 +95,8 @@ extensions; each includes the ones before it on its line:
 | 32-bit Arm (GCC) | `thumb2` → `thumb2_dsp` → `thumb2_neon` → `thumb2_crc` |
 | RISC-V RV64 (GCC, Clang) | `riscv_zbc` and `riscv_v`, independent |
 
+Not supported yet: AVX-512, Arm Helium (MVE) and SVE2, and AArch32 presets with Clang.
+
 - **A preset is a compile-time choice and a promise.** `internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2
   kernel; on a CPU without AVX2 that is undefined behavior (an illegal instruction). Compiler flags such as
   `-march=native` select no kernel, every preset gives the same result, and constant evaluation runs the portable code.
