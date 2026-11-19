@@ -9,8 +9,8 @@ rules.
   extensions in the public interface.
 - **Memory-efficient.** No dynamic allocation, no global state. The user chooses the trade-off between table size and
   speed, and unused algorithms, parameter sets and strategies cost nothing in the final binary.
-- **Fast.** Portable loops that are competitive on their own, plus CPU instructions where the compiler flags enable
-  them (see [acceleration.md](acceleration.md)). Performance claims are measured, never assumed.
+- **Fast.** Portable loops that are competitive on their own, plus CPU instructions chosen by naming an
+  instruction-set preset (see [acceleration.md](acceleration.md)). Performance claims are measured, never assumed.
 - **Portable and embedded-friendly.** Builds with `-fno-exceptions -fno-rtti`, on bare-metal toolchains, on any
   endianness. Results are identical at compile time and at run time, and on every platform.
 
@@ -35,5 +35,5 @@ rules.
 
 ## Out of scope
 
-A C API, run-time CPU detection, and features users can build from the public API (frame verification, residue
-checks).
+A C API, and features users can build from the public API (frame verification, residue checks). Run-time CPU
+detection is not in the library yet; it is planned as an optional layer on top of the compile-time presets.

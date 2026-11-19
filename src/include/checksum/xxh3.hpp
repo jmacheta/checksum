@@ -44,9 +44,9 @@ struct xxh3_state {
       buffer{}; ///< The input after the folded part, from the start. While it holds fewer than 64 bytes, its end keeps the stripe before them.
 };
 
-/// Folds data into state; data may be split anywhere. Isa selects the run-time stripe loop: the variant compiled for that
-/// instruction-set preset (checksum/isa.hpp). Constant evaluation runs the same portable code for every preset.
-/// With a seed other than 0, each call that folds the buffer builds the 192-byte secret again, as xxh3_finalize() does.
+/// Folds data into state, which may be split anywhere; Isa selects the run-time stripe loop, the variant compiled for that
+/// instruction-set preset (checksum/isa.hpp). With a seed other than 0, each call that folds the buffer builds the 192-byte secret again, as
+/// xxh3_finalize() does.
 template <unsigned Width, isa Isa = isa::generic>
 [[nodiscard]] constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept;
 

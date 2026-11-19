@@ -14,9 +14,9 @@
 ## Presets
 
 - `CMakePresets.json` holds the test presets and the typical native builds (`native-gcc`, `native-clang`,
-  `native-asan`, `native-gcc-no-exceptions`, `native-gcc-portable`, `native-clang-libcxx`).
-- Everything else is in dedicated files under `cmake/`, included by `CMakePresets.json`: `x86_64_presets.json`,
-  `emulator_presets.json` (cross builds tested in QEMU user mode), `benchmark_presets.json` and the shared hidden
+  `native-asan`, `native-gcc-no-exceptions`, `native-clang-libcxx`, `windows-msvc`).
+- Everything else is in dedicated files under `cmake/`, included by `CMakePresets.json`: `emulator_presets.json`
+  (cross builds tested in QEMU user mode), `benchmark_presets.json`, `msvc_wine_presets.json` and the shared hidden
   presets of `common_presets.json`. A preset file includes `common_presets.json` itself if it inherits from it.
 - Test presets inherit the hidden `test-common` (output on failure, 8 jobs, stop on failure) and test the Debug
   configuration only. Only the `native-*-bench` presets turn on `CHECKSUM_BENCHMARKS`.

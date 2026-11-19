@@ -32,8 +32,7 @@ struct internet_state {
 };
 
 /// Folds data into state; data may be split anywhere, including inside a 16-bit word. Isa selects the run-time loop: the
-/// variant compiled for that instruction-set preset (checksum/isa.hpp). Constant evaluation runs the same portable code for
-/// every preset.
+/// variant compiled for that instruction-set preset (checksum/isa.hpp).
 template <isa Isa = isa::generic>
 [[nodiscard]] constexpr internet_state internet_update(internet_state state, std::span<std::byte const> data) noexcept;
 

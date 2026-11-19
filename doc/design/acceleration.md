@@ -5,18 +5,17 @@ How algorithms use CPU instructions and which architectures are worth it, per al
 
 ## Rules
 
-- **Compile time only.** Each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`, `fletcher_arch.hpp`,
-  `xxh3_arch.hpp`, `fletcher4_arch.hpp`) selects one directory per architecture (`x86_64/`, `arm/`, `riscv64/`,
-  `generic/`) and includes its header from there. That header selects kernels with `if constexpr` on the instruction-set
-  preset, never on compiler macros; without a kernel it uses the portable code. No static state.
-- **Instruction-set presets.** Every function takes an `isa` preset (`checksum/isa.hpp`) as a template parameter,
-  `isa::generic` by default. The architecture header selects kernels with `if constexpr` on the preset, never on
-  compiler macros, and every helper is a template on the preset, so each preset's copy has its own name. Each preset
-  has its own source, `src/<algorithm>/<loop>_<preset>.cpp`, which builds only where `checksum_private/presets.hpp`
-  gives the preset target options and compiles the loops under a target pragma (`target_begin.hpp`, `target_end.hpp`)
-  after every std header. `isa_available()` rejects the other presets with a `static_assert`. The build system adds no
-  flags, and flags such as `-march=native` select no kernel by themselves. GCC on RISC-V has no target pragma, so the
-  RVV kernel carries its own target attribute.
+- **Compile-time instruction-set presets.** Every function takes an `isa` preset (`checksum/isa.hpp`) as a template
+  parameter, `isa::generic` by default. Each algorithm's dispatch header (`crc_arch.hpp`, `internet_arch.hpp`,
+  `fletcher_arch.hpp`, `xxh3_arch.hpp`, `fletcher4_arch.hpp`) selects one directory per architecture (`x86_64/`, `arm/`,
+  `riscv64/`, `generic/`) and includes its header from there. That header selects kernels with `if constexpr` on the
+  preset, never on compiler macros, and uses the portable code without a kernel; every helper is a template on the
+  preset, so each preset's copy has its own name. No static state. Each preset has its own source,
+  `src/<algorithm>/<loop>_<preset>.cpp`, which builds only where `checksum_private/presets.hpp` gives the preset target
+  options and compiles the loops under a target pragma (`target_begin.hpp`, `target_end.hpp`) after every std header.
+  `isa_available()` rejects the other presets with a `static_assert`. The build system adds no flags, and flags such as
+  `-march=native` select no kernel by themselves. GCC on RISC-V has no target pragma, so the RVV kernel carries its own
+  target attribute.
 - **One interface per algorithm.** Every architecture header defines the same constants (`*_available`, size
   thresholds) and, where they are true, the same functions; callers use them only in `if constexpr` branches.
   Intrinsics appear nowhere else.
@@ -107,20 +106,21 @@ already fast. It adds native `std::size_t` words in two add-with-carry chains an
 on x86-64 that is about 8 200 MB/s at 20 B and 55 500 MB/s at 4 KiB, without any instruction-set flags. A kernel has
 to beat that, not a byte loop.
 
-| Target | Verdict | Why |
+| Preset | Verdict | Why |
 | --- | --- | --- |
-| x86-64 AVX2 | Yes, from 512 B | 64-byte blocks, 32-bit halves summed into 64-bit lanes: 1.4-1.7× the portable loop at 1500 B-4 KiB, 1.2-1.5× at 1 MiB. The call and the reduction make it slower below about 350 B. |
-| x86-64 SSE2 (baseline) | No | The same scheme with 16-byte vectors matched the scalar carry loop and was never faster. |
+| x86-64 `isa::x86_avx2` and up | Yes, from 512 B | 64-byte blocks, 32-bit halves summed into 64-bit lanes: 1.4-1.7× the portable loop at 1500 B-4 KiB, 1.2-1.5× at 1 MiB. The call and the reduction make it slower below about 350 B. |
+| x86-64 `isa::generic`, `x86_pclmul` (SSE2 baseline) | No | The same scheme with 16-byte vectors matched the scalar carry loop and was never faster. |
 | x86-64 AVX-512 | Not measured | No AVX-512 hardware available; the AVX2 kernel is near the L1 bandwidth, so the gain is likely small. |
 | Compiler auto-vectorization | No | GCC `-O3 -march=native` vectorizes a 32-bit-word loop to about 47 000 MB/s, below the scalar carry loop; Clang does not vectorize it. |
-| AArch64 NEON (`uadalp`) | Yes, from 512 B | Cortex-A72: 1.5× at 1500 B, 1.8× at 4 KiB. The 64-bit portable loop is fast (5 700 MB/s at 256 B), so the kernel loses below about 370 B. Eight accumulators (128 B per iteration) were slower than four. |
+| little-endian AArch64, every preset, GCC or Clang: NEON (`uadalp`) | Yes, from 512 B | Cortex-A72: 1.5× at 1500 B, 1.8× at 4 KiB. The 64-bit portable loop is fast (5 700 MB/s at 256 B), so the kernel loses below about 370 B. Eight accumulators (128 B per iteration) were slower than four. |
 | AArch64 `ldp` + `adcs` assembly | No, for now | 1.3-1.5× the portable loop at 256 B-4 KiB on the A72, better than NEON at 256 B but worse from 1500 B. A second kernel for 256-511 B is not worth the assembly. |
-| 32-bit Arm NEON | Yes, from 192 B | A72 in AArch32: 3.6× at 4 KiB, where the portable loop runs 32-bit words. |
-| 32-bit Arm without NEON (Cortex-M) | Yes, from 192 B, inline assembly | `ldm` + `adcs` chain: 0.69 cycles per byte against 1.27 for the portable loop on a Cortex-M4 (nRF52840 and STM32L4A6): 1.8× at 4 KiB, 1.3× at 256 B, up to 2.5× from an odd address. Cortex-M33 (nRF54L15): 0.62 against 0.96, 1.55× at 4 KiB, 1.17× at 256 B; it breaks even at about 96 B from an aligned address but is 30 % slower at 64 B from other addresses, so the threshold stays. |
+| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm: NEON | Yes, from 192 B | A72 in AArch32: 3.6× at 4 KiB, where the portable loop runs 32-bit words. |
+| `isa::thumb2`, `thumb2_dsp` (e.g. Cortex-M): `ldm` + `adcs` | Yes, from 192 B, inline assembly | `ldm` + `adcs` chain: 0.69 cycles per byte against 1.27 for the portable loop on a Cortex-M4 (nRF52840 and STM32L4A6): 1.8× at 4 KiB, 1.3× at 256 B, up to 2.5× from an odd address. Cortex-M33 (nRF54L15): 0.62 against 0.96, 1.55× at 4 KiB, 1.17× at 256 B; it breaks even at about 96 B from an aligned address but is 30 % slower at 64 B from other addresses, so the threshold stays. |
 | Cortex-M0/M0+/M23 (Thumb-1) | Not done | `adcs` and `ldm` exist for low registers, but there is no `teq`: the loop test must not clobber the carry. No hardware to measure. |
 | Big-endian NEON | No | `vreinterpret` lane order differs between GCC and Clang, as for PMULL; big-endian AArch64 runs the portable loop. |
-| RISC-V V extension | Implemented, unproven | Widening add `vwaddu.wv` into 64-bit lanes, vector-length agnostic, in the `riscv_v` preset. The tests run QEMU's default VLEN 128, VLEN 256-1024 were tested by hand; QEMU 10.2 user mode crashes at VLEN 64. No hardware measured, so the 64 B threshold is a guess. |
-| RISC-V scalar (Zba, Zbb) | No | No carry flag: a 64-bit word costs a load and three instructions with or without `add.uw`, the same as the portable loop. |
+| `isa::riscv_v` | Implemented, unproven | Widening add `vwaddu.wv` into 64-bit lanes, vector-length agnostic, in the `riscv_v` preset. The tests run QEMU's default VLEN 128, VLEN 256-1024 were tested by hand; QEMU 10.2 user mode crashes at VLEN 64. No hardware measured, so the 64 B threshold is a guess. |
+| RISC-V scalar (Zba, Zbb), `isa::riscv_zbc` | No | No carry flag: a 64-bit word costs a load and three instructions with or without `add.uw`, the same as the portable loop. |
+| MSVC ARM64 | Not done | Portable loop; MSVC x64 uses the AVX2 kernel of `isa::x86_avx2`. |
 
 Cortex-M methods, measured on the nRF52840 and STM32L4A6 (cycles per byte at 4 KiB):
 
@@ -188,11 +188,12 @@ x86-64 at 4 KiB with GCC, but only 900 MB/s on a Cortex-A72 and 15 MB/s on an 80
 | little-endian AArch64, every preset | Yes: bytes from 64 B, 16-bit from 128 B, 32-bit from 256 B | Cortex-A72 at 4 KiB: about 7× for Fletcher-16 and Adler-32, 2.8× for Fletcher-32, 1.45× for Fletcher-64, whose 64-bit portable loop is already fast. |
 | little-endian AArch64, every preset, 64 bytes per iteration (`group_kernel`) | Yes, bytes from 320 B | Pairwise additions of four blocks into `sum`, 64 column sums weighted 64 .. 1, one `previous` addition per 64 bytes, as zlib-ng: Adler-32 at 4 KiB 6 270 against 4 746 MB/s (1.32×), 0.96× zlib-ng and ISA-L. Below 320 B weighting 64 columns costs more than it saves. In AArch32 (16 NEON registers) it spilled and lost 10-27 %. |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | Yes, the same kernels and thresholds except `group_kernel` | A72 in AArch32 at 4 KiB: 4.7× for Fletcher-16, 5.0× for Adler-32, 2.9× for Fletcher-32, 3.1× for Fletcher-64. |
-| `isa::thumb2_dsp` on little-endian M-profile Arm (Cortex-M4/M7/M33), bytes | Yes, from 64 B | `usada8` sums 4 bytes, `uxtb16` + `smlad` weight them: 2.69 cycles per byte against 5.30 on a Cortex-M4 (nRF52840 and STM32L4A6), 2.0× at 4 KiB, 1.6× at 256 B. Cortex-M33 (nRF54L15): 2.67 against 4.53, 1.7× at 4 KiB; there too it pays from 64 B and is 4-8 % slower at 48-63 B. |
+| `isa::thumb2_dsp` on little-endian 32-bit Arm, any profile, bytes | Yes for Cortex-M4/M7/M33, from 64 B | `usada8` sums 4 bytes, `uxtb16` + `smlad` weight them: 2.69 cycles per byte against 5.30 on a Cortex-M4 (nRF52840 and STM32L4A6), 2.0× at 4 KiB, 1.6× at 256 B. Cortex-M33 (nRF54L15): 2.67 against 4.53, 1.7× at 4 KiB; there too it pays from 64 B and is 4-8 % slower at 48-63 B. |
 | M-profile Arm DSP, 16-bit and 32-bit values | No | The portable loop sums 32-bit words on 32-bit targets: 2.11 cycles per byte for Fletcher-32 and 1.80 for Fletcher-64, within 2 % of a DSP kernel of the same scheme. |
-| A-profile 32-bit Arm without NEON | No | The DSP kernel is slower than the portable loop on the Cortex-A72 in AArch32; only M-profile cores use it. |
+| `isa::thumb2_dsp` on A-profile cores | No | The DSP kernel is slower than the portable loop on the Cortex-A72 in AArch32; it runs there only with that preset, which lets QEMU user mode test it. A-profile cores with NEON take `isa::thumb2_neon`. |
 | Big-endian NEON | No | The kernels read vector lanes as little-endian values; big-endian targets run the portable loop. |
 | RISC-V presets | Not done | No hardware to measure; a candidate. |
+| MSVC ARM64 | Not done | Portable loops; MSVC x64 uses the x86 kernels per preset. |
 
 Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cortex-A72; MCU: Cortex-M4):
 
@@ -237,8 +238,6 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
 - The DSP kernel is not inlined into the chunk loop: there GCC reloaded two weights in every iteration.
 - On 32-bit targets the portable Fletcher-32 loop adds 32-bit words, two blocks each, and Fletcher-64 adds its blocks
   one by one: its 64-bit sums make the multiplications of the four-block formula cost more than the dependency chain.
-- The `thumb2_dsp` preset enables the DSP kernel on an A-profile core where `isa_available()` accepts it, only so that
-  QEMU user mode can test it.
 
 ## MurmurHash3
 
@@ -252,12 +251,13 @@ instruction set. On 32-bit targets x64_128 builds its 64-bit multiplications fro
 runs 552 MB/s at 4 KiB against 1 681 in AArch64, and on a Cortex-M4 it takes 4.42 cycles per byte against 3.02 for
 x86_32.
 
-On 32-bit Arm without NEON (Cortex-M, small in-order A-profile cores) x86_32 takes four blocks per iteration, so an
-in-order core runs the multiplications of the next blocks while the lane chain of the earlier ones completes: on a
-Cortex-M33 (nRF54L15) 2.27 cycles per byte at 4 KiB against 3.77, 1.06× at 20 B; two blocks were 1.50×. x86-64 lost
-2-4 % from 4 KiB that way, so out-of-order targets keep one block per iteration. Two x64_128 blocks per iteration
-were 16 % slower on the Cortex-M33: their 64-bit values do not fit the registers. On a Cortex-M4 (nRF52840, code
-aligned to 16 bytes) four x86_32 blocks give 2.52 cycles per byte against 3.02, 1.20×, and 0.98× at 20 B.
+On 32-bit Arm with any preset but `thumb2_neon` and `thumb2_crc` (for Cortex-M and small in-order A-profile cores)
+x86_32 takes four blocks per iteration, so an in-order core runs the multiplications of the next blocks while the lane
+chain of the earlier ones completes: on a Cortex-M33 (nRF54L15) 2.27 cycles per byte at 4 KiB against 3.77, 1.06× at 20
+B; two blocks were 1.50×. x86-64 lost 2-4 % from 4 KiB that way, so out-of-order targets keep one block per iteration.
+Two x64_128 blocks per iteration were 16 % slower on the Cortex-M33: their 64-bit values do not fit the registers. On a
+Cortex-M4 (nRF52840, code aligned to 16 bytes) four x86_32 blocks give 2.52 cycles per byte against 3.02, 1.20×, and
+0.98× at 20 B.
 
 ## XXH32 and XXH64
 
@@ -293,7 +293,8 @@ halves of data XOR secret, plus the neighbor lane's data, and a scramble after e
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | Yes, every stripe loop | A72 in AArch32, GCC `-O2`: 1 544 against 921 MB/s at 256 B, 2 807 against 1 341 at 4 KiB (2.1×), where the portable loop builds 64-bit additions from 32-bit ones. |
 | Big-endian NEON | No | The kernels read vector lanes as little-endian values; big-endian targets run the portable loop. |
 | `isa::riscv_v` (RV64, VLEN ≥ 128) | Implemented, unproven | The eight accumulators in one register group (`vuint64m4_t`); about ten vector instructions per stripe instead of about fifty scalar ones. Tested in QEMU only. |
-| other presets (Cortex-M, 32-bit Arm without NEON, RISC-V without V) | No kernel | The portable loop runs. |
+| other presets (`isa::thumb2`, `thumb2_dsp`, `riscv_zbc`) | No kernel | The portable loop runs. |
+| MSVC ARM64 | Not done | Portable loop; MSVC x64 uses the x86 kernels per preset. |
 
 Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cortex-A72):
 

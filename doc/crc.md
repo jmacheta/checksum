@@ -6,8 +6,8 @@ at compile time or at run time. Everything is in two headers:
 - `checksum/crc.hpp`: the parameter model, the engines, the strategies;
 - `checksum/crc_catalog.hpp`: 112 named parameter sets (`checksum::crc32`, `checksum::crc16_modbus`, ...).
 
-Requirements: C++23, GCC ≥ 14 with libstdc++, or Clang ≥ 18 with libstdc++ ≥ 14 or libc++ ≥ 18. The library
-throws no exceptions, allocates no memory, uses no RTTI and has no global state; it builds with
+Requirements: C++23, GCC ≥ 14 with libstdc++, Clang ≥ 18 with libstdc++ ≥ 14 or libc++ ≥ 18, or MSVC (x64, ARM64). The
+library throws no exceptions, allocates no memory, uses no RTTI and has no global state; it builds with
 `-fno-exceptions -fno-rtti` and on bare-metal toolchains.
 
 ## 1. Adding the library
@@ -226,14 +226,9 @@ Compiler flags such as `-march=native`, `-mpclmul` or `-march=armv8-a+crc` selec
 | `isa::riscv_zbc` | Zbc `clmul`/`clmulh` folding (RV64, little-endian). The inline assembly enables Zbc locally, so the build itself needs no Zbc. |
 | `isa::thumb2`, `isa::thumb2_neon`, `isa::thumb2_dsp`, `isa::riscv_v` | portable sliced or braided loops compiled for the preset. |
 
-**Choosing a preset.** `crc_engine_for<checksum::crc32c, checksum::crc_lut_sliced, checksum::isa::x86_pclmul>.compute(data)`
-runs the x86 PCLMULQDQ kernel whatever the build's compiler flags. The library compiles the loop once for every
-preset that `isa_available()` accepts on the target architecture and compiler, each into its own object, so a static
-link pulls in only the presets a program names. A preset without a kernel still runs the portable loop compiled for
-its instruction set. Naming a preset that `isa_available()` rejects is a compile error, not a link error. Presets
-give bit-identical results, and constant evaluation runs the same portable code for every preset. The library does
-not check the CPU: calling a preset on a CPU without its instructions is undefined (illegal instruction). There is
-no run-time detection yet; a later run-time layer is planned.
+`crc_engine_for<checksum::crc32c, checksum::crc_lut_sliced, checksum::isa::x86_pclmul>.compute(data)` runs the x86
+PCLMULQDQ kernel; how presets work and what to check before calling one is in
+[Instruction-set presets](../README.md#instruction-set-presets).
 
 Notes:
 
@@ -243,8 +238,8 @@ Notes:
   two strategies perform the same and `crc_lut_sliced` is half the size.
 - x86-64-v3 (AVX2) does not include PCLMULQDQ; choose `isa::x86_pclmul` or a higher preset.
 - Big-endian AArch64 uses the CRC32 instructions but not PMULL.
-- `crc_lut_none`, `crc_lut_nibble` and `crc_lut_byte` run their portable loop for every preset.
-- Constant evaluation always runs the portable loops; results are identical.
+- `crc_lut_none`, `crc_lut_nibble` and `crc_lut_byte` run the same portable loop, the `isa::generic` one, for every
+  preset.
 - MSVC x64 uses the same x86 kernels per preset. MSVC ARM64 has no CRC kernel and runs the portable loops.
 
 The design and the measurements behind each kernel are in [design/acceleration.md](design/acceleration.md).
@@ -278,6 +273,6 @@ column there is the `isa::x86_vpclmul` preset.
 
 - **Widths 1..64** only, and only polynomials with an x^0 term.
 - **Initial values are direct**: the register content before the first message bit, never the "augmented" form.
-- **No run-time CPU detection.** The preset is chosen at compile time; calling a preset on a CPU without its
-  instructions is undefined (illegal instruction). A binary that names `x86_vpclmul` does not run on older CPUs.
+- **No run-time CPU detection yet.** The preset is chosen at compile time; calling a preset on a CPU without its
+  instructions is undefined (illegal instruction). A run-time layer on top of the presets is planned.
 - **Not thread-safe.** A `const` engine can be shared between threads; an accumulator cannot.

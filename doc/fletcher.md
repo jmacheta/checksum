@@ -4,8 +4,8 @@
 header, `checksum/fletcher.hpp`. Adler-32, a close relative with its own modulus, has its own guide:
 [adler32.md](adler32.md).
 
-The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, or Clang ≥ 18. It has no tables,
-allocates no memory and has no global state.
+The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, Clang ≥ 18, or MSVC (x64, ARM64). It has
+no tables, allocates no memory and has no global state.
 
 ## 1. Quick start
 
@@ -103,22 +103,15 @@ and `sum2` gains both at the end of each chunk, 2 KiB to 256 KiB depending on th
 | `isa::x86_avxvnni` | `vpdpbusd`, 128 bytes per iteration, from 64 B | as AVX2 | as AVX2 |
 | `isa::x86_avx2`, `x86_vpclmul` | 32-byte vectors, from 64 B | from 128 B | from 384 B |
 | `isa::generic`, `x86_pclmul` on x86-64 (SSE2 baseline; SSSE3 weighting from `x86_pclmul`) | 16-byte vectors, from 64 B | from 128 B | portable loop |
-| every preset of little-endian AArch64, `isa::generic` included (NEON is always there) | NEON, from 64 B; 64 bytes per iteration from 320 B | from 128 B | from 256 B |
+| every preset of little-endian AArch64 with GCC or Clang, `isa::generic` included (NEON is always there) | NEON, from 64 B; 64 bytes per iteration from 320 B | from 128 B | from 256 B |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 64 B | from 128 B | from 256 B |
-| `isa::thumb2_dsp` on little-endian M-profile Arm (Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B | portable loop | portable loop |
-| everything else: `isa::thumb2`, `isa::riscv_zbc`, `isa::riscv_v`, big-endian targets | portable loop | portable loop | portable loop |
+| `isa::thumb2_dsp` on little-endian 32-bit Arm, any profile (for Cortex-M4/M7/M33; slower than the portable loop on a Cortex-A72) | `usada8` + `smlad`, from 64 B | portable loop | portable loop |
+| everything else: `isa::thumb2`, `isa::riscv_zbc`, `isa::riscv_v`, big-endian targets, MSVC ARM64 | portable loop | portable loop | portable loop |
 
-**Choosing a preset.** `fletcher32_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 kernel whatever the build's
-compiler flags; flags such as `-mavx2` or `-march=native` select no kernel by themselves. The library compiles the loop
-once for every preset that `isa_available()` accepts on the target architecture and compiler, each into its own object,
-so a static link pulls in only the presets a program names. A preset without a kernel still runs the portable loop
-compiled for its instruction set. Naming a preset that `isa_available()` rejects is a compile error, not a link error.
-Presets give bit-identical results, and constant evaluation runs a byte-by-byte loop with the same result whatever the
-preset. The library does not check the CPU: call a preset only where the CPU has its instructions. On 32-bit Arm the
-presets need GCC and a build that already compiles Thumb-2 code, so a Cortex-M0 build has only `isa::generic`. The DSP
-kernel first sums single bytes up to a 4-byte aligned address, so the start address hardly matters. Adler-32 uses the
-same byte kernels. The measurements behind each choice are in
-[design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
+`fletcher32_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 kernel; how presets work and what to check before
+calling one is in [Instruction-set presets](../README.md#instruction-set-presets). The DSP kernel first sums single
+bytes up to a 4-byte aligned address, so the start address hardly matters. Adler-32 uses the same byte kernels. The
+measurements behind each choice are in [design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
 
 ## 6. Performance guidelines
 

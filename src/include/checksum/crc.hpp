@@ -95,9 +95,9 @@ template <class Register> struct register_form;
 
 namespace checksum {
 
-/// An immutable CRC engine: the strategy's table and the prepared parameters. The running CRC is a separate state_type value, so one engine
-/// serves any number of computations. Isa selects the run-time loop of the built-in strategies: the variant compiled for that
-/// instruction-set preset (checksum/isa.hpp); other strategies ignore it, and constant evaluation runs the same code for every preset.
+/// An immutable CRC engine: the strategy's table and the prepared parameters; the running CRC is a separate state_type value, so one engine
+/// serves any number of computations. Isa selects the run-time loop of the built-in strategies, the variant compiled for that
+/// instruction-set preset (checksum/isa.hpp); other strategies ignore it.
 template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_none, isa Isa = isa::generic> class crc_engine {
   static_assert(isa_available(Isa),
                 "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");

@@ -4,8 +4,8 @@
 one header, `checksum/fletcher4.hpp`. The Fletcher-16, Fletcher-32 and Fletcher-64 checksums, which use a modulus and
 two sums, have their own guide: [fletcher.md](fletcher.md).
 
-The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, or Clang ≥ 18. It has no tables,
-allocates no memory and has no global state.
+The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, Clang ≥ 18, or MSVC (x64, ARM64). It has
+no tables, allocates no memory and has no global state.
 
 ## 1. Quick start
 
@@ -86,18 +86,12 @@ run in vector registers where a kernel exists, else in portable code:
 | every preset of little-endian AArch64, `isa::generic` included (NEON is always there) | NEON, two 128-bit vectors per sum, from 192 B |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 192 B |
 | other 64-bit targets: `isa::generic`, `isa::riscv_zbc`, `isa::riscv_v`, big-endian AArch64 | Portable lanes, from 256 B |
-| other 32-bit targets: `isa::generic`, `isa::thumb2`, `isa::thumb2_dsp`, big-endian 32-bit Arm | Word loop only; two words per iteration on 32-bit Arm without NEON |
+| other 32-bit targets: `isa::generic`, `isa::thumb2`, `isa::thumb2_dsp`, big-endian 32-bit Arm | Word loop only; two words per iteration on 32-bit Arm with any preset but `thumb2_neon` and `thumb2_crc` |
 
-**Choosing a preset.** `fletcher4_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 lanes whatever the build's
-compiler flags; flags such as `-mavx2` or `-march=native` select no kernel by themselves. The library compiles the loop
-once for every preset that `isa_available()` accepts on the target architecture and compiler, each into its own object,
-so a static link pulls in only the presets a program names. A preset without a kernel still runs the portable loop
-compiled for its instruction set. Naming a preset that `isa_available()` rejects is a compile error, not a link error.
-Presets give bit-identical results, and constant evaluation runs a byte-by-byte loop with the same result whatever the
-preset. The library does not check the CPU: call a preset only where the CPU has its instructions. On 32-bit Arm the
-presets need GCC and a build that already compiles Thumb-2 code, so a Cortex-M0 build has only `isa::generic`. On
-32-bit targets the 64-bit sums of four portable lanes do not fit the registers and ran 3× slower than the word loop, so
-those targets never use them. The measurements behind each choice are in
+`fletcher4_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 lanes; how presets work and what to check before
+calling one is in [Instruction-set presets](../README.md#instruction-set-presets). MSVC uses the same kernels as GCC and
+Clang, NEON on ARM64 included. On 32-bit targets the 64-bit sums of four portable lanes do not fit the registers and ran
+3× slower than the word loop, so those targets never use them. The measurements behind each choice are in
 [design/acceleration.md](design/acceleration.md#fletcher4).
 
 ## 6. Performance guidelines
@@ -107,10 +101,11 @@ Measured figures are in [performance.md](performance.md#fletcher4).
 - **Lanes start at a minimum size** of one `fletcher4_update` call (section 5): 128 B with AVX2, 192 B with SSE2 or
   NEON, 256 B for the portable lanes. ZFS blocks are larger, so they always run the lanes; with AVX2 a 4 KiB block
   hashes at about 29 000 MB/s, on par with OpenZFS.
-- **Use a kernel preset with Clang:** its portable lanes reach only about 45 % of the SSE2 kernel on x86-64, and 60 %
-  of NEON on AArch64. With GCC the portable lanes are close to the kernels.
-- **On 32-bit targets without NEON**, including Cortex-M, the word loop runs about 20 MB/s at 64 MHz on a Cortex-M4.
-  Aligned buffers are 16 % faster than odd start addresses.
+- **The portable lanes run only without a lane kernel** (RISC-V, big-endian AArch64). Measured where a kernel exists,
+  Clang's portable lanes reached about 45 % of the SSE2 kernel on x86-64 and 60 % of NEON on AArch64; GCC's are close to
+  the kernels.
+- **On 32-bit targets without a lane kernel**, including Cortex-M, the word loop runs about 20 MB/s at 64 MHz on a
+  Cortex-M4. Aligned buffers are 16 % faster than odd start addresses.
 
 ## 7. Limitations
 

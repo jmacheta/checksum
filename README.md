@@ -33,16 +33,17 @@ std::uint64_t hash = checksum::xxh3_64_compute(data);
 
 ## Why this one
 
-- **Fast where it counts.** Portable loops that hold their own, plus CPU instructions where your compiler flags
-  allow them: carry-less multiplication, CRC instructions and vector units on x86-64, Arm and RISC-V, and the DSP
-  instructions of Cortex-M4/M7/M33. CRC-32 runs at about 75 000 MB/s on a laptop CPU, on par with Intel ISA-L.
+- **Fast where it counts.** Portable loops that hold their own, plus CPU instructions chosen by naming an
+  [instruction-set preset](#instruction-set-presets): carry-less multiplication, CRC instructions and vector units on
+  x86-64, Arm and RISC-V, and the DSP instructions of Cortex-M4/M7/M33. CRC-32 with `isa::x86_vpclmul` runs at about
+  75 000 MB/s on a laptop CPU, on par with Intel ISA-L.
   [doc/performance.md](doc/performance.md) has the measurements, from servers down to 64 MHz microcontrollers.
 - **You choose the memory.** A CRC-32 engine takes 32 bytes without a table, or 8 KiB of tables for full
   speed. Nothing allocates, there is no global state, and the linker drops what you do not call.
 - **Embedded-friendly.** No exceptions, RTTI or OS calls; builds with `-fno-exceptions -fno-rtti` for bare-metal
   targets, on little- and big-endian CPUs.
 - **Checked against the references.** Values match zlib, OpenZFS, xxHash and SMHasher. CI runs the tests natively
-  and in QEMU for AArch64, 32-bit Arm, RISC-V and big-endian AArch64.
+  on x86-64 and AArch64, with MSVC on Windows, and in QEMU for AArch64, 32-bit Arm, RISC-V and big-endian AArch64.
 
 ## Getting it
 
@@ -56,15 +57,53 @@ target_link_libraries(my_app PRIVATE checksum::checksum)
 Or download [release 1.0.0](https://github.com/jmacheta/checksum/releases/tag/v1.0.0), put it next to your code and
 use `add_subdirectory(checksum)` with the same `target_link_libraries`.
 
-You need GCC 14 or newer, or Clang 18 or newer (with libstdc++ 14 or libc++ 18 or newer).
+You need GCC 14 or newer, Clang 18 or newer (with libstdc++ 14 or libc++ 18 or newer), or MSVC for x64 or ARM64 (CI
+tests x64).
 
 Two build tips:
 
-- CPU acceleration is a template argument, an instruction-set preset such as `checksum::isa::x86_avx2` or
-  `checksum::isa::aarch64_crc` (`checksum/isa.hpp`); the default `isa::generic` runs on every CPU of the architecture.
-  Compiler flags select no kernel, and there is no run-time CPU detection yet.
+- CPU acceleration is a template argument, not a compiler flag: see [Instruction-set presets](#instruction-set-presets).
 - Compile with `-ffunction-sections -fdata-sections` and link with `-Wl,--gc-sections`, so the binary keeps only
   the algorithms you use.
+
+## Instruction-set presets
+
+Every algorithm takes an instruction-set preset, `checksum::isa` (`checksum/isa.hpp`), as its last explicit template
+parameter. The default `isa::generic` runs on every CPU of the architecture: the portable loops plus what the
+architecture guarantees, SSE2 on x86-64 and NEON on little-endian AArch64 with GCC or Clang. The other presets add CPU
+extensions, and each includes the ones before it on its line:
+
+| Architecture | Presets |
+| --- | --- |
+| x86-64 | `x86_pclmul` → `x86_avx2` → `x86_vpclmul` → `x86_avxvnni` |
+| AArch64 | `aarch64_crc` → `aarch64_pmull` |
+| 32-bit Arm (GCC) | `thumb2` → `thumb2_dsp` → `thumb2_neon` → `thumb2_crc` |
+| RISC-V RV64 | `riscv_zbc` and `riscv_v`, independent |
+
+The library compiles every algorithm once per preset that `isa_available()` accepts for the architecture and compiler,
+each into its own object, so a static link keeps only the presets a program names. `isa_available()` is `constexpr`
+and works in `if constexpr`; naming a preset it rejects is a compile error. Compiler flags such as `-march=native`
+select no kernel, every preset gives the same result, and constant evaluation always runs the portable code. On 32-bit
+Arm the presets need a build that compiles Thumb-2 code; `thumb2_dsp` also needs the DSP extension, and `thumb2_neon`
+and `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-point ABI, so a Cortex-M0 build has only
+`isa::generic`. Which preset enables which kernel is in each algorithm's guide.
+
+The library does not detect the CPU yet: calling a preset on a CPU without its instructions is undefined (illegal
+instruction), so check the CPU first. With GCC or Clang on x86-64:
+
+```cpp
+std::uint16_t ip_checksum(std::span<std::byte const> data) {
+  if constexpr(checksum::isa_available(checksum::isa::x86_avx2)) {
+    if(__builtin_cpu_supports("avx2")) {
+      return checksum::internet_compute<checksum::isa::x86_avx2>(data);
+    }
+  }
+  return checksum::internet_compute(data);
+}
+```
+
+A run-time layer that detects the CPU and picks among the compiled presets is planned, as an optional layer on top of
+the compile-time presets.
 
 ## Examples
 

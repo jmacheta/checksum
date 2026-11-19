@@ -42,7 +42,7 @@ struct murmur3_state {
 };
 
 /// Folds data into state; data may be split anywhere. Isa selects the run-time loop: the variant compiled for that instruction-set preset
-/// (checksum/isa.hpp). Constant evaluation runs the same portable code for every preset.
+/// (checksum/isa.hpp).
 template <unsigned Width, isa Isa = isa::generic>
 [[nodiscard]] constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, std::span<std::byte const> data) noexcept;
 

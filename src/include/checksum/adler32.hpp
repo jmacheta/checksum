@@ -32,7 +32,7 @@ struct adler32_state {
 };
 
 /// Folds data into state; data may be split anywhere. Isa selects the run-time loop: the variant compiled for that
-/// instruction-set preset (checksum/isa.hpp). Constant evaluation runs the same portable code for every preset.
+/// instruction-set preset (checksum/isa.hpp).
 template <isa Isa = isa::generic>
 [[nodiscard]] constexpr adler32_state adler32_update(adler32_state state, std::span<std::byte const> data) noexcept;
 

@@ -4,8 +4,8 @@
 run time. The values are those of the reference implementation (`xxhash.h` 0.8.4) on every target. XXH32 and XXH64 are
 in `checksum/xxhash.hpp`, XXH3-64 and XXH3-128 in `checksum/xxh3.hpp`.
 
-The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, or Clang ≥ 18. Nothing allocates
-memory and there is no global state; XXH3 keeps its 192-byte default secret in read-only data.
+The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, Clang ≥ 18, or MSVC (x64, ARM64). Nothing
+allocates memory and there is no global state; XXH3 keeps its 192-byte default secret in read-only data.
 
 ## 1. Quick start
 
@@ -110,14 +110,14 @@ hash the end of the message as the one-shot function does. Messages up to 240 by
 
 ### 4.1 XXH32 and XXH64: no kernel
 
-XXH32 and XXH64 have no kernel, on any target. The `isa` preset compiles the portable stripe loop for its instruction
-set; constant evaluation runs the portable code whatever the preset. Each of the four lanes is a serial chain of a
-multiplication and a rotation per word; the scalar loop already keeps four of them in flight. A NEON prototype of XXH32
-ran 1 685 MB/s on a Cortex-A72 at 4 KiB against 2 333 for the scalar loop, and Clang vectorizing the lanes on its own
-lost 38 % on x86-64. XXH64 needs 64-bit multiplications per lane, which SSE2, AVX2 and NEON do not have. The stripe
-loop is compiled once per width and preset in `src/xxhash/`, out of line, so that compilers keep the lanes scalar; the
-one-shot hash of a message of at least one stripe runs a function there that keeps them in local variables, for XXH32
-on every target and for XXH64 on 64-bit targets.
+XXH32 and XXH64 have no kernel, on any target. The `isa` preset
+([Instruction-set presets](../README.md#instruction-set-presets)) compiles the portable stripe loop for its instruction
+set. Each of the four lanes is a serial chain of a multiplication and a rotation per word; the scalar loop already keeps
+four of them in flight. A NEON prototype of XXH32 ran 1 685 MB/s on a Cortex-A72 at 4 KiB against 2 333 for the scalar
+loop, and Clang vectorizing the lanes on its own lost 38 % on x86-64. XXH64 needs 64-bit multiplications per lane, which
+SSE2, AVX2 and NEON do not have. The stripe loop is compiled once per width and preset in `src/xxhash/`, out of line, so
+that compilers keep the lanes scalar; the one-shot hash of a message of at least one stripe runs a function there that
+keeps them in local variables, for XXH32 on every target and for XXH64 on 64-bit targets.
 
 ### 4.2 XXH3
 
@@ -128,21 +128,15 @@ Inputs up to 240 bytes run straight-line code with no loop and no kernel. Longer
 | --- | --- |
 | `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | Two 256-bit vectors, every stripe. |
 | `isa::generic`, `x86_pclmul` on x86-64 (SSE2 baseline) | Four 128-bit vectors, every stripe. |
-| every preset of little-endian AArch64, `isa::generic` included (NEON is always there) | Four lanes in NEON and four in scalar registers, every stripe. |
+| every preset of little-endian AArch64 with GCC or Clang, `isa::generic` included (NEON is always there) | Four lanes in NEON and four in scalar registers, every stripe. |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | All eight lanes in NEON, every stripe. |
 | `isa::riscv_v` (RV64, VLEN ≥ 128) | One register group of eight 64-bit lanes, every stripe. Tested in QEMU, not measured on hardware. |
-| everything else: `isa::thumb2`, `thumb2_dsp`, `riscv_zbc`, big-endian targets, Cortex-M | Portable loop. |
+| everything else: `isa::thumb2`, `thumb2_dsp`, `riscv_zbc`, big-endian targets, Cortex-M, MSVC ARM64 | Portable loop. |
 
-**Choosing a preset.** `xxh3_64_compute<checksum::isa::x86_avx2>(data, seed)` runs the AVX2 stripe loop whatever the
-build's compiler flags; flags such as `-mavx2` or `-march=native` select no kernel by themselves. The library compiles
-the loop once for every preset that `isa_available()` accepts on the target architecture and compiler, each into its
-own object, so a static link pulls in only the presets a program names. A preset without a kernel still runs the
-portable loop compiled for its instruction set. Naming a preset that `isa_available()` rejects is a compile error, not
-a link error. Presets give bit-identical results, and constant evaluation runs the portable code with the same result
-whatever the preset. The library does not check the CPU: call a preset only where the CPU has its instructions. On
-32-bit Arm the presets need GCC and a build that already compiles Thumb-2 code, so a Cortex-M0 build has only
-`isa::generic`. On AArch64 four NEON lanes with four scalar ones beat six and two, and all eight in NEON. The
-measurements behind each choice are in [design/acceleration.md](design/acceleration.md#xxh3).
+`xxh3_64_compute<checksum::isa::x86_avx2>(data, seed)` runs the AVX2 stripe loop; how presets work and what to check
+before calling one is in [Instruction-set presets](../README.md#instruction-set-presets). On AArch64 four NEON lanes
+with four scalar ones beat six and two, and all eight in NEON. The measurements behind each choice are in
+[design/acceleration.md](design/acceleration.md#xxh3).
 
 ## 5. Performance guidelines
 
@@ -152,7 +146,7 @@ Measured figures are in [performance.md](performance.md#xxhash).
   On 32-bit cores (Cortex-M, AArch32) XXH32 is: on a Cortex-M4 it is about twice as fast as the others from 256 bytes,
   and XXH64 is slow there, since it needs 64-bit multiplications.
 - **XXH3 kernels start above 240 bytes.** Shorter inputs run straight-line code, the same in every build. On x86-64,
-  `isa::x86_avx2` doubles the speed of the `isa::generic` SSE2 build for long inputs.
+  `isa::x86_avx2` doubles the speed of the `isa::generic` SSE2 kernel for long inputs.
 - **Hash whole messages in one call** when they are in memory. Streaming XXH3 in small pieces is slow (section 3):
   64-byte pieces are about 4× slower than one call, and from 4 KiB pieces the cost is negligible. A seed other than 0
   adds about 25 % in 256-byte pieces and 6 % in 4 KiB pieces.

@@ -4,8 +4,8 @@
 message read as 16-bit big-endian words. IPv4, ICMP, IGMP, UDP and TCP use it. It works at compile time or at run
 time, and everything is in one header, `checksum/internet.hpp`.
 
-The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, or Clang ≥ 18. It has no tables,
-allocates no memory and has no global state.
+The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, Clang ≥ 18, or MSVC (x64, ARM64). It has
+no tables, allocates no memory and has no global state.
 
 ## 1. Quick start
 
@@ -86,21 +86,15 @@ adds native-order words and swaps the bytes of the result once.
 | Preset | Kernel | Used from |
 | --- | --- | --- |
 | `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | 64-byte blocks: 32-bit halves summed into 64-bit vector lanes | 512 B |
-| every preset of little-endian AArch64, `isa::generic` included (NEON is always there) | NEON pairwise add-accumulate (`uadalp`) of 32-bit words into 64-bit lanes | 512 B |
+| every preset of little-endian AArch64 with GCC or Clang, `isa::generic` included (NEON is always there) | NEON pairwise add-accumulate (`uadalp`) of 32-bit words into 64-bit lanes | 512 B |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | the same NEON kernel | 192 B |
 | `isa::thumb2`, `thumb2_dsp` (and the NEON presets on big-endian 32-bit Arm), e.g. Cortex-M3/M4/M7/M33 or ARMv7-A without NEON | `ldm` + `adcs` carry chain in inline assembly, 32 bytes per iteration, any start address | 192 B |
 | `isa::riscv_v` (RV64, any vector length) | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
-| everything else: `isa::generic` on other targets, `x86_pclmul`, `riscv_zbc`, big-endian AArch64 | portable loop | always |
+| everything else: `isa::generic` on other targets, `x86_pclmul`, `riscv_zbc`, big-endian AArch64, MSVC ARM64 | portable loop | always |
 
-**Choosing a preset.** `internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 kernel whatever the build's
-compiler flags; flags such as `-mavx2` or `-march=native` select no kernel by themselves. The library compiles the loop
-once for every preset that `isa_available()` accepts on the target architecture and compiler, each into its own object,
-so a static link pulls in only the presets a program names. A preset without a kernel still runs the portable loop
-compiled for its instruction set. Naming a preset that `isa_available()` rejects is a compile error, not a link error.
-Presets give bit-identical results, and constant evaluation runs a byte-by-byte loop with the same result whatever the
-preset. The library does not check the CPU: call a preset only where the CPU has its instructions. On 32-bit Arm the
-presets need GCC and a build that already compiles Thumb-2 code, so a Cortex-M0 build has only `isa::generic`. Which
-other architectures are worth a kernel is discussed in [design/acceleration.md](design/acceleration.md).
+`internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 kernel; how presets work and what to check before
+calling one is in [Instruction-set presets](../README.md#instruction-set-presets). Which other architectures are worth a
+kernel is discussed in [design/acceleration.md](design/acceleration.md).
 
 ## 6. Performance guidelines
 
@@ -110,7 +104,7 @@ Measured figures are in [performance.md](performance.md#internet-checksum).
   Packet headers are shorter and always run the portable loop, which is already fast: about 8 000 MB/s for a 20-byte
   IPv4 header on x86-64.
 - **On x86-64, use `isa::x86_avx2`** on CPUs with AVX2: from 1500 B it makes the checksum 1.4-1.7× faster. AArch64
-  gets its kernel with `isa::generic`, Cortex-M3/M4/M7/M33 with `isa::thumb2`.
+  gets its kernel with `isa::generic` (GCC, Clang), Cortex-M3/M4/M7/M33 with `isa::thumb2`.
 - **On Cortex-M, the start address matters for the portable loop only.** It is up to 2.5× slower than the kernel from
   an odd or 2-modulo-4 address, typical for an IP header behind a 14-byte Ethernet header. The kernel runs at the
   same speed from any address.

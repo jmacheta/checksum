@@ -21,7 +21,7 @@
 | Anything | `cmake --workflow --preset native-gcc` and `native-clang` |
 | Bit or byte manipulation (tables, slicing, loads) | also `native-asan` (AddressSanitizer + UBSan) |
 | Preconditions, exceptions, RTTI | also `native-gcc-no-exceptions`; the unit tests include one executable built with `NDEBUG` |
-| Architecture headers, preset sources or the table loops | also the cross presets of `cmake/emulator_presets.json` (QEMU user mode, `-cpu max`: every preset of the architecture); natively the preset tests skip what the CPU lacks |
+| Architecture headers, preset sources or the table loops | also the cross presets of `cmake/emulator_presets.json` (QEMU user mode, `-cpu max`: every preset of the architecture) |
 | The x86-64 AVX-VNNI Fletcher/Adler-32 kernel | also `native-gcc` on a CPU with AVX-VNNI; the `x86_avxvnni` preset tests skip elsewhere, CI runners may lack it |
 | Code that differs under MSVC (intrinsics, `#if _MSC_VER`, GCC-only constructs) | also `cmake --workflow --preset windows-msvc-wine` (MSVC x64 in Wine; setup in `build_and_tooling.md`) |
 | RVV vector lengths other than 128 bits | also QEMU `-cpu max,vlen=256` (no preset covers it) |
@@ -30,8 +30,15 @@ Run benchmarks and the full cross matrix only when the change needs them, filter
 
 Test presets build one configuration (Debug) and run `ctest` with 8 jobs; the negative compile tests share a
 resource lock because each runs the build tool on the same tree. Keep a whole run fast: about 2 s of tests natively
-and 20 s in QEMU user mode. Debug test builds use `-Og`; `cross-arm-portable` keeps `-O0` so the inline assembly is built
-without optimization.
+and 20 s in QEMU user mode. Debug test builds use `-Og`; `cross-arm` keeps `-O0` so the inline assembly is
+built without optimization.
+
+Preset tests run every preset the build has, from the range `isa_detail::first_built` to `last_built` of
+`checksum/isa.hpp`, and skip the presets the CPU cannot run. `tests/include/isa_cpu.hpp` checks the CPU on every
+architecture: CPUID on x86-64, the Linux `HWCAP` bits on Arm and RISC-V (plus `riscv_hwprobe`),
+`IsProcessorFeaturePresent` on MSVC ARM64; bare-metal targets count every preset as runnable. A built preset without
+a name or a CPU check there fails the tests, so a new preset adds both. CI runs `native-gcc` and `native-clang` on
+GitHub's AArch64 runner too, where the AArch64 presets run on hardware.
 
 ## Coverage expectations
 

@@ -4,8 +4,8 @@
 compile time or at run time. The values are those of the reference implementation (`MurmurHash3.cpp` of SMHasher) on
 every target. Everything is in one header, `checksum/murmur3.hpp`.
 
-The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, or Clang ≥ 18. It has no tables,
-allocates no memory and has no global state.
+The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, Clang ≥ 18, or MSVC (x64, ARM64). It has
+no tables, allocates no memory and has no global state.
 
 ## 1. Quick start
 
@@ -69,16 +69,17 @@ the unused bytes of the buffer are ignored.
 
 ## 4. CPU acceleration
 
-MurmurHash3 has no kernel, on any target. The `isa` preset compiles the portable block loop for its instruction set;
-flags such as `-march=native` select no kernel by themselves, and constant evaluation runs the portable code whatever
-the preset. Every block updates the hash lanes through a rotation, a multiplication and an addition of their previous
-values, and in MurmurHash3_x64_128 the second lane also takes the first lane of the same block. Blocks cannot be
-processed in parallel, so vector instructions have nothing to work on. The block loop is compiled once per width and
-preset in `src/murmur3/`; MurmurHash3_x64_128 inputs under 256 bytes fold inline instead, which saves the call, and the
-one-shot MurmurHash3_x86_32 runs a function there that keeps its lane in a register. On 32-bit Arm without NEON
-(Cortex-M, small in-order A-profile cores) MurmurHash3_x86_32 takes four blocks per iteration: their multiplications do
-not depend on the lane, so an in-order core runs them while the earlier blocks update it. That made it 1.66× faster at
-4 KiB on a Cortex-M33 and 1.20× on a Cortex-M4; out-of-order cores already overlap the blocks.
+MurmurHash3 has no kernel, on any target. The `isa` preset
+([Instruction-set presets](../README.md#instruction-set-presets)) compiles the portable block loop for its instruction
+set. Every block updates the hash lanes through a rotation, a multiplication and an addition of their previous values,
+and in MurmurHash3_x64_128 the second lane also takes the first lane of the same block. Blocks cannot be processed in
+parallel, so vector instructions have nothing to work on. The block loop is compiled once per width and preset in
+`src/murmur3/`; MurmurHash3_x64_128 inputs under 256 bytes fold inline instead, which saves the call, and the one-shot
+MurmurHash3_x86_32 runs a function there that keeps its lane in a register. On 32-bit Arm with any preset but
+`thumb2_neon` and `thumb2_crc`, `isa::generic` included (for Cortex-M and small in-order A-profile cores),
+MurmurHash3_x86_32 takes four blocks per iteration: their multiplications do not depend on the lane, so an in-order core
+runs them while the earlier blocks update it. That made it 1.66× faster at 4 KiB on a Cortex-M33 and 1.20× on a
+Cortex-M4; out-of-order cores already overlap the blocks.
 
 MurmurHash3_x64_128 needs 64-bit multiplications, which 32-bit targets build from several 32-bit ones. On 32-bit
 targets MurmurHash3_x86_32 is the faster of the two; on 64-bit targets MurmurHash3_x64_128 is at least as fast at 20

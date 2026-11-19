@@ -43,7 +43,7 @@ struct fletcher_state {
 };
 
 /// Folds data into state; data may be split anywhere, including inside a block. Isa selects the run-time loop: the variant
-/// compiled for that instruction-set preset (checksum/isa.hpp). Constant evaluation runs the same portable code for every preset.
+/// compiled for that instruction-set preset (checksum/isa.hpp).
 template <unsigned Width, isa Isa = isa::generic>
 [[nodiscard]] constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
 

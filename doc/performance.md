@@ -12,13 +12,20 @@ explain the strategies and CPU kernels these figures refer to; this page only me
   drops from 4 930 to 3 130 MB/s.
 - **Portable** is the library without CPU kernels (the former `CHECKSUM_ACCELERATION=OFF` option, or a CPU without the instructions).
   **SSE2**, **AVX2**, **NEON**, **DSP** and so on name the kernel that ran.
+- **The figures predate the instruction-set presets**, so they name builds, not presets. AVX2 or `-march=native` is
+  `isa::x86_avx2` (`isa::x86_avxvnni` where the text names AVX-VNNI), CRC "accelerated" is `isa::x86_vpclmul`, SSE2 is
+  `isa::generic` on x86-64, AArch64 NEON is `isa::generic`, AArch32 NEON is `isa::thumb2_neon`, `ldm` is
+  `isa::thumb2`, DSP is `isa::thumb2_dsp` and the A72 CRC instructions are `isa::aarch64_crc` (`isa::thumb2_crc` in
+  AArch32). Portable figures of algorithms whose kernel the x86-64 SSE2 or AArch64 NEON baseline covers can no longer
+  be selected there. The benchmarks now name the preset: `<name>` for `isa::generic`, `<name>_<preset>` for the others
+  (CRC: `sliced_<preset>`).
 - **Comparisons with other libraries** (zlib-ng, Intel ISA-L, OpenZFS, xxHash, Linux, DPDK, SMHasher) were built with
   the same compiler and flags and called the same way. A ratio above 1.0× means this library is faster.
 - **Code placement moves short-input figures** by up to 10 % on x86-64 and up to 25 % on microcontrollers running
   from flash. Differences below that between two builds that run the same code are noise.
 
 To measure on your machine, run the benchmark presets: `cmake --workflow --preset native-gcc-bench` (or
-`native-clang-bench`, and the `-portable` variants). The benchmarks are in `tests/benchmarks`.
+`native-clang-bench`). The benchmarks are in `tests/benchmarks`.
 
 ## Platforms
 
@@ -402,7 +409,7 @@ the former `CHECKSUM_ACCELERATION=OFF` option (portable lanes from 256 B), SSE2 
 
 Below the thresholds every build runs the word loop; differences of up to 10 % there come from code placement, which
 moves with the link order. AVX2 is 1.5× the SSE2 kernel at 4 KiB. With GCC the portable lanes are within 15 % of the
-SSE2 kernel from 1500 bytes; with Clang they reach about 45 % of it, which matters only for a build with the former `CHECKSUM_ACCELERATION=OFF` option.
+SSE2 kernel from 1500 bytes; with Clang they reach about 45 % of it. No x86-64 preset runs the portable lanes now.
 
 Against the OpenZFS kernels (`fletcher_4_native` of OpenZFS f79c81d with its superscalar4, sse2, ssse3 and avx2 kernels,
 all built with GCC `-O2 -march=native`), the AVX2 build runs at 0.93× the fastest at 20 bytes, 1.09× at 256 bytes and
