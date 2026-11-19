@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 namespace checksum::internet_detail {
@@ -17,7 +18,7 @@ namespace checksum::internet_detail {
 template <isa Isa> inline constexpr bool block_sum_available = isa_detail::includes(Isa, isa::x86_avx2);
 
 // Below about 350 bytes the portable loop is faster on a Core Ultra 7 155H: the kernel pays for the call and the reduction.
-template <isa Isa> inline constexpr std::size_t block_sum_minimum_size = 512;
+template <isa Isa> inline constexpr std::size_t block_sum_minimum_size = block_sum_available<Isa> ? 512 : std::numeric_limits<std::size_t>::max();
 
 inline constexpr std::size_t vector_block_size = 64;
 

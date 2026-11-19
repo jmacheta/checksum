@@ -214,6 +214,9 @@ template <class Register, std::size_t Size> struct lookup_table;
 template <std::size_t Size> struct lookup_strategy {
   template <crc_register Register> using table_type = lookup_table<Register, Size>;
 
+  // Whether the run-time loop depends on the preset: only the tables with folding constants have kernels.
+  static constexpr bool takes_preset = Size >= sliced_table_size;
+
   // std::nullopt if the width does not fit Register.
   template <crc_register Register>
   [[nodiscard]] static constexpr std::optional<table_type<Register>> make_table(crc_parameters const &parameters) noexcept;
@@ -246,6 +249,8 @@ struct crc_lut_braided : crc_detail::lookup_strategy<crc_detail::braided_table_s
 
 /// A crc_engine whose run-time loop is chosen once, when it is created: by default the best preset of this build that the
 /// running CPU executes (checksum/isa.hpp). One table serves every preset; constant evaluation runs the portable loop.
+/// Strategies whose loop is the same for every preset (crc_lut_none, crc_lut_nibble, crc_lut_byte, a custom strategy
+/// without update<Register, Isa>()) choose generic, so that preset() names the loop that runs.
 template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_sliced> class crc_dispatch_engine {
 public:
   using state_type = Register; ///< Running CRC, below 2^width.
@@ -411,6 +416,9 @@ constexpr Register update_tail(register_form<Register> const &form, Register sta
 template <class Strategy, isa Isa, class Register>
 constexpr Register strategy_update(typename Strategy::template table_type<Register> const &table, Register state,
                                    std::span<std::byte const> data) noexcept;
+
+// Whether strategy_update() of Strategy runs a different loop for some preset.
+template <class Strategy, class Register> consteval bool takes_preset() noexcept;
 
 // Run-time loops, one per built-in strategy, defined and explicitly instantiated for every register type and bit order in
 // src/crc/lut_*.cpp; those of crc_lut_sliced and crc_lut_braided once per preset. They take and return the internal register.
@@ -710,6 +718,16 @@ constexpr Register crc_detail::strategy_update(typename Strategy::template table
   }
 }
 
+template <class Strategy, class Register> consteval bool crc_detail::takes_preset() noexcept {
+  if constexpr(requires { Strategy::takes_preset; }) {
+    return Strategy::takes_preset;
+  } else {
+    return requires(typename Strategy::template table_type<Register> const &table, Register state, std::span<std::byte const> data) {
+      Strategy::template update<Register, isa::generic>(table, state, data);
+    };
+  }
+}
+
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
 constexpr crc_engine<Register, Strategy, Isa>::crc_engine(crc_parameters const &parameters,
                                                           typename Strategy::template table_type<Register> const &table) noexcept
@@ -855,8 +873,12 @@ constexpr std::optional<crc_dispatch_engine<Register, Strategy>> crc_dispatch_en
   if(!engine) {
     return std::nullopt;
   }
-  // RISC-V builds both riscv_zbc and riscv_v; only Zbc has a CRC kernel.
-  return crc_dispatch_engine(*engine, isa_detail::select(cpu, isa::riscv_zbc));
+  if constexpr(!crc_detail::takes_preset<Strategy, Register>()) {
+    return crc_dispatch_engine(*engine, isa::generic);
+  } else {
+    // RISC-V builds both riscv_zbc and riscv_v; only Zbc has a CRC kernel.
+    return crc_dispatch_engine(*engine, isa_detail::select(cpu, isa::riscv_zbc));
+  }
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy> constexpr isa crc_dispatch_engine<Register, Strategy>::preset() const noexcept {

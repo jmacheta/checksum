@@ -9,9 +9,16 @@
 namespace checksum::isa_detail {
 
 // Whether the predefined macros of the build promise every extension of preset and of the earlier presets of its line.
+// Only for presets of this build: an R-profile build with NEON, for one, has the macros of thumb2_neon but not the preset.
 constexpr bool compiler_guarantees(isa preset) noexcept;
 
+// Whether compiler_guarantees() reports only presets of this build.
+consteval bool guarantees_only_built_presets() noexcept;
+
 constexpr bool compiler_guarantees(isa preset) noexcept {
+  if(!isa_available(preset)) {
+    return false;
+  }
   switch(preset) {
   case isa::generic:
     return true;
@@ -67,6 +74,17 @@ constexpr bool compiler_guarantees(isa preset) noexcept {
     return false;
   }
 }
+
+consteval bool guarantees_only_built_presets() noexcept {
+  for(unsigned value = 0; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
+    if(compiler_guarantees(static_cast<isa>(value)) && !isa_available(static_cast<isa>(value))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static_assert(guarantees_only_built_presets());
 
 } // namespace checksum::isa_detail
 

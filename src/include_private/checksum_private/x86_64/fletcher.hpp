@@ -53,7 +53,7 @@ template <isa Isa> struct kernel<8, Isa> {
   static_assert(std::uint64_t{8 * 255} * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
   // From 64 bytes the kernel beats the portable loops on a Core Ultra 7 155H with GCC and Clang, SSE2 and AVX2. The one
   // exception is Fletcher-16 with GCC and SSE2: 7 % slower at 64 bytes, faster from 96.
-  static constexpr std::size_t minimum_size = 64;
+  static constexpr std::size_t minimum_size = available ? 64 : std::numeric_limits<std::size_t>::max();
   static constexpr std::size_t alignment = 1;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
@@ -65,7 +65,7 @@ template <isa Isa> struct kernel<16, Isa> {
   static constexpr std::size_t max_blocks = 128;
   static_assert(std::uint64_t{2 * 65'535} * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
   // Where the kernel overtakes the portable loop on a Core Ultra 7 155H: 96 bytes with Clang, 128-160 with GCC.
-  static constexpr std::size_t minimum_size = 128;
+  static constexpr std::size_t minimum_size = available ? 128 : std::numeric_limits<std::size_t>::max();
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 

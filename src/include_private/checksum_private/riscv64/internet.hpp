@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 namespace checksum::internet_detail {
@@ -18,7 +19,7 @@ namespace checksum::internet_detail {
 template <isa Isa> inline constexpr bool block_sum_available = isa_detail::includes(Isa, isa::riscv_v);
 
 // Not measured on hardware: one strip-mined pass costs a few instructions, so the kernel starts at 64 bytes.
-template <isa Isa> inline constexpr std::size_t block_sum_minimum_size = 64;
+template <isa Isa> inline constexpr std::size_t block_sum_minimum_size = block_sum_available<Isa> ? 64 : std::numeric_limits<std::size_t>::max();
 
 // Each 64-bit lane takes one 32-bit word per iteration, and up to 2^13 lanes (VLEN 65536) are reduced together: passes of
 // 2^18 iterations keep the reduction below 2^63.

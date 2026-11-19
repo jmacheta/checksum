@@ -49,6 +49,18 @@ static_assert(fletcher_dispatch_engine<32>(isa::thumb2_neon).compute("abcde"sv) 
 static_assert(crc_dispatch_engine<std::uint32_t>::create(crc32_iso_hdlc, isa::aarch64_pmull)->compute("123456789"sv) == 0xCBF43926U);
 static_assert(xxh3_dispatch_engine<64>(isa::x86_vpclmul).compute("abc"sv, 7) == xxh3_compute<64>("abc"sv, 7));
 
+// update() of a checksum takes exactly the checksum type, as the free functions do.
+template <class Engine, class Checksum>
+concept updates_checksum = requires(Engine const engine, Checksum checksum) { engine.update(checksum, "abc"sv); };
+static_assert(updates_checksum<fletcher_dispatch_engine<16>, std::uint16_t> && !updates_checksum<fletcher_dispatch_engine<16>, std::uint32_t>);
+static_assert(updates_checksum<fletcher_dispatch_engine<64>, std::uint64_t> && !updates_checksum<fletcher_dispatch_engine<64>, int>);
+static_assert(!updates_checksum<internet_dispatch_engine, std::uint32_t> && !updates_checksum<adler32_dispatch_engine, std::uint64_t>);
+
+// Strategies without kernels choose generic, whatever the set: their loop is the same for every preset.
+static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_none>::create(crc32_iso_hdlc, isa::x86_avxvnni)->preset() == isa::generic);
+static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_nibble>::create(crc32_iso_hdlc, isa::aarch64_pmull)->preset() == isa::generic);
+static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_byte>::create(crc32_iso_hdlc, isa::riscv_zbc)->preset() == isa::generic);
+
 TEST(detect_isa, ContainsOnlyBuiltPresetsAndTheirLowerRungs) {
   isa_set const cpu = detect_isa();
   EXPECT_TRUE(cpu.contains(isa::generic));
@@ -157,6 +169,8 @@ TEST(dispatch, DefaultEnginesChooseTheDetectedPreset) {
   auto const crc = crc_dispatch_engine<std::uint32_t>::create(crc32_iso_hdlc);
   ASSERT_TRUE(crc.has_value());
   EXPECT_EQ(crc->preset(), isa_detail::select(detect_isa(), isa::riscv_zbc));
+  EXPECT_EQ((crc_dispatch_engine<std::uint32_t, crc_lut_braided>::create(crc32_iso_hdlc)->preset()), crc->preset());
+  EXPECT_EQ((crc_dispatch_engine<std::uint32_t, crc_lut_byte>::create(crc32_iso_hdlc)->preset()), isa::generic);
   EXPECT_FALSE(crc_dispatch_engine<std::uint8_t>::create(crc32_iso_hdlc).has_value());
   auto const data = random_bytes(5000, 14);
   EXPECT_EQ(crc->compute(data), (crc_engine_for<crc32_iso_hdlc, crc_lut_byte>.compute(data)));

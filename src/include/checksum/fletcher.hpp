@@ -107,9 +107,8 @@ public:
   template <byte_range Range> [[nodiscard]] constexpr fletcher_state<Width> update(fletcher_state<Width> state, Range &&data) const noexcept;
 
   /// fletcher_update() for a checksum as the free function, with the preset this engine chose.
-  template <byte_range Range>
-  [[nodiscard]] constexpr typename fletcher_state<Width>::value_type update(typename fletcher_state<Width>::value_type checksum,
-                                                                            Range &&data) const noexcept;
+  template <std::same_as<typename fletcher_state<Width>::value_type> Checksum, byte_range Range>
+  [[nodiscard]] constexpr Checksum update(Checksum checksum, Range &&data) const noexcept;
 
   /// fletcher_compute() as the free function, with the preset this engine chose.
   template <byte_range Range> [[nodiscard]] constexpr typename fletcher_state<Width>::value_type compute(Range &&data) const noexcept;
@@ -288,9 +287,8 @@ constexpr fletcher_state<Width> fletcher_dispatch_engine<Width>::update(fletcher
 
 template <unsigned Width>
   requires(Width == 16 || Width == 32 || Width == 64)
-template <byte_range Range>
-constexpr typename fletcher_state<Width>::value_type fletcher_dispatch_engine<Width>::update(typename fletcher_state<Width>::value_type checksum,
-                                                                                             Range &&data) const noexcept {
+template <std::same_as<typename fletcher_state<Width>::value_type> Checksum, byte_range Range>
+constexpr Checksum fletcher_dispatch_engine<Width>::update(Checksum checksum, Range &&data) const noexcept {
   return isa_detail::dispatch(chosen, [&]<isa Isa>() { return fletcher_update<Isa>(checksum, std::forward<Range>(data)); });
 }
 
