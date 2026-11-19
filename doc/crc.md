@@ -101,7 +101,8 @@ temporary engine does not compile.
 
 `crc_dispatch_engine<Register, Strategy = crc_lut_sliced>::create(parameters, isa_set cpu = detect_isa())` chooses the
 preset at run time (with `riscv_zbc` first on RISC-V), keeps one table for every preset, and has the members above plus
-`preset()`. It is not accepted by `crc_accumulator`. See
+`preset()`. Strategies whose loop ignores the preset (`crc_lut_none`, `crc_lut_nibble`, `crc_lut_byte`, and custom
+strategies without `update<Register, Isa>`) get `isa::generic`, so `preset()` names the loop that runs. It is not accepted by `crc_accumulator`. See
 [Instruction-set presets](../README.md#instruction-set-presets).
 
 ### 3.2 Strategies

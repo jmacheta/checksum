@@ -76,7 +76,7 @@ constexpr bool compiler_guarantees(isa preset) noexcept {
 }
 
 consteval bool guarantees_only_built_presets() noexcept {
-  for(unsigned value = 0; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
+  for(unsigned value = 0; value < 32; ++value) { // every value isa_set can hold, so appended presets are covered too
     if(compiler_guarantees(static_cast<isa>(value)) && !isa_available(static_cast<isa>(value))) {
       return false;
     }
