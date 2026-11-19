@@ -37,6 +37,8 @@ jobs:
           # earlier rungs of its line), so that their tests fail instead of skipping. GitHub's x86-64 runners have AVX2, not always
           # VPCLMULQDQ or AVX-VNNI: sde runs the unit tests again in Intel SDE with that CPU model, which has both.
           # vlen_checks: RVV vector lengths besides QEMU's default 128 bits, for the RVV, detection and dispatch tests.
+          # assume: CHECKSUM_ASSUME_ISA, presets the emulator runs that detect_isa() cannot see: Ubuntu 24.04's QEMU 8.2 has no
+          # Zbc key in riscv_hwprobe, so its tests run on the assumption and the detection test leaves Zbc out.
           - { preset: native-gcc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", emulator: qemu-x86_64, cpu_checks: "Nehalem:generic Westmere:x86_pclmul Haswell:x86_avx2", required: x86_avx2, sde: -adl }
           - { preset: native-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14", required: x86_avx2, sde: -adl }
           - { preset: native-clang-libcxx, cc: clang-18, cxx: clang++-18, packages: "clang-18 libc++-18-dev libc++abi-18-dev", required: x86_avx2 }
@@ -54,7 +56,7 @@ jobs:
           # Clang on 32-bit Arm: the thumb2 presets in Thumb-2 builds with the build's own NEON ("thumb,crc" adds CRC in cross-arm-clang).
           - { preset: cross-arm-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 lld-18 g++-14-arm-linux-gnueabihf qemu-user", emulator: qemu-arm, cpu_checks: "cortex-a9:thumb2_neon", required: thumb2_crc }
           - { preset: cross-arm-crc32-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 lld-18 g++-14-arm-linux-gnueabihf qemu-user", required: thumb2_crc }
-          - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu, emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v", required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
+          - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu, emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v", required: "riscv_zbc,riscv_v", vlen_checks: "256 512", assume: riscv_zbc }
           # Big-endian AArch64: Ubuntu has no cross compiler for it; the Arm GNU Toolchain comes from setup-gcc-toolchain (cached).
           - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1, required: aarch64_pmull }
           # Newest compilers, so that a new release that breaks the build shows up here: GCC (xPack) and Clang (apt.llvm.org)
@@ -62,7 +64,7 @@ jobs:
           - { preset: native-gcc, compiler: GCC latest, cc: gcc, cxx: g++, packages: "", toolchain: x86_64-gcc, vendor: xpack, required: x86_avx2 }
           - { preset: native-clang, compiler: Clang latest, cc: clang-latest, cxx: clang++-latest, packages: "g++-14", llvm_latest: true, required: x86_avx2 }
           - { preset: cross-aarch64be, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, required: aarch64_pmull }
-          - { preset: cross-riscv64, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: riscv64-buildroot-linux-gnu, vendor: bootlin, cross: riscv64-linux-gnu, emulator: qemu-riscv64, required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
+          - { preset: cross-riscv64, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: riscv64-buildroot-linux-gnu, vendor: bootlin, cross: riscv64-linux-gnu, emulator: qemu-riscv64, required: "riscv_zbc,riscv_v", vlen_checks: "256 512", assume: riscv_zbc }
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -125,6 +127,7 @@ jobs:
       - name: Configure, build and test
         env:
           CHECKSUM_REQUIRED_ISA: ${{ matrix.required }}
+          CHECKSUM_ASSUME_ISA: ${{ matrix.assume }}
         run: cmake --workflow --preset ${{ matrix.preset }}
 
       - name: Detection on CPUs without the extensions
@@ -143,6 +146,7 @@ jobs:
         env:
           CHECKSUM_EXPECTED_ISA: riscv_zbc,riscv_v
           CHECKSUM_REQUIRED_ISA: riscv_zbc,riscv_v
+          CHECKSUM_ASSUME_ISA: ${{ matrix.assume }}
         run: |
           for vlen in ${{ matrix.vlen_checks }}; do
             echo "-cpu max,vlen=$vlen"

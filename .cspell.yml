@@ -216,6 +216,7 @@ words:
 - semihosting
 - semiregular
 - setr
+- SIGILL
 - slli
 - smbus
 - smhasher
@@ -277,6 +278,7 @@ words:
 - vreinterpret
 - vreinterpretq
 - vrgather
+- VSDIR
 - vsdownload
 - vsetvl
 - vsetvlmax

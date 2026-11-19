@@ -57,6 +57,9 @@ exits with an error, and `isa_test_support.RequiredPresetsRun` fails if a requir
 run. Every CI job sets it (`required` in `ci.yml`) to what its CPU guarantees: `x86_avx2` on GitHub's x86-64 runners
 (VPCLMULQDQ and AVX-VNNI vary between their CPUs), `aarch64_pmull` on its Arm runners (Neoverse N2) and in QEMU,
 `thumb2_crc` and `riscv_zbc,riscv_v` in QEMU `-cpu max`. The bare-metal check asserts its presets by itself.
+`CHECKSUM_ASSUME_ISA` names presets that the environment runs although `detect_isa()` cannot see them: the preset tests
+run them, and `detect_isa.MatchesTheCpu` leaves them out. The RISC-V jobs set `riscv_zbc`, because Ubuntu 24.04's QEMU
+8.2 has no Zbc key in `riscv_hwprobe`; where the assumption is wrong, the Zbc kernel faults with SIGILL.
 
 The `native-gcc` and `native-clang` jobs run the unit tests again in Intel SDE 10.13 emulating Alder Lake (`-adl`),
 with VPCLMULQDQ and AVX-VNNI, requiring `x86_avxvnni`; the kit is pinned by URL and sha256 in `ci.yml` (Intel Simplified
