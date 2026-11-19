@@ -24,7 +24,9 @@ jobs:
         include:
           # Minimum supported versions (<print>: libstdc++ 14, libc++ 18). Clang uses the newest installed libstdc++,
           # so its libstdc++ jobs install g++-14.
-          - { preset: native-gcc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
+          # cpu_checks: "<QEMU -cpu>:<presets detect_isa() must report>" runs of the unit tests' detection and dispatch tests on CPUs
+          # that lack extensions, in QEMU user mode with matrix.emulator, after the regular tests.
+          - { preset: native-gcc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", emulator: qemu-x86_64, cpu_checks: "Nehalem:generic Westmere:x86_pclmul Haswell:x86_avx2" }
           - { preset: native-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
           - { preset: native-clang-libcxx, cc: clang-18, cxx: clang++-18, packages: "clang-18 libc++-18-dev libc++abi-18-dev" }
           - { preset: native-asan, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
@@ -35,10 +37,10 @@ jobs:
           - { preset: native-clang, runner: ubuntu-24.04-arm, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
           # Arm and RISC-V targets, tests in QEMU user mode with -cpu max: every preset of the architecture (Arm CRC32, PMULL, NEON, ldm + adcs; RISC-V Zbc and vector).
           - { preset: cross-aarch64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu }
-          - { preset: cross-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf }
+          - { preset: cross-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf, emulator: qemu-arm, cpu_checks: "cortex-a9:thumb2_neon" }
           # On 32-bit Arm the build's own extensions change how the thumb2 presets compile.
           - { preset: cross-arm-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf }
-          - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu }
+          - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu, emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v" }
           # Big-endian AArch64: Ubuntu has no cross compiler for it; the Arm GNU Toolchain comes from setup-gcc-toolchain (cached).
           - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1 }
           # Newest compilers, so that a new release that breaks the build shows up here: GCC (xPack) and Clang (apt.llvm.org)
@@ -108,6 +110,46 @@ jobs:
 
       - name: Configure, build and test
         run: cmake --workflow --preset ${{ matrix.preset }}
+
+      - name: Detection on CPUs without the extensions
+        if: matrix.cpu_checks
+        timeout-minutes: 10
+        run: |
+          for check in ${{ matrix.cpu_checks }}; do
+            echo "-cpu ${check%:*}, expecting ${check##*:}"
+            CHECKSUM_EXPECTED_ISA="${check##*:}" ${{ matrix.emulator }} -cpu "${check%:*}" \
+              "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1 --gtest_filter='detect_isa.*:dispatch*'
+          done
+
+  # The library and its bare-metal check (tests/bare_metal) for Cortex-M, -R and -A with the Arm GNU Toolchain; the check runs
+  # in QEMU system mode where the preset names a machine (cmake/bare_metal_presets.json).
+  bare-metal:
+    name: bare-metal (arm-none-eabi, QEMU system mode)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install ninja and QEMU
+        timeout-minutes: 15
+        run: |
+          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          sudo apt-get $apt_opts update && sudo apt-get $apt_opts install -y ninja-build qemu-system-arm
+
+      - name: Install the Arm GNU Toolchain
+        timeout-minutes: 10
+        uses: jmacheta/setup-gcc-toolchain@902d3659aab2b37c2a76daeb17eea51c859a081a # v2.2.0
+        with:
+          toolchain: arm-none-eabi
+          vendor: arm
+          version: 14.3.rel1
+
+      - name: Configure, build and test
+        run: |
+          for preset in bare-cortex-m0 bare-cortex-m3 bare-cortex-m4 bare-cortex-m7 bare-cortex-m33 bare-cortex-r5 bare-cortex-r52 bare-cortex-a9 bare-cortex-a9-neon; do
+            cmake --workflow --preset "$preset"
+          done
 
   build-and-test-msvc:
     name: build-and-test (windows-msvc, MSVC)

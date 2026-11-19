@@ -1,16 +1,26 @@
-// Instruction-set presets: which presets a build has, and which presets include others.
+// Instruction-set presets: which presets a build has, which presets include others, and what detect_isa() reports.
 
 #include <checksum/isa.hpp>
 
 #include <gtest/gtest.h>
 #include <isa_test_support.hpp>
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdlib>
+#include <fstream>
+#include <initializer_list>
+#include <optional>
+#include <ranges>
+#include <string>
+#include <string_view>
+#include <utility>
 
 namespace {
 
 using checksum::isa;
 using checksum::isa_available;
+using checksum::isa_set;
 using checksum::isa_detail::includes;
 
 static_assert(isa_available(isa::generic));
@@ -53,5 +63,113 @@ TEST(isa_test_support, EveryBuiltPresetHasName) {
     EXPECT_FALSE(isa_test::name(preset).empty()) << static_cast<int>(preset);
   }
 }
+
+#if defined(__linux__)
+// The presets of a comma-separated list of preset names, e.g. "aarch64_pmull,riscv_v", each with the earlier presets of its line.
+isa_set named_presets(std::string_view names) {
+  isa_set result;
+  for(auto const part : std::views::split(names, ',')) {
+    std::string_view const word(part.begin(), part.end());
+    bool known = false;
+    for(unsigned value = 0; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
+      if(isa_test::name(static_cast<isa>(value)) == word) {
+        result = result | static_cast<isa>(value);
+        known = true;
+      }
+    }
+    EXPECT_TRUE(known) << "CHECKSUM_EXPECTED_ISA names no preset " << word;
+  }
+  return result;
+}
+
+// The value of the first line of /proc/cpuinfo named key, with a space before and after every word; none if there is none.
+std::optional<std::string> cpuinfo_words(std::string_view key) {
+  std::ifstream file("/proc/cpuinfo");
+  std::string line;
+  while(std::getline(file, line)) {
+    std::size_t const colon = line.find(':');
+    if(line.starts_with(key) && colon != std::string::npos && line.find_first_not_of(" \t", key.size()) == colon) {
+      return line.substr(colon + 1) + " ";
+    }
+  }
+  return std::nullopt;
+}
+
+// The presets that the feature list of /proc/cpuinfo allows, by the kernel's names; none where the list is missing, e.g.
+// QEMU user mode showing the host's file.
+std::optional<isa_set> cpuinfo_presets() {
+  // The last preset of a line whose features and those of every earlier preset are present.
+  [[maybe_unused]] auto const ladder = [](std::initializer_list<std::pair<isa, bool>> rungs) {
+    isa_set result;
+    for(auto const &[preset, present] : rungs) {
+      if(!present) {
+        break;
+      }
+      result = preset;
+    }
+    return result;
+  };
+#if defined(__x86_64__)
+  std::optional<std::string> const flags = cpuinfo_words("flags");
+  if(!flags) {
+    return std::nullopt;
+  }
+  auto const has = [&](std::string_view flag) { return flags->contains(" " + std::string(flag) + " "); };
+  return ladder({{isa::x86_pclmul, has("sse4_2") && has("pclmulqdq")},
+                 {isa::x86_avx2, has("avx2")},
+                 {isa::x86_vpclmul, has("vpclmulqdq")},
+                 {isa::x86_avxvnni, has("avx_vnni")}});
+#elif defined(__aarch64__)
+  std::optional<std::string> const features = cpuinfo_words("Features");
+  if(!features) {
+    return std::nullopt;
+  }
+  return ladder({{isa::aarch64_crc, features->contains(" crc32 ")}, {isa::aarch64_pmull, features->contains(" pmull ")}});
+#elif defined(__arm__)
+  // Linux builds of the thumb2 presets are ARMv7-A or later, which have Thumb-2 and the DSP extension.
+  std::optional<std::string> const features = cpuinfo_words("Features");
+  if(!features) {
+    return std::nullopt;
+  }
+  return ladder({{isa::thumb2_dsp, true}, {isa::thumb2_neon, features->contains(" neon ")}, {isa::thumb2_crc, features->contains(" crc32 ")}});
+#elif defined(__riscv)
+  // "rv64imafdcv_zicbom_zbc": single-letter extensions, then the others after underscores.
+  std::optional<std::string> isa_string = cpuinfo_words("isa");
+  if(!isa_string || !isa_string->starts_with(" rv64")) {
+    return std::nullopt;
+  }
+  std::string const letters = isa_string->substr(5, isa_string->find('_') - 5);
+  std::ranges::replace(*isa_string, '_', ' ');
+  isa_set result;
+  if(letters.contains('v')) {
+    result = result | isa::riscv_v;
+  }
+  if(isa_string->contains(" zbc ")) {
+    result = result | isa::riscv_zbc;
+  }
+  return result;
+#else
+  return std::nullopt;
+#endif
+}
+
+// detect_isa() reports exactly the built presets that the CPU runs: those that CHECKSUM_EXPECTED_ISA names (for runs in an
+// emulator, whose /proc/cpuinfo may be the host's) or else those of /proc/cpuinfo.
+TEST(detect_isa, MatchesTheCpu) {
+  char const *const names = std::getenv("CHECKSUM_EXPECTED_ISA"); // NOLINT(concurrency-mt-unsafe): no thread sets it
+  std::optional<isa_set> const expected = names != nullptr ? named_presets(names) : cpuinfo_presets();
+  if(!expected) {
+    GTEST_SKIP() << "neither CHECKSUM_EXPECTED_ISA nor a feature list in /proc/cpuinfo";
+  }
+  isa_set const detected = checksum::detect_isa();
+  for(isa const preset : checksum::isa_detail::built_presets) {
+    // Kernels before 6.8 and older QEMU have no Zbc key in riscv_hwprobe, so detection may miss what /proc/cpuinfo lists.
+    if(names == nullptr && preset == isa::riscv_zbc && !detected.contains(preset)) {
+      continue;
+    }
+    EXPECT_EQ(detected.contains(preset), expected->contains(preset)) << isa_test::name(preset);
+  }
+}
+#endif
 
 } // namespace

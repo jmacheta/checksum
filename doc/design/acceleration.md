@@ -19,6 +19,13 @@ in [performance.md](../performance.md) only.
   `isa_set`, the default argument of every dispatch engine. An engine turns the set into one built preset with
   `isa_detail::select()` and calls the templates through `isa_detail::dispatch()`. `detect_isa()` is deliberately not
   `constexpr`: a constant-evaluable detection would silently make `static` engines generic.
+- **Detection never guesses.** A built preset is reported if `isa_detail::compiler_guarantees()`
+  (`checksum_private/compiled_isa.hpp`) finds its extensions in the build's predefined macros (`__ARM_FEATURE_CRC32`,
+  `__ARM_FEATURE_DSP`, `__riscv_zbc`, ...), or if the CPU or operating system reports them: CPUID on x86-64,
+  `getauxval` and `riscv_hwprobe` on Linux, `IsProcessorFeaturePresent` on Windows, `elf_aux_info` on FreeBSD,
+  `sysctlbyname` on Apple AArch64. Elsewhere (bare metal, other BSDs) only the macros count, so a Cortex-A9 build
+  with the `thumb2_crc` sources never runs them. Kernel headers without a Zbc key (before Linux 6.8) report no
+  `riscv_zbc` unless the flags have Zbc. The FreeBSD and Apple queries are untested in CI.
 - **One interface per algorithm.** Every architecture header defines the same constants (`*_available`, size
   thresholds) and, where they are true, the same functions; callers use them only in `if constexpr` branches.
   Intrinsics appear nowhere else.
@@ -48,7 +55,7 @@ in [performance.md](../performance.md) only.
    fletcher4, internet, murmur3, xxh3 and xxhash, and list them in `src/CMakeLists.txt`.
 5. Select its kernels in the architecture headers with `if constexpr(isa_detail::includes(Isa, isa::<preset>))`.
 6. Add the CPU check in `src/isa/detect.cpp`: the `checked` array and `runs()`. A `static_assert` fails for a built
-   preset without one.
+   preset without one. Add its macros to `compiler_guarantees()` in `checksum_private/compiled_isa.hpp`.
 7. Add its name to `tests/include/isa_cpu.hpp`; `ut_isa.cpp` fails without it. Preset tests and benchmarks pick it up
    from `built_presets`.
 8. Add a preference to `isa_detail::select()` only if the preset opens a second line on one architecture (as

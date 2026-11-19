@@ -66,8 +66,9 @@ private:
   std::uint32_t bits = 1; // bit n for the preset of value n
 };
 
-/// The presets this build has and the running CPU executes; on operating systems without a feature query (bare metal) every
-/// preset this build has. Call it once and keep the result: it queries the CPU or the operating system every time.
+/// The presets this build has and the running CPU executes: what the CPU or the operating system reports, plus what the
+/// compiler flags of the build already require; without an operating-system feature query (bare metal) only the latter.
+/// Call it once and keep the result: it queries the CPU or the operating system every time.
 [[nodiscard]] isa_set detect_isa() noexcept;
 
 } // namespace checksum

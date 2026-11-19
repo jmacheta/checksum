@@ -4,7 +4,8 @@
         "cmake/common_presets.json",
         "cmake/emulator_presets.json",
         "cmake/benchmark_presets.json",
-        "cmake/msvc_wine_presets.json"
+        "cmake/msvc_wine_presets.json",
+        "cmake/bare_metal_presets.json"
     ],
     "configurePresets": [
         {

@@ -1,6 +1,6 @@
 include(${CMAKE_CURRENT_LIST_DIR}/CPM.cmake)
 
-if (CHECKSUM_TESTS)
+if (CHECKSUM_TESTS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
   CPMAddPackage("gh:google/googletest@1.17.0")
   target_compile_options(gtest PUBLIC $<$<CXX_COMPILER_ID:GNU,Clang>:-Wno-null-dereference>)
 endif ()

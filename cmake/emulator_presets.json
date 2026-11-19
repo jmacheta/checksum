@@ -153,28 +153,40 @@
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64",
-            "configuration": "Debug"
+            "configuration": "Debug",
+            "environment": {
+                "CHECKSUM_EXPECTED_ISA": "aarch64_pmull"
+            }
         },
         {
             "name": "cross-aarch64be-debug",
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-aarch64be",
-            "configuration": "Debug"
+            "configuration": "Debug",
+            "environment": {
+                "CHECKSUM_EXPECTED_ISA": "aarch64_pmull"
+            }
         },
         {
             "name": "cross-arm-crc32-debug",
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-arm-crc32",
-            "configuration": "Debug"
+            "configuration": "Debug",
+            "environment": {
+                "CHECKSUM_EXPECTED_ISA": "thumb2_crc"
+            }
         },
         {
             "name": "cross-arm-debug",
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-arm",
-            "configuration": "Debug"
+            "configuration": "Debug",
+            "environment": {
+                "CHECKSUM_EXPECTED_ISA": "thumb2_crc"
+            }
         },
         {
             "name": "cross-riscv64-debug",

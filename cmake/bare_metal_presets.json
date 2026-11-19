@@ -1,0 +1,418 @@
+{
+    "version": 8,
+    "include": [
+        "common_presets.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "bare-metal-arm-base",
+            "hidden": true,
+            "inherits": "gcc-clang-common",
+            "description": "Bare-metal Arm build with the Arm GNU Toolchain (arm-none-eabi, newlib with semihosting): the library and the bare-metal check of detect_isa() and the dispatch engines, which runs in QEMU system mode where the preset names a machine",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_NAME": "Generic",
+                "CMAKE_SYSTEM_PROCESSOR": "arm",
+                "CMAKE_C_COMPILER": "arm-none-eabi-gcc",
+                "CMAKE_CXX_COMPILER": "arm-none-eabi-g++",
+                "CMAKE_ASM_COMPILER": "arm-none-eabi-gcc",
+                "CMAKE_TRY_COMPILE_TARGET_TYPE": "STATIC_LIBRARY",
+                "CHECKSUM_EXAMPLES": "OFF",
+                "CMAKE_C_FLAGS_DEBUG": "-g -Og -D_GLIBCXX_ASSERTIONS -ftrivial-auto-var-init=pattern",
+                "CMAKE_CXX_FLAGS_DEBUG": "-g -Og -D_GLIBCXX_ASSERTIONS -ftrivial-auto-var-init=pattern"
+            },
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "$env{CHECKSUM_CPU_FLAGS}",
+                "CHECKSUM_EXTRA_CXXFLAGS": "$env{CHECKSUM_CPU_FLAGS} -fno-exceptions -fno-rtti -DCHECKSUM_EXPECTED_ISA=$env{CHECKSUM_EXPECTED_ISA} -DCHECKSUM_EXPECTED_BUILT=$env{CHECKSUM_EXPECTED_BUILT}",
+                "ASMFLAGS": "$env{CHECKSUM_CPU_FLAGS}",
+                "LDFLAGS": "--specs=rdimon.specs -Wl,--gc-sections $env{CHECKSUM_LINK_FLAGS}"
+            }
+        },
+        {
+            "name": "bare-cortex-m0",
+            "displayName": "Cortex-M0 bare metal (build only)",
+            "description": "-mcpu=cortex-m0 -mthumb: detect_isa() reports generic; QEMU has no machine for it, so the check is only built",
+            "inherits": "bare-metal-arm-base",
+            "environment": {
+                "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m0 -mthumb",
+                "CHECKSUM_EXPECTED_ISA": "generic",
+                "CHECKSUM_EXPECTED_BUILT": "generic",
+                "CHECKSUM_LINK_FLAGS": "-Wl,--section-start=.isr_vector=0x0"
+            }
+        },
+        {
+            "name": "bare-cortex-m3",
+            "displayName": "Cortex-M3 bare metal in QEMU",
+            "description": "-mcpu=cortex-m3 -mthumb: detect_isa() reports thumb2; the check runs in qemu-system-arm -M mps2-an385",
+            "inherits": "bare-metal-arm-base",
+            "environment": {
+                "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m3 -mthumb",
+                "CHECKSUM_EXPECTED_ISA": "thumb2",
+                "CHECKSUM_EXPECTED_BUILT": "thumb2",
+                "CHECKSUM_LINK_FLAGS": "-Wl,--section-start=.isr_vector=0x0"
+            },
+            "cacheVariables": {
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-system-arm;-M;mps2-an385;-nographic;-monitor;none;-semihosting-config;enable=on,target=native;-kernel"
+            }
+        },
+        {
+            "name": "bare-cortex-m4",
+            "displayName": "Cortex-M4F bare metal in QEMU",
+            "description": "-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the check runs in qemu-system-arm -M mps2-an386",
+            "inherits": "bare-metal-arm-base",
+            "environment": {
+                "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard",
+                "CHECKSUM_EXPECTED_ISA": "thumb2_dsp",
+                "CHECKSUM_EXPECTED_BUILT": "thumb2_dsp",
+                "CHECKSUM_LINK_FLAGS": "-Wl,--section-start=.isr_vector=0x0"
+            },
+            "cacheVariables": {
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-system-arm;-M;mps2-an386;-nographic;-monitor;none;-semihosting-config;enable=on,target=native;-kernel"
+            }
+        },
+        {
+            "name": "bare-cortex-m7",
+            "displayName": "Cortex-M7 bare metal in QEMU",
+            "description": "-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the check runs in qemu-system-arm -M mps2-an500",
+            "inherits": "bare-metal-arm-base",
+            "environment": {
+                "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard",
+                "CHECKSUM_EXPECTED_ISA": "thumb2_dsp",
+                "CHECKSUM_EXPECTED_BUILT": "thumb2_dsp",
+                "CHECKSUM_LINK_FLAGS": "-Wl,--section-start=.isr_vector=0x0"
+            },
+            "cacheVariables": {
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-system-arm;-M;mps2-an500;-nographic;-monitor;none;-semihosting-config;enable=on,target=native;-kernel"
+            }
+        },
+        {
+            "name": "bare-cortex-m33",
+            "displayName": "Cortex-M33 bare metal in QEMU",
+            "description": "-mcpu=cortex-m33 -mthumb -mfpu=fpv5-sp-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the check runs in qemu-system-arm -M mps2-an505",
+            "inherits": "bare-metal-arm-base",
+            "environment": {
+                "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m33 -mthumb -mfpu=fpv5-sp-d16 -mfloat-abi=hard",
+                "CHECKSUM_EXPECTED_ISA": "thumb2_dsp",
+                "CHECKSUM_EXPECTED_BUILT": "thumb2_dsp",
+                "CHECKSUM_LINK_FLAGS": "-Wl,--section-start=.isr_vector=0x10000000 -Wl,-Ttext-segment=0x10001000"
+            },
+            "cacheVariables": {
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-system-arm;-M;mps2-an505;-nographic;-monitor;none;-semihosting-config;enable=on,target=native;-kernel"
+            }
+        },
+        {
+            "name": "bare-cortex-r5",
+            "displayName": "Cortex-R5 bare metal (build only)",
+            "description": "-mcpu=cortex-r5 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; QEMU has no machine for it, so the check is only built",
+            "inherits": "bare-metal-arm-base",
+            "environment": {
+                "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-r5 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard",
+                "CHECKSUM_EXPECTED_ISA": "thumb2_dsp",
+                "CHECKSUM_EXPECTED_BUILT": "thumb2_dsp",
+                "CHECKSUM_LINK_FLAGS": "-Wl,--entry=reset"
+            }
+        },
+        {
+            "name": "bare-cortex-r52",
+            "displayName": "Cortex-R52 bare metal (build only)",
+            "description": "-mcpu=cortex-r52 -mthumb -mfpu=neon-fp-armv8 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; QEMU has no machine for it, so the check is only built",
+            "inherits": "bare-metal-arm-base",
+            "environment": {
+                "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-r52 -mthumb -mfpu=neon-fp-armv8 -mfloat-abi=hard",
+                "CHECKSUM_EXPECTED_ISA": "thumb2_dsp",
+                "CHECKSUM_EXPECTED_BUILT": "thumb2_dsp",
+                "CHECKSUM_LINK_FLAGS": "-Wl,--entry=reset"
+            }
+        },
+        {
+            "name": "bare-cortex-a9",
+            "displayName": "Cortex-A9 without NEON bare metal in QEMU",
+            "description": "-mcpu=cortex-a9 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the check runs in qemu-system-arm -M vexpress-a9",
+            "inherits": "bare-metal-arm-base",
+            "environment": {
+                "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-a9 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard",
+                "CHECKSUM_EXPECTED_ISA": "thumb2_dsp",
+                "CHECKSUM_EXPECTED_BUILT": "thumb2_crc",
+                "CHECKSUM_LINK_FLAGS": "-Wl,-Ttext-segment=0x60010000 -Wl,--entry=reset"
+            },
+            "cacheVariables": {
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-system-arm;-M;vexpress-a9;-nographic;-monitor;none;-semihosting-config;enable=on,target=native;-kernel"
+            }
+        },
+        {
+            "name": "bare-cortex-a9-neon",
+            "displayName": "Cortex-A9 with NEON bare metal in QEMU",
+            "description": "-mcpu=cortex-a9 -mthumb -mfpu=neon-vfpv3 -mfloat-abi=hard: detect_isa() reports thumb2_neon; the check runs in qemu-system-arm -M vexpress-a9",
+            "inherits": "bare-metal-arm-base",
+            "environment": {
+                "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-a9 -mthumb -mfpu=neon-vfpv3 -mfloat-abi=hard",
+                "CHECKSUM_EXPECTED_ISA": "thumb2_neon",
+                "CHECKSUM_EXPECTED_BUILT": "thumb2_crc",
+                "CHECKSUM_LINK_FLAGS": "-Wl,-Ttext-segment=0x60010000 -Wl,--entry=reset"
+            },
+            "cacheVariables": {
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-system-arm;-M;vexpress-a9;-nographic;-monitor;none;-semihosting-config;enable=on,target=native;-kernel"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "bare-cortex-m0-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "bare-cortex-m0",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-m3-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "bare-cortex-m3",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-m4-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "bare-cortex-m4",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-m7-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "bare-cortex-m7",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-m33-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "bare-cortex-m33",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-r5-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "bare-cortex-r5",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-r52-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "bare-cortex-r52",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-a9-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "bare-cortex-a9",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-a9-neon-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "bare-cortex-a9-neon",
+            "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "bare-cortex-m3-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "bare-cortex-m3",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-m4-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "bare-cortex-m4",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-m7-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "bare-cortex-m7",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-m33-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "bare-cortex-m33",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-a9-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "bare-cortex-a9",
+            "configuration": "Debug"
+        },
+        {
+            "name": "bare-cortex-a9-neon-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "bare-cortex-a9-neon",
+            "configuration": "Debug"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "bare-cortex-m0",
+            "displayName": "Cortex-M0 bare metal (build only)",
+            "description": "Configure, build [Debug]",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bare-cortex-m0"
+                },
+                {
+                    "type": "build",
+                    "name": "bare-cortex-m0-debug"
+                }
+            ]
+        },
+        {
+            "name": "bare-cortex-m3",
+            "displayName": "Cortex-M3 bare metal in QEMU",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bare-cortex-m3"
+                },
+                {
+                    "type": "build",
+                    "name": "bare-cortex-m3-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "bare-cortex-m3-debug"
+                }
+            ]
+        },
+        {
+            "name": "bare-cortex-m4",
+            "displayName": "Cortex-M4F bare metal in QEMU",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bare-cortex-m4"
+                },
+                {
+                    "type": "build",
+                    "name": "bare-cortex-m4-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "bare-cortex-m4-debug"
+                }
+            ]
+        },
+        {
+            "name": "bare-cortex-m7",
+            "displayName": "Cortex-M7 bare metal in QEMU",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bare-cortex-m7"
+                },
+                {
+                    "type": "build",
+                    "name": "bare-cortex-m7-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "bare-cortex-m7-debug"
+                }
+            ]
+        },
+        {
+            "name": "bare-cortex-m33",
+            "displayName": "Cortex-M33 bare metal in QEMU",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bare-cortex-m33"
+                },
+                {
+                    "type": "build",
+                    "name": "bare-cortex-m33-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "bare-cortex-m33-debug"
+                }
+            ]
+        },
+        {
+            "name": "bare-cortex-r5",
+            "displayName": "Cortex-R5 bare metal (build only)",
+            "description": "Configure, build [Debug]",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bare-cortex-r5"
+                },
+                {
+                    "type": "build",
+                    "name": "bare-cortex-r5-debug"
+                }
+            ]
+        },
+        {
+            "name": "bare-cortex-r52",
+            "displayName": "Cortex-R52 bare metal (build only)",
+            "description": "Configure, build [Debug]",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bare-cortex-r52"
+                },
+                {
+                    "type": "build",
+                    "name": "bare-cortex-r52-debug"
+                }
+            ]
+        },
+        {
+            "name": "bare-cortex-a9",
+            "displayName": "Cortex-A9 without NEON bare metal in QEMU",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bare-cortex-a9"
+                },
+                {
+                    "type": "build",
+                    "name": "bare-cortex-a9-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "bare-cortex-a9-debug"
+                }
+            ]
+        },
+        {
+            "name": "bare-cortex-a9-neon",
+            "displayName": "Cortex-A9 with NEON bare metal in QEMU",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bare-cortex-a9-neon"
+                },
+                {
+                    "type": "build",
+                    "name": "bare-cortex-a9-neon-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "bare-cortex-a9-neon-debug"
+                }
+            ]
+        }
+    ]
+}

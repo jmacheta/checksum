@@ -21,7 +21,8 @@ and at run time with the same result on every platform, never allocates, and use
   about 75 000 MB/s on a laptop CPU, on par with Intel ISA-L. Optional run-time dispatch picks the preset for the
   running CPU.
 - **Checked against the references.** Values match zlib, OpenZFS, xxHash and SMHasher. CI tests natively on x86-64
-  and AArch64, with MSVC on Windows, and in QEMU for AArch64, 32-bit Arm, RISC-V and big-endian AArch64.
+  and AArch64, with MSVC on Windows, in QEMU for AArch64, 32-bit Arm, RISC-V and big-endian AArch64, and bare metal on
+  Cortex-M3/M4/M7/M33 and Cortex-A9 in QEMU system mode.
 
 Out of scope: cryptographic hashes and message authentication (SHA, SipHash), and a C API.
 
@@ -125,9 +126,11 @@ std::uint32_t const value = crc->compute(data);
   the XXH3 and CRC engines also have `finalize`; the others finish with the algorithm's free `*_finalize`. `preset()`
   names the chosen preset.
 - `detect_isa()` asks the CPU or the operating system on every call: the CPU identification instruction on x86-64,
-  the Linux auxiliary vector and system calls on Arm and RISC-V, `IsProcessorFeaturePresent` on Windows ARM64. Without
-  an operating-system feature query, bare metal included, it reports every preset of the build. Make engines once, not
-  per message: a `static` or global engine detects the CPU during program start-up.
+  the Linux auxiliary vector and system calls on Arm and RISC-V, `IsProcessorFeaturePresent` on Windows ARM64,
+  `elf_aux_info` on FreeBSD and `sysctlbyname` on Apple AArch64. It also reports what the compiler flags already require
+  of the CPU (`-mcpu=cortex-m4` gives `thumb2_dsp`, `-march=armv8-a+crc` gives `aarch64_crc`); without an
+  operating-system feature query, bare metal included, that is all it reports. Make engines once, not per message: a
+  `static` or global engine detects the CPU during program start-up.
 - An explicit `isa_set` chooses instead, e.g. from a configuration: `internet_dispatch_engine(checksum::isa::x86_avx2)`
   runs the AVX2 variant, falls back one rung at a time where the build lacks it, and runs `isa::generic` on another
   architecture. A preset converts to the set of its line up to it; sets combine with `|`. On RISC-V, where both lines

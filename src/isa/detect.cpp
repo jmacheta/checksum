@@ -2,6 +2,7 @@
 // programs that call detect_isa() link it.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/compiled_isa.hpp>
 
 #include <algorithm>
 #include <array>
@@ -24,6 +25,12 @@
 #include <asm/hwprobe.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#endif
+#if defined(__FreeBSD__) && (defined(__aarch64__) || defined(__arm__))
+#include <sys/auxv.h>
+#endif
+#if defined(__APPLE__) && defined(__aarch64__)
+#include <sys/sysctl.h>
 #endif
 
 namespace checksum {
@@ -54,6 +61,16 @@ consteval bool every_built_preset_checked() {
 
 static_assert(every_built_preset_checked(), "detect_isa() has no CPU check for a preset this build has");
 
+#if defined(__APPLE__) && defined(__aarch64__)
+// A hw.optional sysctl of macOS and iOS; false where the system lacks it.
+bool apple_feature(char const *name) noexcept {
+  int value = 0;
+  std::size_t size = sizeof(value);
+  return sysctlbyname(name, &value, &size, nullptr, 0) == 0 && value != 0;
+}
+#endif
+
+// Whether the CPU or the operating system reports that preset runs; false where neither can be asked.
 bool runs(isa preset) noexcept {
 #if defined(__x86_64__)
   bool const pclmul = __builtin_cpu_supports("sse4.2") && __builtin_cpu_supports("pclmul");
@@ -101,35 +118,50 @@ bool runs(isa preset) noexcept {
 #elif defined(_M_ARM64)
   bool const crc = IsProcessorFeaturePresent(PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE) != 0;
   bool const pmull = crc && IsProcessorFeaturePresent(PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE) != 0;
+#elif defined(__FreeBSD__) && defined(HWCAP_CRC32) && defined(HWCAP_PMULL)
+  unsigned long hwcap = 0;
+  bool const known = elf_aux_info(AT_HWCAP, &hwcap, sizeof(hwcap)) == 0;
+  bool const crc = known && (hwcap & HWCAP_CRC32) != 0;
+  bool const pmull = crc && (hwcap & HWCAP_PMULL) != 0;
+#elif defined(__APPLE__)
+  bool const crc = apple_feature("hw.optional.armv8_crc32");
+  bool const pmull = crc && apple_feature("hw.optional.arm.FEAT_PMULL");
 #else
-  bool const crc = true;
-  bool const pmull = true;
+  bool const crc = false;
+  bool const pmull = false;
 #endif
   return preset == isa::aarch64_pmull ? pmull : crc;
 #elif defined(__arm__)
-  // thumb2 and thumb2_dsp exist only where the build's own flags have them, so the CPU runs them.
+  // thumb2 and thumb2_dsp exist only where the build's own flags have them: compiler_guarantees() reports them.
 #if defined(__linux__)
   constexpr unsigned long hwcap2_crc32 = 1UL << 4U; // HWCAP2_CRC32 of the kernel's asm/hwcap.h
   bool const neon = (getauxval(AT_HWCAP) & HWCAP_ARM_NEON) != 0;
   bool const crc = neon && (getauxval(AT_HWCAP2) & hwcap2_crc32) != 0;
+#elif defined(__FreeBSD__) && defined(HWCAP_NEON) && defined(HWCAP2_CRC32) && defined(AT_HWCAP2)
+  unsigned long hwcap = 0;
+  unsigned long hwcap2 = 0;
+  bool const neon = elf_aux_info(AT_HWCAP, &hwcap, sizeof(hwcap)) == 0 && (hwcap & HWCAP_NEON) != 0;
+  bool const crc = neon && elf_aux_info(AT_HWCAP2, &hwcap2, sizeof(hwcap2)) == 0 && (hwcap2 & HWCAP2_CRC32) != 0;
 #else
-  bool const neon = true;
-  bool const crc = true;
+  bool const neon = false;
+  bool const crc = false;
 #endif
-  return preset == isa::thumb2_crc ? crc : preset == isa::thumb2_neon ? neon : true;
+  return preset == isa::thumb2_crc ? crc : preset == isa::thumb2_neon && neon;
 #elif defined(__riscv)
 #if defined(__linux__)
   if(preset == isa::riscv_v) {
     return (getauxval(AT_HWCAP) & (1UL << ('V' - 'A'))) != 0;
   }
-#if __has_include(<asm/hwprobe.h>)
+  // Kernel headers before 6.8 have no Zbc key.
+#if defined(RISCV_HWPROBE_EXT_ZBC)
   riscv_hwprobe probe{.key = RISCV_HWPROBE_KEY_IMA_EXT_0, .value = 0};
-  return syscall(__NR_riscv_hwprobe, &probe, 1, 0, nullptr, 0) == 0 && (probe.value & RISCV_HWPROBE_EXT_ZBC) != 0;
+  return preset == isa::riscv_zbc && syscall(__NR_riscv_hwprobe, &probe, 1, 0, nullptr, 0) == 0 && (probe.value & RISCV_HWPROBE_EXT_ZBC) != 0;
 #else
-  return true;
+  return false;
 #endif
 #else
-  return true;
+  static_cast<void>(preset);
+  return false;
 #endif
 #else
   static_cast<void>(preset);
@@ -142,7 +174,7 @@ bool runs(isa preset) noexcept {
 isa_set detect_isa() noexcept {
   isa_set result;
   for(isa const preset : checked) {
-    if(isa_available(preset) && runs(preset)) {
+    if(isa_available(preset) && (isa_detail::compiler_guarantees(preset) || runs(preset))) {
       result = result | preset;
     }
   }

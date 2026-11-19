@@ -23,8 +23,9 @@
 - `CMakePresets.json` holds the typical native builds (`native-gcc`, `native-clang`, `native-asan`,
   `native-gcc-no-exceptions`, `native-clang-libcxx`, `windows-msvc`).
 - Everything else is in dedicated files under `cmake/`, included by `CMakePresets.json`: `emulator_presets.json`
-  (cross builds tested in QEMU user mode), `benchmark_presets.json`, `msvc_wine_presets.json` and the shared hidden
-  presets of `common_presets.json`. A preset file includes `common_presets.json` itself if it inherits from it.
+  (cross builds tested in QEMU user mode), `bare_metal_presets.json` (`arm-none-eabi`, checks in QEMU system mode),
+  `benchmark_presets.json`, `msvc_wine_presets.json` and the shared hidden presets of `common_presets.json`. A preset
+  file includes `common_presets.json` itself if it inherits from it.
 - Test presets inherit the hidden `test-common` (output on failure, 8 jobs, stop on failure) and test the Debug
   configuration only.
 - Only the `native-*-bench` presets turn on `CHECKSUM_BENCHMARKS`. They have configure and build presets only (Release,
@@ -52,7 +53,9 @@ Apply as part of every edit:
 
 GitHub Actions (`.github/workflows/ci.yml`): the workflows of the native presets and the cross presets on Ubuntu, and
 `windows-msvc` on Windows; they build and run the correctness tests only, not the benchmarks. Most jobs use the minimum
-supported compilers (GCC 14, Clang 18); the jobs named "latest" use the newest GCC (xPack), Clang (apt.llvm.org) and the
-Arm and Bootlin cross toolchains of [setup-gcc-toolchain](https://github.com/jmacheta/setup-gcc-toolchain), so a new
-compiler release can fail them without a change here.
+supported compilers (GCC 14, Clang 18); some also run the detection and dispatch tests in QEMU user mode on CPU models
+without extensions (`cpu_checks`), and the `bare-metal` job runs the `bare-cortex-*` workflows. The jobs named
+"latest" use the newest GCC (xPack), Clang (apt.llvm.org) and the Arm and Bootlin cross toolchains of
+[setup-gcc-toolchain](https://github.com/jmacheta/setup-gcc-toolchain), so a new compiler release can fail them without
+a change here.
 Formatting and spelling are checked locally, not in CI.
