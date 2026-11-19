@@ -5,6 +5,7 @@
 // xxh3_arch.hpp.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/vector_array.hpp>
 
 #include <immintrin.h>
 
@@ -21,7 +22,8 @@ template <isa Isa> inline constexpr bool stripe_kernel_available = true;
 template <isa Isa> inline constexpr std::size_t stripe_kernel_minimum_size = 0;
 
 template <isa Isa> struct stripe_kernel {
-  using lanes = std::conditional_t<isa_detail::includes(Isa, isa::x86_avx2), std::array<__m256i, 2>, std::array<__m128i, 4>>;
+  using lanes =
+      std::conditional_t<isa_detail::includes(Isa, isa::x86_avx2), isa_detail::vector_array<__m256i, 2>, isa_detail::vector_array<__m128i, 4>>;
   static lanes load(accumulator_array const &accumulators) noexcept;
   static void store(accumulator_array &accumulators, lanes const &values) noexcept;
   static void accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept;

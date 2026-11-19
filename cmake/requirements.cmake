@@ -3,6 +3,8 @@ include(${CMAKE_CURRENT_LIST_DIR}/CPM.cmake)
 if (CHECKSUM_TESTS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
   CPMAddPackage("gh:google/googletest@1.17.0")
   target_compile_options(gtest PUBLIC $<$<CXX_COMPILER_ID:GNU,Clang>:-Wno-null-dereference>)
+  # GoogleTest builds itself with /WX under clang-cl, where it uses __int64 and -Wpedantic flags it.
+  target_compile_options(gtest PRIVATE $<$<AND:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>>:-Wno-language-extension-token>)
 endif ()
 
 if (CHECKSUM_BENCHMARKS)

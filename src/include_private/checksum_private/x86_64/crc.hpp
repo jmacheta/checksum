@@ -5,6 +5,7 @@
 // VPCLMULQDQ loop from 256 bytes from x86_vpclmul on. isa::generic (SSE2) has none. Included only by crc_arch.hpp.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/vector_array.hpp>
 
 #include <immintrin.h>
 
@@ -79,8 +80,8 @@ template <isa Isa> struct pclmul_kernel {
   // Eight 256-bit accumulators (blocks 2j, 2j + 1 in accumulator j) fold 256 bytes per step, then four fold 128 and
   // 64. Returns 8 blocks (2 per vector) with fewer than 64 bytes left after them; consumed: the bytes they cover.
   template <bool Reflected>
-  static std::array<__m256i, 4> fold_wide_blocks(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data,
-                                                 std::size_t &consumed) noexcept;
+  static isa_detail::vector_array<__m256i, 4> fold_wide_blocks(folding_constants const &constants, std::uint64_t remainder,
+                                                               std::span<std::byte const> data, std::size_t &consumed) noexcept;
 
   // fold_wide_blocks(), its 8 blocks folded onto the last one in parallel, then fold_tail_with() on the last 0..63 bytes.
   template <bool Reflected>
@@ -246,16 +247,16 @@ CHECKSUM_ALWAYS_INLINE inline __m256i pclmul_kernel<Isa>::fold_two(__m256i accum
 // 8-15 % at 256 bytes.
 template <isa Isa>
 template <bool Reflected>
-CHECKSUM_ALWAYS_INLINE inline std::array<__m256i, 4> pclmul_kernel<Isa>::fold_wide_blocks(folding_constants const &constants, std::uint64_t remainder,
-                                                                                          std::span<std::byte const> data,
-                                                                                          std::size_t &consumed) noexcept {
+CHECKSUM_ALWAYS_INLINE inline isa_detail::vector_array<__m256i, 4>
+pclmul_kernel<Isa>::fold_wide_blocks(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data,
+                                     std::size_t &consumed) noexcept {
   constexpr std::size_t half = 32;   // bytes per 256-bit accumulator
   constexpr std::size_t eight = 256; // bytes per iteration of eight accumulators
   constexpr std::size_t four = 128;  // bytes per iteration of four
   __m256i const by_eight = _mm256_broadcastsi128_si256(pair(constants.by_eight));
   static_assert(wide_minimum_size == eight, "the eight-accumulator loop runs at least once");
   __m256i const by_sixteen = _mm256_broadcastsi128_si256(pair(constants.by_sixteen));
-  std::array<__m256i, 8> accumulators{};
+  isa_detail::vector_array<__m256i, 8> accumulators{};
   unrolled<8>([&](auto index) { accumulators[index] = load_two<Reflected>(data.subspan(index * half)); });
   accumulators[0] = _mm256_xor_si256(accumulators[0], _mm256_zextsi128_si256(state<Reflected>(remainder)));
   consumed = eight;
@@ -269,7 +270,7 @@ CHECKSUM_ALWAYS_INLINE inline std::array<__m256i, 4> pclmul_kernel<Isa>::fold_wi
     } while(data.size() - consumed >= eight);
   }
   // Blocks 2j, 2j + 1 fold over eight blocks onto blocks 2j + 8, 2j + 9.
-  std::array<__m256i, 4> pairs{};
+  isa_detail::vector_array<__m256i, 4> pairs{};
   unrolled<4>([&](auto index) { pairs[index] = fold_two(accumulators[index], by_eight, accumulators[index + 4]); });
   if(data.size() - consumed >= four) [[unlikely]] {
     do {
@@ -292,7 +293,7 @@ template <bool Reflected>
 CHECKSUM_ALWAYS_INLINE inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::fold_wide(folding_constants const &constants, std::uint64_t remainder,
                                                                                        std::span<std::byte const> data) noexcept {
   std::size_t consumed = 0;
-  std::array<__m256i, 4> const pairs = fold_wide_blocks<Reflected>(constants, remainder, data, consumed);
+  isa_detail::vector_array<__m256i, 4> const pairs = fold_wide_blocks<Reflected>(constants, remainder, data, consumed);
   // Blocks 0..5 fold onto block 7 with the constants of their own distances, in parallel; block 6 folds over one.
   __m256i const block_7 = _mm256_blend_epi32(pairs[3], _mm256_setzero_si256(), 0x0F);
   __m256i const folded = fold_two(pairs[0], two_pairs(constants.by_seven),
@@ -320,7 +321,7 @@ CHECKSUM_ALWAYS_INLINE inline std::uint32_t fold_crc32(folding_constants const &
       // Blocks 0..5 fold onto blocks 6 and 7 in parallel; crc32 instructions take the 32 bytes and the last 0..63 bytes,
       // two carry-less multiplications fewer than folding onto one block.
       std::size_t consumed = 0;
-      std::array<__m256i, 4> const pairs = kernel::template fold_wide_blocks<true>(constants, remainder, data, consumed);
+      isa_detail::vector_array<__m256i, 4> const pairs = kernel::template fold_wide_blocks<true>(constants, remainder, data, consumed);
       auto const both = [&](folding_pair const &distance) { return _mm256_broadcastsi128_si256(kernel::pair(distance)); };
       __m256i const last_two =
           kernel::fold_two(pairs[0], both(constants.by_six),

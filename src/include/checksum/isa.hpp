@@ -84,9 +84,10 @@ constexpr bool includes(isa have, isa want) noexcept;
 
 // The presets besides generic that this architecture and compiler build, ascending; the preset sources
 // (checksum_private/presets.hpp) check the same macros.
-#if (defined(__GNUC__) && defined(__x86_64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64) && !defined(_M_ARM64EC))
+#if ((defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)) ||                                                                            \
+    (defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64) && !defined(_M_ARM64EC))
 inline constexpr std::array built_presets{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni};
-#elif (defined(__GNUC__) && defined(__aarch64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64))
+#elif ((defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64))
 inline constexpr std::array built_presets{isa::aarch64_crc, isa::aarch64_pmull};
 #elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' && !defined(__SOFTFP__)
 inline constexpr std::array built_presets{isa::thumb2, isa::thumb2_dsp, isa::thumb2_neon, isa::thumb2_crc};

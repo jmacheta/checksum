@@ -3,13 +3,14 @@
 
 // Target options of each instruction-set preset that this architecture and compiler build; a preset source compiles its
 // preset only where the macro is defined. isa_detail::built_presets in checksum/isa.hpp checks the same macros.
+// clang-cl defines __clang__ and the architecture macros of Clang but not __GNUC__: it builds Clang's presets.
 
-#if defined(__GNUC__) && defined(__x86_64__)
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)
 #define CHECKSUM_TARGET_X86_PCLMUL "sse4.2,pclmul"
 #define CHECKSUM_TARGET_X86_AVX2 "sse4.2,pclmul,avx2"
 #define CHECKSUM_TARGET_X86_VPCLMUL "sse4.2,pclmul,avx2,vpclmulqdq"
 #define CHECKSUM_TARGET_X86_AVXVNNI "sse4.2,pclmul,avx2,vpclmulqdq,avxvnni"
-#elif defined(__GNUC__) && defined(__aarch64__)
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)
 #define CHECKSUM_TARGET_AARCH64_CRC "+crc"
 #define CHECKSUM_TARGET_AARCH64_PMULL "+crc+aes"
 #elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2

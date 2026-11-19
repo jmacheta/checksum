@@ -35,7 +35,7 @@ template <isa Isa, unsigned Width> word<Width> run_time_hash_any(std::span<std::
   if constexpr(Width == 64) {
     // Hides how the lanes were computed: GCC otherwise merges the last multiplication of each stripe with the first one of converge(),
     // which keeps two values per lane in the stripe loop and made XXH64 7 % slower at 1 to 2 KiB on x86-64.
-#if defined(__GNUC__) && !defined(_MSC_VER)
+#if defined(__GNUC__) || defined(__clang__)
     asm("" : "+r"(lanes[0]));
     asm("" : "+r"(lanes[1]));
     asm("" : "+r"(lanes[2]));

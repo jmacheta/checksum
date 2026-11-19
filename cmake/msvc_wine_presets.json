@@ -29,6 +29,33 @@
             }
         },
         {
+            "name": "windows-clang-cl-wine",
+            "displayName": "Windows x64 (clang-cl in Wine)",
+            "description": "Cross build with clang-cl 21 and lld-link against the MSVC headers and libraries of msvc-wine in ~/.local/opt/msvc, tests run in Wine. That STL wants Clang 22 (_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH) and its <format> fails under Clang 21, so no examples (they use <print>)",
+            "inherits": "common",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_NAME": "Windows",
+                "CMAKE_SYSTEM_PROCESSOR": "AMD64",
+                "CMAKE_C_COMPILER": "clang-cl-21",
+                "CMAKE_CXX_COMPILER": "clang-cl-21",
+                "CMAKE_LINKER": "lld-link",
+                "CMAKE_AR": "llvm-lib-21",
+                "CMAKE_RC_COMPILER": "llvm-rc-21",
+                "CMAKE_MT": "llvm-mt-21",
+                "CMAKE_EXE_LINKER_FLAGS": "/winsysroot:$env{HOME}/.local/opt/msvc",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+                "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded",
+                "CMAKE_CROSSCOMPILING_EMULATOR": "wine",
+                "CHECKSUM_EXAMPLES": "OFF"
+            },
+            "environment": {
+                "CHECKSUM_CLANG_CL_FLAGS": "/winsysroot $env{HOME}/.local/opt/msvc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH /W4 /permissive- /utf-8 -Wpedantic -Wunused-parameter -Winit-self -Wcast-align -Wconversion -Wnull-dereference -Wsign-conversion",
+                "CFLAGS": "$env{CHECKSUM_CLANG_CL_FLAGS}",
+                "CXXFLAGS": "$env{CHECKSUM_CLANG_CL_FLAGS} /Zc:__cplusplus",
+                "WINEDEBUG": "-all"
+            }
+        },
+        {
             "name": "windows-msvc-arm64-wine",
             "displayName": "Windows ARM64 (MSVC in Wine, build only)",
             "description": "Cross build for ARM64 with MSVC from msvc-wine installed in ~/.local/opt/msvc; Wine cannot run the binaries, so there is no test step",
@@ -54,6 +81,12 @@
             "configuration": "Debug"
         },
         {
+            "name": "windows-clang-cl-wine-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "windows-clang-cl-wine",
+            "configuration": "Debug"
+        },
+        {
             "name": "windows-msvc-arm64-wine-debug",
             "displayName": "all [Debug]",
             "configurePreset": "windows-msvc-arm64-wine",
@@ -66,6 +99,13 @@
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "windows-msvc-wine",
+            "configuration": "Debug"
+        },
+        {
+            "name": "windows-clang-cl-wine-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "windows-clang-cl-wine",
             "configuration": "Debug"
         }
     ],
@@ -86,6 +126,25 @@
                 {
                     "type": "test",
                     "name": "windows-msvc-wine-debug"
+                }
+            ]
+        },
+        {
+            "name": "windows-clang-cl-wine",
+            "displayName": "Windows x64 (clang-cl in Wine)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "windows-clang-cl-wine"
+                },
+                {
+                    "type": "build",
+                    "name": "windows-clang-cl-wine-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "windows-clang-cl-wine-debug"
                 }
             ]
         }

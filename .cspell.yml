@@ -129,6 +129,7 @@ words:
 - immediates
 - immintrin
 - inlines
+- intrin
 - iscsi
 - jamcrc
 - jmacheta
@@ -290,6 +291,7 @@ words:
 - werror
 - Westmere
 - winedebug
+- winsysroot
 - xfer
 - xgetbv
 - xlen

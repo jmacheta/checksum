@@ -10,7 +10,7 @@ static_assert(checksum::isa_available(checksum::isa::CHECKSUM_PRESET), "presets.
 #define CHECKSUM_PRAGMA_TEXT(text) _Pragma(#text)
 
 // GCC 15 has no target pragma on RISC-V: there the kernels carry their target attribute themselves. MSVC needs none.
-#if defined(CHECKSUM_PRESET_TARGET) && defined(__GNUC__) && !defined(__riscv)
+#if defined(CHECKSUM_PRESET_TARGET) && (defined(__GNUC__) || defined(__clang__)) && !defined(__riscv)
 #if defined(__clang__)
 // The intrinsics carry their own target attributes, which Clang 18 lets the pushed one override for some but not others,
 // then refuses to inline one into another: include them before the push.
