@@ -1,6 +1,6 @@
 // Computes CRCs at compile time: the engine, its table and the result are constants.
 
-#include <checksum/crc_catalog.hpp>
+#include <checksum/crc.hpp>
 
 #include <print>
 #include <string_view>

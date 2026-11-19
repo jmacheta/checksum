@@ -1,7 +1,7 @@
 // Appends a CRC-16/MODBUS to a frame and checks a received frame.
 // The protocol defines the CRC byte order on the wire: MODBUS sends the low byte first.
 
-#include <checksum/crc_catalog.hpp>
+#include <checksum/crc.hpp>
 
 #include <array>
 #include <cstddef>

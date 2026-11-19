@@ -108,6 +108,29 @@ accumulators, which a kernel keeps in vector registers. Presets are explained in
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#xxh3).
 
+### 5.1 Choosing the preset at run time
+
+A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
+
+```cpp
+#include <checksum/xxh3.hpp>
+#include <checksum/xxhash.hpp>
+
+// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
+static checksum::xxh3_dispatch_engine<64> const xxh3_64;
+static checksum::xxhash_dispatch_engine<64> const xxh64;
+
+std::uint64_t key_hash(std::string_view key) { return xxh3_64.compute(key); }
+std::uint64_t legacy_hash(std::string_view key) { return xxh64.compute(key, 42); }
+```
+
+`xxh3_64.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`checksum::xxh3_dispatch_engine<64>(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
+this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
+the variant. Detection does not run in constant expressions: there, call `xxh3_compute<64>` / `xxhash_compute<64>` or
+give the engine an explicit preset. Details and the list of engines: [Instruction-set
+presets](../README.md#instruction-set-presets).
+
 ## 6. Performance guidelines
 
 Measured figures: [performance.md](performance.md#xxhash).

@@ -29,8 +29,8 @@ Out of scope: cryptographic hashes and message authentication (SHA, SipHash), an
 
 | Algorithm | Use it for | Header | Guide |
 | --- | --- | --- | --- |
-| CRC, widths 1-64, 112 named variants | Error detection in protocols, files, flash images | `checksum/crc_catalog.hpp` | [crc.md](doc/crc.md) |
-| Internet checksum (RFC 1071) | IPv4, ICMP, UDP, TCP | `checksum/internet.hpp` | [internet.md](doc/internet.md) |
+| CRC, widths 1-64, 112 named variants | Error detection in protocols, files, flash images | `checksum/crc.hpp` | [crc.md](doc/crc.md) |
+| Internet checksum (RFC 1071) | IPv4, ICMP, IGMP, UDP, TCP | `checksum/internet.hpp` | [internet.md](doc/internet.md) |
 | Adler-32 (RFC 1950) | zlib, PNG | `checksum/adler32.hpp` | [adler32.md](doc/adler32.md) |
 | Fletcher-16, -32, -64 | Protocols that specify them | `checksum/fletcher.hpp` | [fletcher.md](doc/fletcher.md) |
 | fletcher4 | ZFS | `checksum/fletcher4.hpp` | [fletcher4.md](doc/fletcher4.md) |
@@ -42,7 +42,7 @@ Measured speed and code size on x86-64, Cortex-A72, Cortex-M4 and Cortex-M33: [d
 ## Quick start
 
 ```cpp
-#include <checksum/crc_catalog.hpp>
+#include <checksum/crc.hpp>
 #include <checksum/xxh3.hpp>
 using namespace std::literals;
 
@@ -95,7 +95,8 @@ extensions; each includes the ones before it on its line:
 | 32-bit Arm (GCC) | `thumb2` → `thumb2_dsp` → `thumb2_neon` → `thumb2_crc` |
 | RISC-V RV64 (GCC, Clang) | `riscv_zbc` and `riscv_v`, independent |
 
-Not supported yet: AVX-512, Arm Helium (MVE) and SVE2, and AArch32 presets with Clang.
+Not supported yet: AVX-512, Arm Helium (MVE) and SVE2, and AArch32 presets with Clang. MSVC ARM64 builds the AArch64
+presets, but only fletcher4 has a kernel there; the other algorithms run their portable loops.
 
 - **A preset is a compile-time choice and a promise.** `internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2
   kernel; on a CPU without AVX2 that is undefined behavior (an illegal instruction). Compiler flags such as
@@ -120,8 +121,9 @@ std::uint32_t const value = crc->compute(data);
   `fletcher4_dispatch_engine`, `xxh3_dispatch_engine<Width>`, `xxhash_dispatch_engine<Width>`,
   `murmur3_dispatch_engine<Width>` (constructor `explicit engine(isa_set cpu = detect_isa())`), and
   `crc_dispatch_engine<Register, Strategy = crc_lut_sliced>::create(parameters, isa_set cpu = detect_isa())`, which
-  returns `std::optional` and keeps one table for every preset. `compute` and `update` (and `finalize` for XXH3 and
-  CRC) match the free functions; `preset()` names the chosen preset.
+  returns `std::optional` and keeps one table for every preset. `compute` and `update` match the free functions, and
+  the XXH3 and CRC engines also have `finalize`; the others finish with the algorithm's free `*_finalize`. `preset()`
+  names the chosen preset.
 - `detect_isa()` asks the CPU or the operating system on every call: the CPU identification instruction on x86-64,
   the Linux auxiliary vector and system calls on Arm and RISC-V, `IsProcessorFeaturePresent` on Windows ARM64. Without
   an operating-system feature query, bare metal included, it reports every preset of the build. Make engines once, not

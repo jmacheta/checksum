@@ -1,6 +1,6 @@
 // Computes the CRC-32 of a file in chunks, like the `crc32` command-line tool.
 
-#include <checksum/crc_catalog.hpp>
+#include <checksum/crc.hpp>
 
 #include <array>
 #include <cstddef>

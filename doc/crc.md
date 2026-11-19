@@ -1,13 +1,13 @@
 # CRC user guide
 
-Cyclic redundancy checks of any width from 1 to 64 bits, over byte- and bit-granular messages, at compile time or at
-run time. Two headers: `checksum/crc.hpp` (parameter model, engines, strategies) and `checksum/crc_catalog.hpp`
-(112 named parameter sets, includes `crc.hpp`).
+Cyclic redundancy checks of any width from 1 to 64 bits, over byte- and bit-granular messages, at compile time or at run
+time. One header, `checksum/crc.hpp`, has the parameter model, the engines and the strategies, and includes
+`checksum/crc_catalog.hpp` with 112 named parameter sets.
 
 ## 1. Quick start
 
 ```cpp
-#include <checksum/crc_catalog.hpp>
+#include <checksum/crc.hpp>
 using namespace std::literals;
 
 // Compile time: the engine and its table are constants in read-only data.
@@ -186,6 +186,26 @@ the portable loop for every preset. Presets are explained in
 - MSVC x64 uses the same x86 kernels; MSVC ARM64 has none.
 
 Design and decisions per kernel: [design/acceleration.md](design/acceleration.md#crc).
+
+### 5.1 Choosing the preset at run time
+
+A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
+
+```cpp
+#include <checksum/crc.hpp>
+
+// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
+static auto const crc32 = checksum::crc_dispatch_engine<std::uint32_t>::create(checksum::crc32).value();
+
+std::uint32_t frame_check(std::span<std::byte const> frame) { return crc32.compute(frame); }
+```
+
+`crc32.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`crc_dispatch_engine<std::uint32_t>::create(checksum::crc32, checksum::isa::x86_avx2)` runs that variant, falling back
+one rung at a time where this build lacks it; it does not check the CPU. A call costs one switch over the presets (one
+or two cycles) on top of the variant. Detection does not run in constant expressions: there, call
+`crc_engine_for<…>.compute` or give the engine an explicit preset. Details and the list of engines: [Instruction-set
+presets](../README.md#instruction-set-presets).
 
 ## 6. Performance guidelines
 

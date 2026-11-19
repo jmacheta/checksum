@@ -21,8 +21,8 @@ xxHash, MurmurHash3): `constexpr`, no allocation, CPU kernels selected by instru
 
 ## Commands
 
-Configure presets are in `CMakePresets.json` and `cmake/*.json`; build and test presets add `-debug`, binaries go to
-`build/<preset>/`.
+Configure presets are in `CMakePresets.json` and `cmake/*.json`; build and test presets add `-debug` (and `-release` for
+the plain native builds), binaries go to `build/<preset>/`.
 
 ```sh
 cmake --workflow --preset native-gcc            # configure + build + test, the usual check

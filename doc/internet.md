@@ -78,6 +78,25 @@ take over from a minimum size; presets are explained in [Instruction-set presets
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#internet-checksum).
 
+### 5.1 Choosing the preset at run time
+
+A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
+
+```cpp
+#include <checksum/internet.hpp>
+
+// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
+static checksum::internet_dispatch_engine const internet;
+
+std::uint16_t ip_checksum(std::span<std::byte const> header) { return internet.compute(header); }
+```
+
+`internet.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`checksum::internet_dispatch_engine(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
+this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
+the variant. Detection does not run in constant expressions: there, call `internet_compute` or give the engine an
+explicit preset. Details and the list of engines: [Instruction-set presets](../README.md#instruction-set-presets).
+
 ## 6. Performance guidelines
 
 Measured figures: [performance.md](performance.md#internet-checksum).

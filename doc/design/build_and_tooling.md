@@ -43,8 +43,8 @@ Apply as part of every edit:
 
 - C++: `clang-format -i` (`.clang-format`: LLVM base, 150 columns).
 - CMake: `cmake-format -i` (`.cmake-format`), except the vendored `cmake/CPM.cmake`.
-- Spelling: `cspell --config .cspell.yml "**"`. Add project terms to the `words` list of `.cspell.yml`, not inline
-  ignore comments.
+- Spelling: `cspell --config .cspell.yml` on the changed files, `"**"` for the whole tree. Add project terms to the
+  `words` list of `.cspell.yml`, not inline ignore comments.
 - `.clangd` configures `clang-tidy`. Its check list is a deliberate decision: do not re-enable denied checks, and use
   `NOLINT` only for false positives, with the reason.
 

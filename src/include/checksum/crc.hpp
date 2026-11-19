@@ -922,4 +922,7 @@ crc_dispatch_engine<Register, Strategy>::compute(std::span<std::byte const> data
 
 } // namespace checksum
 
+// The named parameter sets, so that this header alone gives the whole CRC API like every other algorithm's.
+#include <checksum/crc_catalog.hpp>
+
 #endif // CHECKSUM_CRC_HPP

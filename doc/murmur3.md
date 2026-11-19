@@ -69,6 +69,25 @@ The preset compiles the portable block loop for its instruction set
 `thumb2_crc`, x86_32 takes four blocks per iteration so in-order cores overlap the multiplications. Details:
 [design/acceleration.md](design/acceleration.md#murmurhash3).
 
+### 5.1 Choosing the preset at run time
+
+A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
+
+```cpp
+#include <checksum/murmur3.hpp>
+
+// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
+static checksum::murmur3_dispatch_engine<32> const murmur3_32;
+
+std::uint32_t key_hash(std::string_view key) { return murmur3_32.compute(key, 42); }
+```
+
+`murmur3_32.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`checksum::murmur3_dispatch_engine<32>(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time
+where this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on
+top of the variant. Detection does not run in constant expressions: there, call `murmur3_compute<32>` or give the engine
+an explicit preset. Details and the list of engines: [Instruction-set presets](../README.md#instruction-set-presets).
+
 ## 6. Performance guidelines
 
 Measured figures: [performance.md](performance.md#murmurhash3).

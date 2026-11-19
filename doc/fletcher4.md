@@ -77,6 +77,25 @@ exactly with fixed weights, in vector registers where a kernel exists. Presets a
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#fletcher4).
 
+### 5.1 Choosing the preset at run time
+
+A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
+
+```cpp
+#include <checksum/fletcher4.hpp>
+
+// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
+static checksum::fletcher4_dispatch_engine const fletcher4;
+
+checksum::fletcher4_value block_checksum(std::span<std::byte const> block) { return fletcher4.compute(block); }
+```
+
+`fletcher4.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`checksum::fletcher4_dispatch_engine(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
+this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
+the variant. Detection does not run in constant expressions: there, call `fletcher4_compute` or give the engine an
+explicit preset. Details and the list of engines: [Instruction-set presets](../README.md#instruction-set-presets).
+
 ## 6. Performance guidelines
 
 Measured figures: [performance.md](performance.md#fletcher4).

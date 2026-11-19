@@ -94,6 +94,26 @@ overflow. From a minimum size per call, a kernel sums whole vectors of blocks. P
 Adler-32 uses the same byte kernels. Decisions per preset:
 [design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
 
+### 5.1 Choosing the preset at run time
+
+A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
+
+```cpp
+#include <checksum/fletcher.hpp>
+
+// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
+static checksum::fletcher_dispatch_engine<32> const fletcher32;
+
+std::uint32_t block_checksum(std::span<std::byte const> block) { return fletcher32.compute(block); }
+```
+
+`fletcher32.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`checksum::fletcher_dispatch_engine<32>(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time
+where this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on
+top of the variant. Detection does not run in constant expressions: there, call `fletcher_compute<32>` or give the
+engine an explicit preset. Details and the list of engines: [Instruction-set
+presets](../README.md#instruction-set-presets).
+
 ## 6. Performance guidelines
 
 Measured figures: [performance.md](performance.md#fletcher-16--32-and--64).

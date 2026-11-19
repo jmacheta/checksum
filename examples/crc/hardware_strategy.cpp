@@ -5,7 +5,6 @@
 // stm32_crc_registers is the volatile register block at the peripheral's address.
 
 #include <checksum/crc.hpp>
-#include <checksum/crc_catalog.hpp>
 
 #include <array>
 #include <concepts>
