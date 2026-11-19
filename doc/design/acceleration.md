@@ -16,6 +16,12 @@ in [performance.md](../performance.md) only.
   `target_end.hpp`) after every std header. The build system adds no flags, and flags such as `-march=native` select no
   kernel. RISC-V gets no target pragma (GCC has none there; Clang follows), so the RVV kernels carry their own target
   attribute.
+- **32-bit Arm with Clang.** Clang builds the same `thumb2` presets and kernels as GCC, within two limits of LLVM. It
+  inlines no ARM-state function into Thumb code, so it builds the presets only where the build compiles Thumb-2 code
+  (`-mthumb`; Clang's `arm-linux-gnueabihf` default is ARM state, the Arm GNU Toolchain's is Thumb). Its target attribute
+  takes no `arch=` or `fpu=`, and `target("neon")` on a build with 16 double registers (`-mfpu=vfpv3-d16`) crashes LLVM
+  20 and 21, which no macro tells from a 32-register one: `thumb2_neon` and `thumb2_crc` need the build's own NEON, and
+  `thumb2_crc` adds `"crc"` to it. GCC adds NEON and ARMv8-A CRC to any A-profile hard-float build.
 - **Run-time choice on top.** `detect_isa()` (`src/isa/detect.cpp`, the only source with CPU queries) returns an
   `isa_set`, the default argument of every dispatch engine. An engine turns the set into one built preset with
   `isa_detail::select()` and calls the templates through `isa_detail::dispatch()`. `detect_isa()` is deliberately not

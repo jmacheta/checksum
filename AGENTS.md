@@ -29,7 +29,7 @@ the plain native builds), binaries go to `build/<preset>/`.
 cmake --workflow --preset native-gcc            # configure + build + test, the usual check
 cmake --preset native-gcc && cmake --build --preset native-gcc-debug
 ctest --preset native-gcc-debug -R internet     # only the tests of the algorithm you touched
-cmake --workflow --preset cross-aarch64         # QEMU; also cross-arm, cross-arm-crc32, cross-riscv64, cross-aarch64be
+cmake --workflow --preset cross-aarch64         # QEMU; also cross-arm, cross-arm-crc32, cross-arm-clang, cross-arm-crc32-clang, cross-riscv64, cross-aarch64be
 ```
 
 - During development build and run only what you touched (`ctest -R <algorithm>`); run the full matrix of

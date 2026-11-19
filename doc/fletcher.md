@@ -87,8 +87,8 @@ overflow. From a minimum size per call, a kernel sums whole vectors of blocks. P
 | `isa::x86_avx2`, `x86_vpclmul` | 32-byte vectors, from 64 B | from 128 B | from 384 B |
 | `isa::generic`, `x86_pclmul` on x86-64 | 16-byte vectors, from 64 B | from 128 B | portable loop |
 | every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | NEON from 64 B; 64 bytes per iteration from 320 B | from 128 B | from 256 B |
-| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 64 B | from 128 B | from 256 B |
-| `isa::thumb2_dsp` on little-endian 32-bit Arm (for Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B | portable loop | portable loop |
+| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm (GCC, Clang) | NEON, from 64 B | from 128 B | from 256 B |
+| `isa::thumb2_dsp` on little-endian 32-bit Arm (GCC, Clang; for Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B | portable loop | portable loop |
 | everything else: `isa::thumb2`, `riscv_zbc`, `riscv_v`, big-endian targets | portable loop | portable loop | portable loop |
 
 Adler-32 uses the same byte kernels. Decisions per preset:

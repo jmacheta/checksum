@@ -37,9 +37,10 @@ enum class isa : std::uint8_t {
 };
 
 /// Whether this build has the variants of preset: generic always; x86-64 and AArch64 presets with GCC, Clang, MSVC or clang-cl; RISC-V
-/// presets with GCC or Clang; 32-bit Arm presets with GCC only, thumb2 where the build's flags compile Thumb-2 code, thumb2_dsp
-/// where they also have the DSP extension, thumb2_neon and thumb2_crc for A-profile ARMv7 and later with a hardware
-/// floating-point ABI. Naming a preset it rejects is a compile error; the answer is the same in every translation unit.
+/// presets with GCC or Clang; 32-bit Arm presets with GCC or Clang, thumb2 where the build's architecture has Thumb-2 (with
+/// Clang, where the build compiles Thumb-2 code), thumb2_dsp where it also has the DSP extension, thumb2_neon and thumb2_crc
+/// for A-profile ARMv7 and later with a hardware floating-point ABI (with Clang, where the build has NEON). Naming a preset
+/// it rejects is a compile error; the answer is the same in every translation unit.
 [[nodiscard]] constexpr bool isa_available(isa preset) noexcept;
 
 /// A set of presets that a CPU runs, for the dispatch engines of every algorithm (e.g. internet_dispatch_engine), which run
@@ -89,11 +90,13 @@ constexpr bool includes(isa have, isa want) noexcept;
 inline constexpr std::array built_presets{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni};
 #elif ((defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64))
 inline constexpr std::array built_presets{isa::aarch64_crc, isa::aarch64_pmull};
-#elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' && !defined(__SOFTFP__)
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__arm__) && __ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' && !defined(__SOFTFP__) &&       \
+    (!defined(__clang__) || (defined(__thumb2__) && defined(__ARM_NEON)))
 inline constexpr std::array built_presets{isa::thumb2, isa::thumb2_dsp, isa::thumb2_neon, isa::thumb2_crc};
-#elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2 && defined(__ARM_FEATURE_DSP)
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2 && (defined(__thumb2__) || !defined(__clang__)) &&  \
+    defined(__ARM_FEATURE_DSP)
 inline constexpr std::array built_presets{isa::thumb2, isa::thumb2_dsp};
-#elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2 && (defined(__thumb2__) || !defined(__clang__))
 inline constexpr std::array built_presets{isa::thumb2};
 #elif defined(__GNUC__) && defined(__riscv) && __riscv_xlen == 64
 inline constexpr std::array built_presets{isa::riscv_zbc, isa::riscv_v};

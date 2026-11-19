@@ -71,7 +71,7 @@ exactly with fixed weights, in vector registers where a kernel exists. Presets a
 | `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | One 256-bit vector per sum, from 128 B |
 | `isa::generic`, `x86_pclmul` on x86-64 | Two 128-bit vectors per sum, from 192 B |
 | every preset of little-endian AArch64, `isa::generic` included (MSVC too) | NEON, from 192 B |
-| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 192 B |
+| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm (GCC, Clang) | NEON, from 192 B |
 | other 64-bit targets: `riscv_zbc`, `riscv_v`, big-endian AArch64 | Portable lanes, from 256 B |
 | other 32-bit targets: `isa::generic`, `thumb2`, `thumb2_dsp`, big-endian 32-bit Arm | Word loop only, two words per iteration on 32-bit Arm without `thumb2_neon`/`thumb2_crc`, one word per iteration with `thumb2_neon`/`thumb2_crc` |
 

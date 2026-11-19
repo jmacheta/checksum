@@ -93,19 +93,20 @@ extensions; each includes the ones before it on its line:
 | --- | --- |
 | x86-64 | `x86_pclmul` → `x86_avx2` → `x86_vpclmul` → `x86_avxvnni` |
 | AArch64 | `aarch64_crc` → `aarch64_pmull` |
-| 32-bit Arm (GCC) | `thumb2` → `thumb2_dsp` → `thumb2_neon` → `thumb2_crc` |
+| 32-bit Arm (GCC, Clang) | `thumb2` → `thumb2_dsp` → `thumb2_neon` → `thumb2_crc` |
 | RISC-V RV64 (GCC, Clang) | `riscv_zbc` and `riscv_v`, independent |
 
-GCC, Clang, MSVC and clang-cl build the same x86-64 and AArch64 kernels. Not supported yet: AVX-512, Arm Helium (MVE)
-and SVE2, and AArch32 presets with Clang.
+GCC, Clang, MSVC and clang-cl build the same x86-64 and AArch64 kernels, GCC and Clang the same 32-bit Arm kernels. Not
+supported yet: AVX-512, Arm Helium (MVE) and SVE2.
 
 - **A preset is a compile-time choice and a promise.** `internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2
   kernel; on a CPU without AVX2 that is undefined behavior (an illegal instruction). Compiler flags such as
   `-march=native` select no kernel, every preset gives the same result, and constant evaluation runs the portable code.
 - **What a build has:** `isa_available(preset)` is `constexpr`; naming a preset it rejects is a compile error. On
   32-bit Arm the presets need a Thumb-2 build; `thumb2_dsp` also needs the DSP extension, and `thumb2_neon` and
-  `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-point ABI. A Cortex-M0 build has only
-  `isa::generic`. Each guide lists which preset enables which kernel.
+  `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-point ABI. Clang also needs a build in Thumb
+  state (`-mthumb`) and, for `thumb2_neon` and `thumb2_crc`, the build's own NEON (`-mfpu=neon` or later). A Cortex-M0
+  build has only `isa::generic`. Each guide lists which preset enables which kernel.
 
 To choose at run time, make a dispatch engine. It detects the CPU when it is made and runs the best preset of this build
 from then on; each call costs one or two cycles to switch to the chosen loop.

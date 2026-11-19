@@ -228,6 +228,13 @@ template <isa Isa> chunk_sums kernel<32, Isa>::sum(std::byte const *data, std::s
 
 namespace checksum::fletcher_detail {
 
+// The argument type of __uxtb16: uint8x4_t in ACLE and GCC, int8x4_t in Clang.
+#if defined(__clang__)
+using uxtb16_argument = int8x4_t;
+#else
+using uxtb16_argument = uint8x4_t;
+#endif
+
 // The little-endian word at data.
 template <isa Isa> std::uint32_t load_word(std::byte const *data) noexcept;
 
@@ -267,10 +274,10 @@ template <isa Isa> CHECKSUM_NOINLINE chunk_sums kernel<8, Isa>::sum(std::byte co
     sum = __usada8(first, 0, sum);
     sum = __usada8(second, 0, sum);
     auto total = static_cast<std::int32_t>(weighted);
-    total = __smlad(static_cast<std::int32_t>(__uxtb16(first)), 0x0006'0008, total);
-    total = __smlad(static_cast<std::int32_t>(__uxtb16(__ror(first, 8))), 0x0005'0007, total);
-    total = __smlad(static_cast<std::int32_t>(__uxtb16(second)), 0x0002'0004, total);
-    total = __smlad(static_cast<std::int32_t>(__uxtb16(__ror(second, 8))), 0x0001'0003, total);
+    total = __smlad(static_cast<std::int32_t>(__uxtb16(static_cast<uxtb16_argument>(first))), 0x0006'0008, total);
+    total = __smlad(static_cast<std::int32_t>(__uxtb16(static_cast<uxtb16_argument>(__ror(first, 8)))), 0x0005'0007, total);
+    total = __smlad(static_cast<std::int32_t>(__uxtb16(static_cast<uxtb16_argument>(second))), 0x0002'0004, total);
+    total = __smlad(static_cast<std::int32_t>(__uxtb16(static_cast<uxtb16_argument>(__ror(second, 8)))), 0x0001'0003, total);
     weighted = static_cast<std::uint32_t>(total);
   }
   return {.sum = sum, .weighted = weighted};

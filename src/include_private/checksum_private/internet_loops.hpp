@@ -95,8 +95,8 @@ template <isa Isa> word add_carry(word left, word right, word &carry) noexcept {
   carry = (partial < left || sum < partial) ? 1U : 0U;
 #else
   unsigned long long carry_out = 0;
-  sum = __builtin_addcll(left, right, carry, &carry_out);
-  carry = carry_out;
+  sum = static_cast<word>(__builtin_addcll(left, right, carry, &carry_out)); // a 64-bit word: only x86-64 runs the chain
+  carry = static_cast<word>(carry_out);
 #endif
   return sum;
 }

@@ -17,6 +17,11 @@ static_assert(checksum::isa_available(checksum::isa::CHECKSUM_PRESET), "presets.
 #if defined(__aarch64__)
 #include <arm_acle.h>
 #include <arm_neon.h>
+#elif defined(__arm__)
+#include <arm_acle.h>
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 #elif defined(__x86_64__)
 #include <immintrin.h>
 #endif

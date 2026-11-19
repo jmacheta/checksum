@@ -13,17 +13,19 @@
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)
 #define CHECKSUM_TARGET_AARCH64_CRC "+crc"
 #define CHECKSUM_TARGET_AARCH64_PMULL "+crc+aes"
-#elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2 && (defined(__thumb2__) || !defined(__clang__))
 // GCC inlines the build's always_inline std functions only into code whose target includes the build's, and "arch="
 // replaces the build's architecture, so a preset the build already has only selects Thumb state. Thumb-1 builds have no
 // Thumb-2 presets: GNU as checks Thumb-2 immediates against the architecture at the end of the file, which GCC resets to
-// the build's. Clang's target attribute takes no 32-bit Arm architecture.
+// the build's. Clang inlines no ARM-state function into Thumb code, so it builds the presets only in a Thumb-2 build; its
+// target attribute takes no 32-bit Arm architecture or FPU, and LLVM 20 and 21 crash on NEON code where "neon" is added
+// to a build without it, so it builds thumb2_neon and thumb2_crc only with the build's own NEON.
 #define CHECKSUM_TARGET_THUMB2 "thumb"
 #if defined(__ARM_FEATURE_DSP)
 #define CHECKSUM_TARGET_THUMB2_DSP "thumb"
 #endif
 // NEON on A-profile cores with a hardware floating-point ABI, added to the build's own floating-point unit.
-#if __ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' && !defined(__SOFTFP__)
+#if __ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' && !defined(__SOFTFP__) && (defined(__ARM_NEON) || !defined(__clang__))
 #if defined(__ARM_NEON)
 #define CHECKSUM_TARGET_THUMB2_NEON "thumb"
 #elif __ARM_ARCH >= 8
@@ -35,6 +37,8 @@
 #endif
 #if defined(__ARM_FEATURE_CRC32) && defined(__ARM_NEON)
 #define CHECKSUM_TARGET_THUMB2_CRC "thumb"
+#elif defined(__clang__)
+#define CHECKSUM_TARGET_THUMB2_CRC "thumb,crc"
 #else
 #define CHECKSUM_TARGET_THUMB2_CRC "arch=armv8-a+crc,fpu=neon-fp-armv8,thumb"
 #endif
