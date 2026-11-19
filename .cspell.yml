@@ -246,6 +246,7 @@ words:
 - VBAR
 - vbslq
 - vcgeq
+- vcvarsarm
 - vdupq
 - vectorizing
 - veor

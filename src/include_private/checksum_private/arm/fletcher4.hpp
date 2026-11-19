@@ -6,29 +6,25 @@
 // enable the 32-bit Arm section. Included only by fletcher4_arch.hpp.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/arm/target.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 
-#if defined(__aarch64__) || defined(_M_ARM64) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
+#if defined(CHECKSUM_ARM64) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
 
 #include <arm_neon.h>
 
 namespace checksum::fletcher4_detail {
 
-#if defined(__aarch64__) || defined(_M_ARM64)
-inline constexpr bool arm64_target = true;
-#else
-inline constexpr bool arm64_target = false;
-#endif
+using arm_detail::arm64_target;
 
 template <isa Isa>
 inline constexpr bool lane_kernel_available =
     std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
 
-template <isa Isa>
-inline constexpr std::size_t lane_kernel_minimum_size = lane_kernel_available<Isa> ? 192 : std::numeric_limits<std::size_t>::max();
+template <isa Isa> inline constexpr std::size_t lane_kernel_minimum_size = lane_kernel_available<Isa> ? 192 : std::numeric_limits<std::size_t>::max();
 
 // Lanes 0 and 1 in the low vectors, 2 and 3 in the high ones.
 template <isa Isa> lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept {

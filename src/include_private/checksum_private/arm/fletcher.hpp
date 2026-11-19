@@ -5,9 +5,10 @@
 // and on the thumb2_neon/thumb2_crc presets, else the DSP instructions for bytes on little-endian 32-bit Arm from
 // thumb2_dsp. The preset sources define CHECKSUM_PRESET_ARM_NEON or CHECKSUM_PRESET_ARM_DSP to enable their section.
 
+#include <checksum_private/arm/target.hpp>
 #include <checksum_private/generic/fletcher.hpp>
 
-#if defined(__aarch64__) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
+#if defined(CHECKSUM_ARM64) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
 
 #include <arm_neon.h>
 
@@ -18,15 +19,11 @@
 
 namespace checksum::fletcher_detail {
 
-#if defined(__aarch64__)
-inline constexpr bool arm64_target = true;
-#else
-inline constexpr bool arm64_target = false;
-#endif
+using arm_detail::arm64_target;
 
-// Sums of the lanes, in 64 bits.
-template <isa Isa> std::uint64_t lane_total(uint32x4_t value) noexcept;
-template <isa Isa> std::uint64_t lane_total(uint64x2_t value) noexcept;
+// Sums of the lanes, in 64 bits. Not overloads: MSVC has one type for every NEON vector.
+template <isa Isa> std::uint64_t lane_total_32(uint32x4_t value) noexcept;
+template <isa Isa> std::uint64_t lane_total_64(uint64x2_t value) noexcept;
 
 template <isa Isa> struct kernel<8, Isa> {
   static constexpr bool available = std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
@@ -35,12 +32,12 @@ template <isa Isa> struct kernel<8, Isa> {
   static constexpr std::size_t max_blocks = 256;
   static_assert(255 * max_blocks <= std::numeric_limits<std::uint16_t>::max());
   // Faster than the portable loop from 64 bytes on a Cortex-A72 (Raspberry Pi 4), in AArch64 and AArch32.
-  static constexpr std::size_t minimum_size = 64;
+  static constexpr std::size_t minimum_size = available ? 64 : std::numeric_limits<std::size_t>::max();
   static constexpr std::size_t alignment = 1;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
-#if defined(__aarch64__)
+#if defined(CHECKSUM_ARM64)
 // AArch32 has half the NEON registers: there the group loop spilled and ran 10-27 % slower than kernel<8>.
 template <isa Isa> struct group_kernel<8, Isa> {
   static constexpr bool available = std::endian::native == std::endian::little && arm64_target;
@@ -51,7 +48,7 @@ template <isa Isa> struct group_kernel<8, Isa> {
   static_assert(std::uint64_t{255} * (block_size * max_blocks) * ((block_size * max_blocks) + 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
   static_assert(255 * ((max_blocks / 4) + 3) <= std::numeric_limits<std::uint16_t>::max());
   // Where it overtakes kernel<8> on a Cortex-A72 (Raspberry Pi 4); below, its 64 column weights cost more than they save.
-  static constexpr std::size_t minimum_size = 320;
+  static constexpr std::size_t minimum_size = available ? 320 : std::numeric_limits<std::size_t>::max();
   static constexpr std::size_t alignment = 1;
   static chunk_sums sum(std::byte const *start, std::size_t blocks) noexcept;
 };
@@ -64,7 +61,7 @@ template <isa Isa> struct kernel<16, Isa> {
   static constexpr std::size_t max_blocks = 128;
   static_assert(std::uint64_t{2 * 65'535} * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
   // Slower than the portable loop at 64 bytes on a Cortex-A72 (Raspberry Pi 4), in AArch64 and AArch32.
-  static constexpr std::size_t minimum_size = 128;
+  static constexpr std::size_t minimum_size = available ? 128 : std::numeric_limits<std::size_t>::max();
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
@@ -74,7 +71,7 @@ template <isa Isa> struct kernel<32, Isa> {
   // The 64-bit lanes have room for far more; 65536 values per chunk keep the weighted sum of the chunk within 64 bits.
   static constexpr std::size_t max_blocks = 65'536 / 4;
   // Threshold measured on a Cortex-A72 (Raspberry Pi 4).
-  static constexpr std::size_t minimum_size = 256;
+  static constexpr std::size_t minimum_size = available ? 256 : std::numeric_limits<std::size_t>::max();
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
@@ -82,9 +79,9 @@ template <isa Isa> struct kernel<32, Isa> {
 
 namespace checksum::fletcher_detail {
 
-template <isa Isa> std::uint64_t lane_total(uint64x2_t value) noexcept { return vgetq_lane_u64(value, 0) + vgetq_lane_u64(value, 1); }
+template <isa Isa> std::uint64_t lane_total_64(uint64x2_t value) noexcept { return vgetq_lane_u64(value, 0) + vgetq_lane_u64(value, 1); }
 
-template <isa Isa> std::uint64_t lane_total(uint32x4_t value) noexcept { return lane_total<Isa>(vpaddlq_u32(value)); }
+template <isa Isa> std::uint64_t lane_total_32(uint32x4_t value) noexcept { return lane_total_64<Isa>(vpaddlq_u32(value)); }
 
 // Per block: previous += sum, so that previous ends as the sum over blocks of the byte sums before each block. Column sums of
 // the 16 bytes get their weights 16 .. 1 at the end of the chunk.
@@ -108,10 +105,10 @@ template <isa Isa> chunk_sums kernel<8, Isa>::sum(std::byte const *data, std::si
   weighted = vmlal_u16(weighted, vget_high_u16(low_columns), vget_high_u16(low_weights));
   weighted = vmlal_u16(weighted, vget_low_u16(high_columns), vget_low_u16(high_weights));
   weighted = vmlal_u16(weighted, vget_high_u16(high_columns), vget_high_u16(high_weights));
-  return {.sum = lane_total<Isa>(sum), .weighted = (block_size * lane_total<Isa>(previous)) + lane_total<Isa>(weighted)};
+  return {.sum = lane_total_32<Isa>(sum), .weighted = (block_size * lane_total_32<Isa>(previous)) + lane_total_32<Isa>(weighted)};
 }
 
-#if defined(__aarch64__)
+#if defined(CHECKSUM_ARM64)
 // As kernel<8> per 64 bytes, with pairwise additions of the 4 blocks into sum and 64 columns weighted 64 .. 1. The last
 // blocks that fill no group add to the columns of the last 16 bytes, weights 16 .. 1, and count their previous per block.
 template <isa Isa> chunk_sums group_kernel<8, Isa>::sum(std::byte const *start, std::size_t blocks) noexcept {
@@ -168,7 +165,7 @@ template <isa Isa> chunk_sums group_kernel<8, Isa>::sum(std::byte const *start, 
   weighted = add_weighted(weighted, columns5, weights.data() + 40);
   weighted = add_weighted(weighted, columns6, weights.data() + 48);
   weighted = add_weighted(weighted, columns7, weights.data() + 56);
-  return {.sum = lane_total<Isa>(sum), .weighted = (block_size * lane_total<Isa>(previous)) + lane_total<Isa>(weighted)};
+  return {.sum = lane_total_32<Isa>(sum), .weighted = (block_size * lane_total_32<Isa>(previous)) + lane_total_32<Isa>(weighted)};
 }
 #endif
 
@@ -193,7 +190,7 @@ template <isa Isa> chunk_sums kernel<16, Isa>::sum(std::byte const *data, std::s
   weighted = vmlal_u32(weighted, vget_high_u32(low_columns), vget_high_u32(low_weights));
   weighted = vmlal_u32(weighted, vget_low_u32(high_columns), vget_low_u32(high_weights));
   weighted = vmlal_u32(weighted, vget_high_u32(high_columns), vget_high_u32(high_weights));
-  return {.sum = lane_total<Isa>(sum), .weighted = ((block_size / 2) * lane_total<Isa>(previous)) + lane_total<Isa>(weighted)};
+  return {.sum = lane_total_32<Isa>(sum), .weighted = ((block_size / 2) * lane_total_32<Isa>(previous)) + lane_total_64<Isa>(weighted)};
 }
 
 // As for bytes, with 4 values per block and 64-bit lanes.
@@ -212,7 +209,7 @@ template <isa Isa> chunk_sums kernel<32, Isa>::sum(std::byte const *data, std::s
   }
   std::uint64_t const weighted = (4 * vgetq_lane_u64(low_columns, 0)) + (3 * vgetq_lane_u64(low_columns, 1)) + (2 * vgetq_lane_u64(high_columns, 0)) +
                                  vgetq_lane_u64(high_columns, 1);
-  return {.sum = lane_total<Isa>(sum), .weighted = ((block_size / 4) * lane_total<Isa>(previous)) + weighted};
+  return {.sum = lane_total_64<Isa>(sum), .weighted = ((block_size / 4) * lane_total_64<Isa>(previous)) + weighted};
 }
 
 } // namespace checksum::fletcher_detail
@@ -242,7 +239,7 @@ template <isa Isa> struct kernel<8, Isa> {
   static constexpr std::size_t max_blocks = 700;
   static_assert(std::uint64_t{255} * (block_size * max_blocks) * ((block_size * max_blocks) + 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
   // Faster than the portable loop from 64 bytes on a Cortex-M4 (nRF52840, STM32L4A6).
-  static constexpr std::size_t minimum_size = 64;
+  static constexpr std::size_t minimum_size = available ? 64 : std::numeric_limits<std::size_t>::max();
   // Word loads from an address that is not a multiple of 4 make the Cortex-M4 loop 15-25 % slower.
   static constexpr std::size_t alignment = 4;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;

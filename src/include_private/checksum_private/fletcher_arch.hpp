@@ -34,7 +34,7 @@ struct chunk_sums {
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <checksum_private/x86_64/fletcher.hpp>
-#elif defined(__aarch64__) || defined(__arm__)
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__)
 #include <checksum_private/arm/fletcher.hpp>
 #else
 #include <checksum_private/generic/fletcher.hpp>

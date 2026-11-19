@@ -182,7 +182,7 @@ CHECKSUM_ALWAYS_INLINE inline std::uint32_t fold_crc32_with(folding_constants co
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <checksum_private/x86_64/crc.hpp>
-#elif defined(__aarch64__) || defined(__arm__)
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__)
 #include <checksum_private/arm/crc.hpp>
 #elif defined(__riscv) && __riscv_xlen == 64 && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #include <checksum_private/riscv64/crc.hpp>

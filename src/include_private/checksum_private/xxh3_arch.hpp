@@ -6,8 +6,8 @@
 // - stripe_kernel_available<Isa>; if true, stripe_kernel<Isa> with the members of portable_kernel
 // - stripe_kernel_minimum_size<Isa>: shortest input for stripe_kernel<Isa>() (max: never)
 
-#include <checksum/xxh3.hpp>
 #include <checksum/isa.hpp>
+#include <checksum/xxh3.hpp>
 
 // std::array of __m128i or uint64x2_t drops their __may_alias__ attribute, which arrays of accumulators do not need.
 #if defined(__GNUC__)
@@ -23,7 +23,7 @@ template <isa Isa> struct stripe_kernel;
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <checksum_private/x86_64/xxh3.hpp>
-#elif defined(__aarch64__) || defined(__arm__)
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__)
 #include <checksum_private/arm/xxh3.hpp>
 #elif defined(__riscv) && __riscv_xlen == 64 && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #include <checksum_private/riscv64/xxh3.hpp>

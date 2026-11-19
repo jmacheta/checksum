@@ -30,7 +30,7 @@ template <class Sum> struct sum_pair {
   Sum sum2 = 0;
 };
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(_M_ARM64)
 inline constexpr bool narrow_value_sums = true;
 #else
 inline constexpr bool narrow_value_sums = false;

@@ -6,8 +6,9 @@
 // thumb2_crc sources define CHECKSUM_PRESET_ARM_NEON to enable the NEON section. Included only by internet_arch.hpp.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/arm/target.hpp>
 
-#if defined(__aarch64__) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
+#if defined(CHECKSUM_ARM64) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
 #include <arm_neon.h>
 #endif
 
@@ -16,15 +17,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 
 namespace checksum::internet_detail {
 
-#if defined(__aarch64__)
-inline constexpr bool arm64_target = true;
-#else
-inline constexpr bool arm64_target = false;
-#endif
+using arm_detail::arm64_target;
 
 // NEON lanes are read as little-endian words; the presets of 32-bit Arm compile Thumb-2 code.
 template <isa Isa>
@@ -35,7 +33,8 @@ template <isa Isa> inline constexpr bool block_sum_available = neon_kernel<Isa> 
 
 // The NEON kernel is above where it overtakes the portable loop on a Cortex-A72, about 370 bytes in AArch64 and 110 in
 // AArch32: the 64-bit loop is fast, the 32-bit one is not. The ldm kernel is faster from 192 bytes on a Cortex-M4.
-template <isa Isa> inline constexpr std::size_t block_sum_minimum_size = arm64_target ? 512 : 192;
+template <isa Isa>
+inline constexpr std::size_t block_sum_minimum_size = block_sum_available<Isa> ? (arm64_target ? 512 : 192) : std::numeric_limits<std::size_t>::max();
 
 inline constexpr std::size_t neon_block_size = 64;
 
@@ -53,7 +52,7 @@ template <isa Isa> block_total ldm_sum(std::span<std::byte const> data) noexcept
 // A byte at an even offset: the first byte of a native 16-bit word.
 template <isa Isa> std::uint64_t first_byte_value(std::byte value) noexcept;
 
-#if defined(__aarch64__) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
+#if defined(CHECKSUM_ARM64) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
 
 template <isa Isa> block_total neon_sum(std::span<std::byte const> data) noexcept {
   std::size_t const message_size = data.size();
@@ -126,7 +125,7 @@ template <isa Isa> block_total ldm_sum(std::span<std::byte const> data) noexcept
 #endif
 
 template <isa Isa> std::uint64_t first_byte_value(std::byte value) noexcept {
-  return std::to_integer<std::uint64_t>(value) << (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ ? 0U : 8U);
+  return std::to_integer<std::uint64_t>(value) << (std::endian::native == std::endian::little ? 0U : 8U);
 }
 
 // The ldm kernel from an odd address: the words that start at the next byte are this message's shifted by one byte, so

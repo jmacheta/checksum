@@ -27,6 +27,23 @@
                 "CXXFLAGS": "/W4 /permissive- /Zc:__cplusplus /utf-8",
                 "WINEDEBUG": "-all"
             }
+        },
+        {
+            "name": "windows-msvc-arm64-wine",
+            "displayName": "Windows ARM64 (MSVC in Wine, build only)",
+            "description": "Cross build for ARM64 with MSVC from msvc-wine installed in ~/.local/opt/msvc; Wine cannot run the binaries, so there is no test step",
+            "inherits": "windows-msvc-wine",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_PROCESSOR": "ARM64",
+                "CMAKE_C_COMPILER": "$env{HOME}/.local/opt/msvc/bin/arm64/cl",
+                "CMAKE_CXX_COMPILER": "$env{HOME}/.local/opt/msvc/bin/arm64/cl",
+                "CMAKE_LINKER": "$env{HOME}/.local/opt/msvc/bin/arm64/link",
+                "CMAKE_AR": "$env{HOME}/.local/opt/msvc/bin/arm64/lib",
+                "CMAKE_RC_COMPILER": "$env{HOME}/.local/opt/msvc/bin/arm64/rc",
+                "CMAKE_MT": "$env{HOME}/.local/opt/msvc/bin/arm64/mt",
+                "CMAKE_CROSSCOMPILING_EMULATOR": null,
+                "CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE": "PRE_TEST"
+            }
         }
     ],
     "buildPresets": [
@@ -34,6 +51,12 @@
             "name": "windows-msvc-wine-debug",
             "displayName": "all [Debug]",
             "configurePreset": "windows-msvc-wine",
+            "configuration": "Debug"
+        },
+        {
+            "name": "windows-msvc-arm64-wine-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "windows-msvc-arm64-wine",
             "configuration": "Debug"
         }
     ],

@@ -5,9 +5,14 @@
 // isa::aarch64_pmull on little-endian AArch64. Included only by crc_arch.hpp.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/arm/target.hpp>
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#else
 #include <arm_acle.h>
-#if defined(__aarch64__) && !defined(__AARCH64EB__)
+#endif
+#if defined(CHECKSUM_ARM64) && !defined(__AARCH64EB__)
 #include <arm_neon.h>
 #endif
 
@@ -20,7 +25,7 @@ namespace checksum::crc_detail {
 // NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/crc/*.cpp.
 namespace {
 
-#if defined(__aarch64__) && !defined(__AARCH64EB__)
+#if defined(CHECKSUM_ARM64) && !defined(__AARCH64EB__)
 inline constexpr bool pmull_target = true;
 #else
 inline constexpr bool pmull_target = false;
@@ -38,7 +43,7 @@ inline constexpr std::size_t crc32_folding_minimum_size = std::numeric_limits<st
 
 template <isa Isa> inline constexpr std::size_t wide_folding_minimum_size = std::numeric_limits<std::size_t>::max();
 
-#if defined(__aarch64__) && !defined(__AARCH64EB__)
+#if defined(CHECKSUM_ARM64) && !defined(__AARCH64EB__)
 // Fold kernel of fold_blocks_with(): 128-bit NEON vectors, lane 0 low. Only for presets with folding_available<Isa>.
 template <isa Isa> struct pmull_kernel {
   using vector = uint64x2_t;
@@ -74,7 +79,7 @@ template <isa Isa> struct pmull_kernel {
 template <std::uint32_t Polynomial, class Value>
 CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_step(std::uint32_t remainder, Value value) noexcept {
   constexpr bool castagnoli = Polynomial == crc32c_reflected_polynomial;
-#if defined(__aarch64__)
+#if defined(CHECKSUM_ARM64)
   if constexpr(sizeof(Value) == 8) {
     return castagnoli ? __crc32cd(remainder, value) : __crc32d(remainder, value);
   } else if constexpr(sizeof(Value) == 4) {
@@ -146,7 +151,7 @@ CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_instructions(std::uint32_t rem
   return remainder;
 }
 
-#if defined(__aarch64__) && !defined(__AARCH64EB__)
+#if defined(CHECKSUM_ARM64) && !defined(__AARCH64EB__)
 template <isa Isa>
 template <bool Reflected>
 CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::load(std::span<std::byte const> data) noexcept {
@@ -174,9 +179,14 @@ CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::first
 
 template <isa Isa>
 CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::fold(vector accumulator, vector constants, vector next) noexcept {
+#if defined(_MSC_VER) && !defined(__clang__)
+  // MSVC has no poly128_t: its vmull_p64 takes and returns NEON vectors.
+  return veorq_u64(veorq_u64(vmull_p64(vget_low_u64(accumulator), vget_low_u64(constants)), vmull_high_p64(accumulator, constants)), next);
+#else
   poly128_t const low = vmull_p64(vgetq_lane_u64(accumulator, 0), vgetq_lane_u64(constants, 0));
   poly128_t const high = vmull_high_p64(vreinterpretq_p64_u64(accumulator), vreinterpretq_p64_u64(constants));
   return veorq_u64(veorq_u64(vreinterpretq_u64_p128(low), vreinterpretq_u64_p128(high)), next);
+#endif
 }
 
 template <isa Isa>
@@ -203,7 +213,11 @@ CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::parti
 
 template <isa Isa>
 CHECKSUM_ALWAYS_INLINE inline pmull_kernel<Isa>::vector pmull_kernel<Isa>::multiply(std::uint64_t first, std::uint64_t second) noexcept {
+#if defined(_MSC_VER) && !defined(__clang__)
+  return vmull_p64(vcreate_u64(first), vcreate_u64(second));
+#else
   return vreinterpretq_u64_p128(vmull_p64(first, second));
+#endif
 }
 
 template <isa Isa>
