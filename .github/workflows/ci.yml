@@ -13,6 +13,13 @@ concurrency:
 permissions:
   contents: read
 
+# Intel SDE (Intel Simplified Software License: use and redistribution without modification), from Intel's download page
+# https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html, which gives the sha256.
+# Intel removes old kits from its mirror; the cache keeps the last download.
+env:
+  SDE_URL: https://downloadmirror.intel.com/924984/sde-external-10.13.1-2026-07-28-lin.tar.xz
+  SDE_SHA256: 94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50
+
 jobs:
   build-and-test:
     name: build-and-test (${{ matrix.preset }}, ${{ matrix.compiler || matrix.cxx }}${{ matrix.runner && format(', {0}', matrix.runner) || '' }})
@@ -26,29 +33,33 @@ jobs:
           # so its libstdc++ jobs install g++-14.
           # cpu_checks: "<QEMU -cpu>:<presets detect_isa() must report>" runs of the unit tests' detection and dispatch tests on CPUs
           # that lack extensions, in QEMU user mode with matrix.emulator, after the regular tests.
-          - { preset: native-gcc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", emulator: qemu-x86_64, cpu_checks: "Nehalem:generic Westmere:x86_pclmul Haswell:x86_avx2" }
-          - { preset: native-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
-          - { preset: native-clang-libcxx, cc: clang-18, cxx: clang++-18, packages: "clang-18 libc++-18-dev libc++abi-18-dev" }
-          - { preset: native-asan, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
+          # required: the presets that the runner's CPU or QEMU -cpu max guarantees, as CHECKSUM_REQUIRED_ISA (each with the
+          # earlier rungs of its line), so that their tests fail instead of skipping. GitHub's x86-64 runners have AVX2, not always
+          # VPCLMULQDQ or AVX-VNNI: sde runs the unit tests again in Intel SDE with that CPU model, which has both.
+          # vlen_checks: RVV vector lengths besides QEMU's default 128 bits, for the RVV, detection and dispatch tests.
+          - { preset: native-gcc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", emulator: qemu-x86_64, cpu_checks: "Nehalem:generic Westmere:x86_pclmul Haswell:x86_avx2", required: x86_avx2, sde: -adl }
+          - { preset: native-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14", required: x86_avx2, sde: -adl }
+          - { preset: native-clang-libcxx, cc: clang-18, cxx: clang++-18, packages: "clang-18 libc++-18-dev libc++abi-18-dev", required: x86_avx2 }
+          - { preset: native-asan, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14", required: x86_avx2 }
           # Library, tests and a consumer of every header built with -fno-exceptions -fno-rtti.
-          - { preset: native-gcc-no-exceptions, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
-          # Native AArch64 (GitHub's Arm runner): the aarch64 presets on real hardware, skipped where its CPU lacks them, and Clang on AArch64.
-          - { preset: native-gcc, runner: ubuntu-24.04-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
-          - { preset: native-clang, runner: ubuntu-24.04-arm, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14" }
+          - { preset: native-gcc-no-exceptions, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14", required: x86_avx2 }
+          # Native AArch64 (GitHub's Arm runner, Neoverse N2 with CRC32 and PMULL): the aarch64 presets on real hardware, and Clang on AArch64.
+          - { preset: native-gcc, runner: ubuntu-24.04-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14", required: aarch64_pmull }
+          - { preset: native-clang, runner: ubuntu-24.04-arm, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14", required: aarch64_pmull }
           # Arm and RISC-V targets, tests in QEMU user mode with -cpu max: every preset of the architecture (Arm CRC32, PMULL, NEON, ldm + adcs; RISC-V Zbc and vector).
-          - { preset: cross-aarch64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu }
-          - { preset: cross-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf, emulator: qemu-arm, cpu_checks: "cortex-a9:thumb2_neon" }
+          - { preset: cross-aarch64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu, required: aarch64_pmull }
+          - { preset: cross-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf, emulator: qemu-arm, cpu_checks: "cortex-a9:thumb2_neon", required: thumb2_crc }
           # On 32-bit Arm the build's own extensions change how the thumb2 presets compile.
-          - { preset: cross-arm-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf }
-          - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu, emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v" }
+          - { preset: cross-arm-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf, required: thumb2_crc }
+          - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu, emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v", required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
           # Big-endian AArch64: Ubuntu has no cross compiler for it; the Arm GNU Toolchain comes from setup-gcc-toolchain (cached).
-          - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1 }
+          - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1, required: aarch64_pmull }
           # Newest compilers, so that a new release that breaks the build shows up here: GCC (xPack) and Clang (apt.llvm.org)
           # natively, the newest Arm big-endian AArch64 and Bootlin RISC-V cross toolchains.
-          - { preset: native-gcc, compiler: GCC latest, cc: gcc, cxx: g++, packages: "", toolchain: x86_64-gcc, vendor: xpack }
-          - { preset: native-clang, compiler: Clang latest, cc: clang-latest, cxx: clang++-latest, packages: "g++-14", llvm_latest: true }
-          - { preset: cross-aarch64be, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm }
-          - { preset: cross-riscv64, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: riscv64-buildroot-linux-gnu, vendor: bootlin, cross: riscv64-linux-gnu }
+          - { preset: native-gcc, compiler: GCC latest, cc: gcc, cxx: g++, packages: "", toolchain: x86_64-gcc, vendor: xpack, required: x86_avx2 }
+          - { preset: native-clang, compiler: Clang latest, cc: clang-latest, cxx: clang++-latest, packages: "g++-14", llvm_latest: true, required: x86_avx2 }
+          - { preset: cross-aarch64be, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, required: aarch64_pmull }
+          - { preset: cross-riscv64, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: riscv64-buildroot-linux-gnu, vendor: bootlin, cross: riscv64-linux-gnu, emulator: qemu-riscv64, required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -109,6 +120,8 @@ jobs:
           key: cpm-${{ hashFiles('cmake/requirements.cmake') }}
 
       - name: Configure, build and test
+        env:
+          CHECKSUM_REQUIRED_ISA: ${{ matrix.required }}
         run: cmake --workflow --preset ${{ matrix.preset }}
 
       - name: Detection on CPUs without the extensions
@@ -120,6 +133,39 @@ jobs:
             CHECKSUM_EXPECTED_ISA="${check##*:}" ${{ matrix.emulator }} -cpu "${check%:*}" \
               "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1 --gtest_filter='detect_isa.*:dispatch*'
           done
+
+      - name: RVV at other vector lengths
+        if: matrix.vlen_checks
+        timeout-minutes: 10
+        env:
+          CHECKSUM_EXPECTED_ISA: riscv_zbc,riscv_v
+          CHECKSUM_REQUIRED_ISA: riscv_zbc,riscv_v
+        run: |
+          for vlen in ${{ matrix.vlen_checks }}; do
+            echo "-cpu max,vlen=$vlen"
+            ${{ matrix.emulator }} -cpu "max,vlen=$vlen" "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1 \
+              --gtest_filter='*riscv_v*:detect_isa.*:isa_test_support.*:dispatch*'
+          done
+
+      - name: Cache Intel SDE
+        if: matrix.sde
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
+        with:
+          path: ${{ runner.temp }}/sde.tar.xz
+          key: sde-${{ env.SDE_SHA256 }}
+
+      # x86_vpclmul and x86_avxvnni: the unit tests on a CPU model with VPCLMULQDQ and AVX-VNNI, which /proc/cpuinfo does not show.
+      - name: Tests in Intel SDE
+        if: matrix.sde
+        timeout-minutes: 15
+        env:
+          CHECKSUM_EXPECTED_ISA: x86_avxvnni
+          CHECKSUM_REQUIRED_ISA: x86_avxvnni
+        run: |
+          [ -f "$RUNNER_TEMP/sde.tar.xz" ] || curl -fsSL --retry 3 --connect-timeout 30 --max-time 300 -o "$RUNNER_TEMP/sde.tar.xz" "$SDE_URL"
+          echo "$SDE_SHA256  $RUNNER_TEMP/sde.tar.xz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/sde" && tar -xJf "$RUNNER_TEMP/sde.tar.xz" -C "$RUNNER_TEMP/sde" --strip-components=1
+          "$RUNNER_TEMP/sde/sde64" ${{ matrix.sde }} -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
 
   # The library and its bare-metal check (tests/bare_metal) for Cortex-M, -R and -A with the Arm GNU Toolchain; the check runs
   # in QEMU system mode where the preset names a machine (cmake/bare_metal_presets.json).
@@ -168,6 +214,8 @@ jobs:
       # The newest Visual Studio on the runner; its developer environment puts cl, ninja and cmake on PATH.
       - name: Configure, build and test
         shell: cmd
+        env:
+          CHECKSUM_REQUIRED_ISA: x86_avx2
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
           cmake --workflow --preset windows-msvc
@@ -189,6 +237,8 @@ jobs:
       # clang-cl and lld-link of Visual Studio's LLVM component, next to the developer environment's ninja and cmake.
       - name: Configure, build and test
         shell: cmd
+        env:
+          CHECKSUM_REQUIRED_ISA: x86_avx2
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSDIR=%%i"
           call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
@@ -210,9 +260,11 @@ jobs:
           path: .cpm-cache
           key: cpm-windows-arm64-${{ hashFiles('cmake/requirements.cmake') }}
 
-      # Native ARM64 tools, so the AArch64 kernels run.
+      # Native ARM64 tools, so the AArch64 kernels run (Neoverse N2 with CRC32 and PMULL).
       - name: Configure, build and test
         shell: cmd
+        env:
+          CHECKSUM_REQUIRED_ISA: aarch64_pmull
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvarsarm64.bat" || exit /b 1
           cmake --workflow --preset windows-msvc

@@ -36,8 +36,8 @@ full matrix only for shared code.
 | Shared code: `*_loops.hpp`, the table loops, `generic/` headers, `isa.hpp`, `detect.cpp` | also every cross preset: `cross-aarch64`, `cross-aarch64be`, `cross-arm`, `cross-arm-crc32`, `cross-riscv64` |
 | `detect.cpp`, `compiled_isa.hpp`, the 32-bit Arm presets | also the `bare-cortex-*` workflows (`qemu-system-arm`) and the CPU checks below |
 | Code that differs under MSVC (intrinsics, `#if _MSC_VER`, GCC-only constructs) | also `cmake --workflow --preset windows-msvc-wine` (MSVC x64 in Wine; setup in `build_and_tooling.md`); also `cmake --workflow --preset windows-clang-cl-wine` for code that differs by `_MSC_VER`, `__clang__` or `__GNUC__`; MSVC ARM64 is build-only locally (`windows-msvc-arm64-wine`) and runs its tests in CI |
-| The x86-64 AVX-VNNI Fletcher/Adler-32 kernel | a CPU with AVX-VNNI; QEMU and CI runners may lack it, and the tests skip there |
-| RVV vector lengths other than 128 bits | also QEMU `-cpu max,vlen=256` (no preset covers it) |
+| `x86_vpclmul` or `x86_avxvnni` kernels | a CPU with them, or Intel SDE (`sde64 -adl -- checksum_ut`, below); QEMU has neither |
+| RVV kernels | also QEMU `-cpu max,vlen=256` and `vlen=512` (no preset covers them; CI runs both) |
 
 Benchmarks and the QEMU matrix are slow: run them only when the change needs them, filtered to what changed.
 
@@ -50,6 +50,23 @@ Preset tests run every preset the build has, listed in `isa_detail::built_preset
 skip the presets the CPU cannot run, as `detect_isa()` reports (`tests/include/isa_cpu.hpp`). `ut_dispatch.cpp` checks
 every dispatch engine against `isa::generic`, for the detected set and every preset alone. CI also runs `native-gcc`
 and `native-clang` on GitHub's AArch64 runner, where the AArch64 presets run on hardware.
+
+`CHECKSUM_REQUIRED_ISA` (preset names as in `CHECKSUM_EXPECTED_ISA` below, each with the earlier rungs of its line)
+turns those skips into failures: a preset test fails if the CPU cannot run a required preset, a benchmark executable
+exits with an error, and `isa_test_support.RequiredPresetsRun` fails if a required preset is unknown, not built, or not
+run. Every CI job sets it (`required` in `ci.yml`) to what its CPU guarantees: `x86_avx2` on GitHub's x86-64 runners
+(VPCLMULQDQ and AVX-VNNI vary between their CPUs), `aarch64_pmull` on its Arm runners (Neoverse N2) and in QEMU,
+`thumb2_crc` and `riscv_zbc,riscv_v` in QEMU `-cpu max`. The bare-metal check asserts its presets by itself.
+
+The `native-gcc` and `native-clang` jobs run the unit tests again in Intel SDE 10.13 emulating Alder Lake (`-adl`),
+with VPCLMULQDQ and AVX-VNNI, requiring `x86_avxvnni`; the kit is pinned by URL and sha256 in `ci.yml` (Intel Simplified
+Software License, which allows use and redistribution). The full suite takes under a minute in SDE. Locally:
+
+```sh
+CHECKSUM_EXPECTED_ISA=x86_avxvnni CHECKSUM_REQUIRED_ISA=x86_avxvnni sde64 -adl -- build/native-gcc/tests/unit_tests/Debug/checksum_ut
+```
+
+The `cross-riscv64` jobs run the RVV, detection and dispatch tests again at `-cpu max,vlen=256` and `vlen=512`.
 
 `detect_isa.MatchesTheCpu` (`ut_isa.cpp`, Linux) requires exactly the built presets that the CPU runs: those that
 `CHECKSUM_EXPECTED_ISA` names (comma-separated preset names, each with the earlier rungs of its line), or else the
@@ -65,8 +82,11 @@ CHECKSUM_EXPECTED_ISA=thumb2_neon qemu-arm -cpu cortex-a9 build/cross-arm/tests/
 CHECKSUM_EXPECTED_ISA=generic qemu-riscv64 -cpu max,zbc=false,v=false build/cross-riscv64/tests/unit_tests/Debug/checksum_ut ...
 ```
 
-No QEMU AArch64 model lacks CRC32 or PMULL, and TCG has no VPCLMULQDQ or AVX-VNNI: AArch64 CPUs without those and
-x86-64 CPUs with these are checked on hardware only.
+What CI never runs: AArch64 without CRC32 or PMULL (no QEMU model or GitHub runner lacks them), 32-bit Arm Linux
+without NEON (bare metal covers the `thumb2` and `thumb2_dsp` builds on Cortex-M and -R), MSVC on ARM64 other than
+GitHub's `windows-11-arm` (Neoverse N2, so `aarch64_pmull` only), the x86-64 presets of MSVC and clang-cl on
+VPCLMULQDQ or AVX-VNNI (SDE runs only the Linux builds), RVV at vector lengths other than 128, 256 and 512 bits, and
+detection on FreeBSD and Apple platforms. Check those on hardware.
 
 ## Coverage expectations
 

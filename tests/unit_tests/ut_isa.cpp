@@ -3,15 +3,14 @@
 #include <checksum/isa.hpp>
 
 #include <gtest/gtest.h>
+#include <isa_cpu.hpp>
 #include <isa_test_support.hpp>
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdlib>
 #include <fstream>
 #include <initializer_list>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -64,24 +63,21 @@ TEST(isa_test_support, EveryBuiltPresetHasName) {
   }
 }
 
-#if defined(__linux__)
-// The presets of a comma-separated list of preset names, e.g. "aarch64_pmull,riscv_v", each with the earlier presets of its line.
-isa_set named_presets(std::string_view names) {
-  isa_set result;
-  for(auto const part : std::views::split(names, ',')) {
-    std::string_view const word(part.begin(), part.end());
-    bool known = false;
-    for(unsigned value = 0; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
-      if(isa_test::name(static_cast<isa>(value)) == word) {
-        result = result | static_cast<isa>(value);
-        known = true;
-      }
+// CHECKSUM_REQUIRED_ISA names only presets that this build has and the CPU runs; the preset tests fail on the others too.
+TEST(isa_test_support, RequiredPresetsRun) {
+  std::optional<isa_set> const required = isa_cpu::required_presets();
+  ASSERT_TRUE(required) << "CHECKSUM_REQUIRED_ISA names an unknown preset";
+  for(unsigned value = 1; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
+    auto const preset = static_cast<isa>(value);
+    if(required->contains(preset)) {
+      EXPECT_NE(std::ranges::find(checksum::isa_detail::built_presets, preset), checksum::isa_detail::built_presets.end())
+          << "this build lacks " << isa_test::name(preset);
+      EXPECT_TRUE(isa_test::cpu_runs(preset)) << "the CPU cannot run " << isa_test::name(preset);
     }
-    EXPECT_TRUE(known) << "CHECKSUM_EXPECTED_ISA names no preset " << word;
   }
-  return result;
 }
 
+#if defined(__linux__)
 // The value of the first line of /proc/cpuinfo named key, with a space before and after every word; none if there is none.
 std::optional<std::string> cpuinfo_words(std::string_view key) {
   std::ifstream file("/proc/cpuinfo");
@@ -156,15 +152,16 @@ std::optional<isa_set> cpuinfo_presets() {
 // detect_isa() reports exactly the built presets that the CPU runs: those that CHECKSUM_EXPECTED_ISA names (for runs in an
 // emulator, whose /proc/cpuinfo may be the host's) or else those of /proc/cpuinfo.
 TEST(detect_isa, MatchesTheCpu) {
-  char const *const names = std::getenv("CHECKSUM_EXPECTED_ISA"); // NOLINT(concurrency-mt-unsafe): no thread sets it
-  std::optional<isa_set> const expected = names != nullptr ? named_presets(names) : cpuinfo_presets();
+  std::optional<std::string> const names = isa_cpu::environment("CHECKSUM_EXPECTED_ISA");
+  std::optional<isa_set> const expected = names ? isa_cpu::named_presets(*names) : cpuinfo_presets();
+  ASSERT_TRUE(expected || !names) << "CHECKSUM_EXPECTED_ISA names an unknown preset: " << *names;
   if(!expected) {
     GTEST_SKIP() << "neither CHECKSUM_EXPECTED_ISA nor a feature list in /proc/cpuinfo";
   }
   isa_set const detected = checksum::detect_isa();
   for(isa const preset : checksum::isa_detail::built_presets) {
     // Kernels before 6.8 and older QEMU have no Zbc key in riscv_hwprobe, so detection may miss what /proc/cpuinfo lists.
-    if(names == nullptr && preset == isa::riscv_zbc && !detected.contains(preset)) {
+    if(!names && preset == isa::riscv_zbc && !detected.contains(preset)) {
       continue;
     }
     EXPECT_EQ(detected.contains(preset), expected->contains(preset)) << isa_test::name(preset);

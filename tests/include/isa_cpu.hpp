@@ -7,6 +7,12 @@
 #include <checksum/isa.hpp>
 
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <optional>
+#include <print>
+#include <ranges>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -65,6 +71,66 @@ constexpr std::string_view name(checksum::isa preset) noexcept {
 inline bool cpu_runs(checksum::isa preset) {
   static checksum::isa_set const cpu = checksum::detect_isa();
   return cpu.contains(preset);
+}
+
+// The presets of a comma-separated list of preset names, e.g. "aarch64_pmull,riscv_v", each with the earlier presets of its
+// line; none if a name is unknown.
+inline std::optional<checksum::isa_set> named_presets(std::string_view names) {
+  checksum::isa_set result;
+  for(auto const part : std::views::split(names, ',')) {
+    std::string_view const word(part.begin(), part.end());
+    bool known = false;
+    for(unsigned value = 0; value <= static_cast<unsigned>(checksum::isa::riscv_v); ++value) {
+      if(name(static_cast<checksum::isa>(value)) == word) {
+        result = result | static_cast<checksum::isa>(value);
+        known = true;
+      }
+    }
+    if(!known) {
+      return std::nullopt;
+    }
+  }
+  return result;
+}
+
+// The value of the environment variable, or none if it is unset or empty.
+inline std::optional<std::string> environment(char const *variable) {
+#ifdef _MSC_VER
+  char *value = nullptr;
+  std::size_t size = 0;
+  std::optional<std::string> result;
+  if(_dupenv_s(&value, &size, variable) == 0 && value != nullptr && *value != '\0') {
+    result = value;
+  }
+  std::free(value); // NOLINT(cppcoreguidelines-no-malloc,cppcoreguidelines-owning-memory): _dupenv_s allocates with malloc
+  return result;
+#else
+  char const *const value = std::getenv(variable); // NOLINT(concurrency-mt-unsafe): no thread sets it
+  return value != nullptr && *value != '\0' ? std::optional<std::string>(value) : std::nullopt;
+#endif
+}
+
+// The presets that CHECKSUM_REQUIRED_ISA names (see named_presets): a CI job sets it to what its CPU guarantees, so that
+// tests fail instead of skipping those presets. generic alone if unset; none if it names an unknown preset.
+inline std::optional<checksum::isa_set> required_presets() {
+  std::optional<std::string> const names = environment("CHECKSUM_REQUIRED_ISA");
+  return names ? named_presets(*names) : checksum::isa_set{};
+}
+
+// Whether a run must not skip preset; true for every preset if CHECKSUM_REQUIRED_ISA names an unknown one.
+inline bool required(checksum::isa preset) {
+  static std::optional<checksum::isa_set> const presets = required_presets();
+  return !presets || presets->contains(preset);
+}
+
+// Whether the CPU runs preset, for benchmarks that register only what runs; ends the program if it cannot and
+// CHECKSUM_REQUIRED_ISA requires preset.
+inline bool cpu_runs_or_exit(checksum::isa preset) {
+  if(!cpu_runs(preset) && required(preset)) {
+    std::println(stderr, "the CPU cannot run {}, which CHECKSUM_REQUIRED_ISA requires", name(preset));
+    std::exit(EXIT_FAILURE); // NOLINT(concurrency-mt-unsafe): before any benchmark thread starts
+  }
+  return cpu_runs(preset);
 }
 
 } // namespace isa_cpu

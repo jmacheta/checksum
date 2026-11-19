@@ -31,14 +31,17 @@ struct preset_name {
   template <class Preset> static std::string GetName(int /*index*/) { return std::string(name(Preset::value)); }
 };
 
-// Skips the running test if the CPU cannot run preset.
+// Skips the running test if the CPU cannot run preset, or fails it if CHECKSUM_REQUIRED_ISA requires preset.
 inline void skip_unless_cpu_runs(checksum::isa preset) {
   if(!cpu_runs(preset)) {
+    if(isa_cpu::required(preset)) {
+      GTEST_FAIL() << "the CPU cannot run " << name(preset) << ", which CHECKSUM_REQUIRED_ISA requires";
+    }
     GTEST_SKIP() << "the CPU cannot run " << name(preset);
   }
 }
 
-// Typed-test fixture over presets: skips a preset the CPU cannot run.
+// Typed-test fixture over presets: skips (or fails, see skip_unless_cpu_runs) a preset the CPU cannot run.
 template <class Preset> class preset_test : public testing::Test {
 protected:
   void SetUp() override { skip_unless_cpu_runs(Preset::value); }
