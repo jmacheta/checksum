@@ -3,14 +3,16 @@
 
 // No kernel: the portable lanes sum everything. Included only by fletcher4_arch.hpp.
 
+#include <checksum/isa.hpp>
+
 #include <cstddef>
 #include <limits>
 
 namespace checksum::fletcher4_detail {
 
-inline constexpr bool lane_kernel_available = false;
+template <isa Isa> inline constexpr bool lane_kernel_available = false;
 
-inline constexpr std::size_t lane_kernel_minimum_size = std::numeric_limits<std::size_t>::max();
+template <isa Isa> inline constexpr std::size_t lane_kernel_minimum_size = std::numeric_limits<std::size_t>::max();
 
 } // namespace checksum::fletcher4_detail
 

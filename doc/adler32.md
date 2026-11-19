@@ -40,13 +40,15 @@ starts at 0 and adds `sum1` after each byte. The checksum is `(sum2 << 16) | sum
 
 ## 3. API
 
+`Isa` is an instruction-set preset from `checksum/isa.hpp`; the default is `isa::generic`.
+
 | Name | What it does |
 | --- | --- |
 | `adler32_state` | The two sums, `sum1` and `sum2`. A plain value: copy it, compare it, store it. The default (`sum1 = 1`, `sum2 = 0`) is the empty message. |
-| `adler32_update(state, data)` | Folds `data` into `state` and returns the new state. |
-| `adler32_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum`, a `std::uint32_t`, and returns the new checksum. |
+| `adler32_update<Isa>(state, data)` | Folds `data` into `state` and returns the new state. `Isa` selects the run-time loop; see section 5. |
+| `adler32_update<Isa>(checksum, data)` | Folds `data` into the message whose checksum is `checksum`, a `std::uint32_t`, and returns the new checksum. |
 | `adler32_finalize(state)` | The checksum. |
-| `adler32_compute(data)` | `adler32_finalize(adler32_update({}, data))`. |
+| `adler32_compute<Isa>(data)` | `adler32_finalize(adler32_update<Isa>({}, data))`. |
 
 All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`,
 `char`, `unsigned char`, `signed char` or `char8_t`, as for the other algorithms. Contiguous ranges are passed on as
@@ -75,19 +77,25 @@ modulo 65521.
 
 From 64 bytes, Adler-32 runs the byte kernel of Fletcher-16 with modulus 65521:
 
-| Target and flags | Kernel |
+| Preset | Kernel |
 | --- | --- |
-| x86-64 with AVX-VNNI (`-mavxvnni`, or a `-march` that includes it, e.g. Alder Lake, Meteor Lake) | `vpdpbusd`, 128 bytes per iteration |
-| x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | 32-byte vectors |
-| x86-64 without AVX2 (SSE2 is always there; SSSE3 used if enabled) | 16-byte vectors |
-| AArch64 with NEON, little-endian | NEON, 16-byte vectors; from 320 bytes 64 bytes per iteration |
-| 32-bit Arm with NEON, little-endian | NEON, 16-byte vectors |
-| Little-endian M-profile Arm with the DSP extension (Cortex-M4/M7/M33) | `usada8` + `smlad`, 8 bytes per iteration |
-| everything else, or `CHECKSUM_ACCELERATION=OFF` | portable loop |
+| `isa::x86_avxvnni` | `vpdpbusd`, 128 bytes per iteration |
+| `isa::x86_avx2`, `x86_vpclmul` | 32-byte vectors |
+| `isa::generic`, `x86_pclmul` on x86-64 (SSE2 baseline; SSSE3 weighting from `x86_pclmul`) | 16-byte vectors |
+| every preset of little-endian AArch64, `isa::generic` included (NEON is always there) | NEON, 16-byte vectors; from 320 bytes 64 bytes per iteration |
+| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, 16-byte vectors |
+| `isa::thumb2_dsp` on little-endian M-profile Arm (Cortex-M4/M7/M33) | `usada8` + `smlad`, 8 bytes per iteration |
+| everything else: `isa::thumb2`, `isa::riscv_zbc`, `isa::riscv_v`, big-endian targets | portable loop |
 
-The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. Constant
-evaluation always runs a byte-by-byte loop with the same result. The measurements behind each choice are in
-[design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
+**Choosing a preset.** `adler32_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 kernel whatever the build's
+compiler flags; flags such as `-mavx2` or `-march=native` select no kernel by themselves. The library compiles the loop
+once for every preset that `isa_available()` accepts on the target architecture and compiler, each into its own object,
+so a static link pulls in only the presets a program names. A preset without a kernel still runs the portable loop
+compiled for its instruction set. Naming a preset that `isa_available()` rejects is a compile error, not a link error.
+Presets give bit-identical results, and constant evaluation runs a byte-by-byte loop with the same result whatever the
+preset. The library does not check the CPU: call a preset only where the CPU has its instructions. On 32-bit Arm the
+presets need GCC and a build that already compiles Thumb-2 code, so a Cortex-M0 build has only `isa::generic`. The
+measurements behind each choice are in [design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
 
 ## 6. Performance guidelines
 
@@ -95,12 +103,12 @@ Measured figures are in [performance.md](performance.md#adler-32).
 
 - **Kernels start at 64 bytes** of one `adler32_update` call; shorter pieces run the portable loop. Pass data in
   chunks of at least 64 bytes, and preferably a few KiB.
-- **On x86-64, compile for the CPU.** At 4 KiB the default SSE2 build runs about 23 000 MB/s, AVX2 about 58 000, and
-  AVX-VNNI (`-march=native` on Alder Lake, Meteor Lake and later) about 85 000, 1.13-1.17× zlib-ng.
+- **On x86-64, choose the preset for the CPU.** At 4 KiB `isa::generic` runs about 23 000 MB/s, `isa::x86_avx2` about
+  58 000, and `isa::x86_avxvnni` about 85 000, 1.13-1.17× zlib-ng.
 - **On AArch64**, the NEON kernel switches to 64 bytes per iteration from 320 B, and
   from 1500 B reaches 0.96-0.99× of zlib-ng and ISA-L.
-- **On Cortex-M4/M7/M33**, the DSP kernel comes with the usual `-mcpu` flags and is 2× faster than the portable loop
-  at 4 KiB, from any start address.
+- **On Cortex-M4/M7/M33**, `isa::thumb2_dsp` gives the DSP kernel and is 2× faster than the portable loop at 4 KiB,
+  from any start address.
 
 ## 7. Limitations
 

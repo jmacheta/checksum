@@ -7,13 +7,49 @@ target_compile_features(checksum PUBLIC cxx_std_23)
 target_sources(
   checksum
   PRIVATE adler32/sum_loop.cpp
+          adler32/sum_loop_aarch64_crc.cpp
+          adler32/sum_loop_aarch64_pmull.cpp
+          adler32/sum_loop_riscv_v.cpp
+          adler32/sum_loop_riscv_zbc.cpp
+          adler32/sum_loop_thumb2.cpp
+          adler32/sum_loop_thumb2_crc.cpp
+          adler32/sum_loop_thumb2_dsp.cpp
+          adler32/sum_loop_thumb2_neon.cpp
+          adler32/sum_loop_x86_avx2.cpp
+          adler32/sum_loop_x86_avxvnni.cpp
+          adler32/sum_loop_x86_pclmul.cpp
+          adler32/sum_loop_x86_vpclmul.cpp
           crc/lut_braided.cpp
           crc/lut_byte.cpp
           crc/lut_nibble.cpp
           crc/lut_none.cpp
           crc/lut_sliced.cpp
           fletcher/sum_loop.cpp
+          fletcher/sum_loop_aarch64_crc.cpp
+          fletcher/sum_loop_aarch64_pmull.cpp
+          fletcher/sum_loop_riscv_v.cpp
+          fletcher/sum_loop_riscv_zbc.cpp
+          fletcher/sum_loop_thumb2.cpp
+          fletcher/sum_loop_thumb2_crc.cpp
+          fletcher/sum_loop_thumb2_dsp.cpp
+          fletcher/sum_loop_thumb2_neon.cpp
+          fletcher/sum_loop_x86_avx2.cpp
+          fletcher/sum_loop_x86_avxvnni.cpp
+          fletcher/sum_loop_x86_pclmul.cpp
+          fletcher/sum_loop_x86_vpclmul.cpp
           fletcher4/sum_loop.cpp
+          fletcher4/sum_loop_aarch64_crc.cpp
+          fletcher4/sum_loop_aarch64_pmull.cpp
+          fletcher4/sum_loop_riscv_v.cpp
+          fletcher4/sum_loop_riscv_zbc.cpp
+          fletcher4/sum_loop_thumb2.cpp
+          fletcher4/sum_loop_thumb2_crc.cpp
+          fletcher4/sum_loop_thumb2_dsp.cpp
+          fletcher4/sum_loop_thumb2_neon.cpp
+          fletcher4/sum_loop_x86_avx2.cpp
+          fletcher4/sum_loop_x86_avxvnni.cpp
+          fletcher4/sum_loop_x86_pclmul.cpp
+          fletcher4/sum_loop_x86_vpclmul.cpp
           internet/sum_loop.cpp
           internet/sum_loop_aarch64_crc.cpp
           internet/sum_loop_aarch64_pmull.cpp
@@ -28,8 +64,45 @@ target_sources(
           internet/sum_loop_x86_pclmul.cpp
           internet/sum_loop_x86_vpclmul.cpp
           murmur3/block_loop.cpp
+          xxh3/multiply_fold.cpp
+          murmur3/block_loop_aarch64_crc.cpp
+          murmur3/block_loop_aarch64_pmull.cpp
+          murmur3/block_loop_riscv_v.cpp
+          murmur3/block_loop_riscv_zbc.cpp
+          murmur3/block_loop_thumb2.cpp
+          murmur3/block_loop_thumb2_crc.cpp
+          murmur3/block_loop_thumb2_dsp.cpp
+          murmur3/block_loop_thumb2_neon.cpp
+          murmur3/block_loop_x86_avx2.cpp
+          murmur3/block_loop_x86_avxvnni.cpp
+          murmur3/block_loop_x86_pclmul.cpp
+          murmur3/block_loop_x86_vpclmul.cpp
           xxh3/stripe_loop.cpp
+          xxh3/stripe_loop_aarch64_crc.cpp
+          xxh3/stripe_loop_aarch64_pmull.cpp
+          xxh3/stripe_loop_riscv_v.cpp
+          xxh3/stripe_loop_riscv_zbc.cpp
+          xxh3/stripe_loop_thumb2.cpp
+          xxh3/stripe_loop_thumb2_crc.cpp
+          xxh3/stripe_loop_thumb2_dsp.cpp
+          xxh3/stripe_loop_thumb2_neon.cpp
+          xxh3/stripe_loop_x86_avx2.cpp
+          xxh3/stripe_loop_x86_avxvnni.cpp
+          xxh3/stripe_loop_x86_pclmul.cpp
+          xxh3/stripe_loop_x86_vpclmul.cpp
           xxhash/stripe_loop.cpp
+          xxhash/stripe_loop_aarch64_crc.cpp
+          xxhash/stripe_loop_aarch64_pmull.cpp
+          xxhash/stripe_loop_riscv_v.cpp
+          xxhash/stripe_loop_riscv_zbc.cpp
+          xxhash/stripe_loop_thumb2.cpp
+          xxhash/stripe_loop_thumb2_crc.cpp
+          xxhash/stripe_loop_thumb2_dsp.cpp
+          xxhash/stripe_loop_thumb2_neon.cpp
+          xxhash/stripe_loop_x86_avx2.cpp
+          xxhash/stripe_loop_x86_avxvnni.cpp
+          xxhash/stripe_loop_x86_pclmul.cpp
+          xxhash/stripe_loop_x86_vpclmul.cpp
   PUBLIC FILE_SET
          HEADERS
          BASE_DIRS

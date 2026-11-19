@@ -3,6 +3,7 @@
 
 #include <checksum/byte_range.hpp>
 #include <checksum/hash128.hpp>
+#include <checksum/isa.hpp>
 #include <checksum/xxhash.hpp>
 
 #include <algorithm>
@@ -43,22 +44,26 @@ struct xxh3_state {
       buffer{}; ///< The input after the folded part, from the start. While it holds fewer than 64 bytes, its end keeps the stripe before them.
 };
 
-/// Folds data into state; data may be split anywhere. With a seed other than 0, each call that folds the buffer builds the 192-byte
-/// secret again, as xxh3_finalize() does: on x86-64 about 25 % slower than seed 0 in 256-byte pieces, 6 % in 4 KiB pieces.
-template <unsigned Width> [[nodiscard]] constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept;
+/// Folds data into state; data may be split anywhere. Isa selects the run-time stripe loop: the variant compiled for that
+/// instruction-set preset (checksum/isa.hpp). Constant evaluation runs the same portable code for every preset.
+/// With a seed other than 0, each call that folds the buffer builds the 192-byte secret again, as xxh3_finalize() does.
+template <unsigned Width, isa Isa = isa::generic>
+[[nodiscard]] constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept;
 
 /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <unsigned Width, byte_range Range> [[nodiscard]] constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, Range &&data) noexcept;
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, Range &&data) noexcept;
 
-/// The hash of the message folded into state.
-template <unsigned Width> [[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_finalize(xxh3_state<Width> const &state) noexcept;
+/// The hash of the message folded into state. Isa selects the run-time stripe loop for the remaining buffer.
+template <unsigned Width, isa Isa = isa::generic>
+[[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_finalize(xxh3_state<Width> const &state) noexcept;
 
-/// The hash of data: xxh3_finalize(xxh3_update(xxh3_state<Width>{.seed = seed}, data)).
-template <unsigned Width>
+/// The hash of data: xxh3_finalize<Width, Isa>(xxh3_update<Width, Isa>(xxh3_state<Width>{.seed = seed}, data)).
+template <unsigned Width, isa Isa = isa::generic>
 [[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_compute(std::span<std::byte const> data, std::uint64_t seed = 0) noexcept;
 
 /// The hash of a byte range with a seed. A std::span<std::byte const> takes the overload above.
-template <unsigned Width, byte_range Range>
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 [[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
@@ -68,11 +73,13 @@ using xxh3_64_state = xxh3_state<64>;
 /// Running XXH3-128 hash.
 using xxh3_128_state = xxh3_state<128>;
 
-/// The XXH3-64 hash of data: xxh3_compute<64>(data, seed).
-template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+/// The XXH3-64 hash of data: xxh3_compute<64, Isa>(data, seed).
+template <isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
-/// The XXH3-128 hash of data: xxh3_compute<128>(data, seed).
-template <byte_range Range> [[nodiscard]] constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+/// The XXH3-128 hash of data: xxh3_compute<128, Isa>(data, seed).
+template <isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
 } // namespace checksum
 
@@ -139,7 +146,7 @@ template <class Integer> constexpr Integer secret_xor(std::byte const *secret) n
 // The halves of the full product, combined by exclusive or; run_time_multiply_fold() at run time without a 128-bit type.
 constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) noexcept;
 
-// multiply_fold(), defined in src/xxh3/stripe_loop.cpp. Inlined, its four multiplications make the 17-128 byte path too long for the
+// multiply_fold(), defined in src/xxh3/multiply_fold.cpp. Inlined, its four multiplications make the 17-128 byte path too long for the
 // 1 KiB instruction cache of an STM32L4: 128 bytes at 14 instead of 19 MB/s.
 std::uint64_t run_time_multiply_fold(std::uint64_t left, std::uint64_t right) noexcept;
 
@@ -192,11 +199,13 @@ template <class Kernel>
 constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                             std::byte const *last_stripe) noexcept;
 
-// fold_stripes(), defined in src/xxh3/stripe_loop.cpp.
+// fold_stripes(), defined in src/xxh3/stripe_loop_<preset>.cpp for every preset isa_available() accepts.
+template <isa Isa>
 void stripe_loop(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                  std::byte const *last_stripe) noexcept;
 
-// fold_stripes() during constant evaluation, else stripe_loop().
+// fold_stripes() during constant evaluation, else stripe_loop<Isa>().
+template <isa Isa>
 constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                     std::byte const *last_stripe) noexcept;
 
@@ -208,7 +217,7 @@ template <unsigned Width>
 constexpr value<Width> finish_large(accumulator_array const &accumulators, std::uint64_t length, secret_array const &secret) noexcept;
 
 // The hash of more than 240 bytes.
-template <unsigned Width> constexpr value<Width> hash_large(std::span<std::byte const> data, std::uint64_t seed) noexcept;
+template <unsigned Width, isa Isa> constexpr value<Width> hash_large(std::span<std::byte const> data, std::uint64_t seed) noexcept;
 
 // Bytes of a message of length bytes that a state has folded into its accumulators.
 constexpr std::uint64_t folded_length(std::uint64_t length) noexcept;
@@ -217,7 +226,7 @@ constexpr std::uint64_t folded_length(std::uint64_t length) noexcept;
 constexpr std::size_t stripe_index(std::uint64_t folded) noexcept;
 
 // xxh3_update() in place: copying the state costs more than folding a short piece.
-template <unsigned Width> constexpr void update(xxh3_state<Width> &state, std::span<std::byte const> data) noexcept;
+template <unsigned Width, isa Isa> constexpr void update(xxh3_state<Width> &state, std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::xxh3_detail
 
@@ -482,12 +491,13 @@ constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte
   Kernel::store(accumulators, lanes);
 }
 
+template <isa Isa>
 constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                     std::byte const *last_stripe) noexcept {
   if consteval {
     fold_stripes<portable_kernel>(accumulators, data, block_stripe, secret, last_stripe);
   } else {
-    stripe_loop(accumulators, data, block_stripe, secret, last_stripe);
+    stripe_loop<Isa>(accumulators, data, block_stripe, secret, last_stripe);
   }
 }
 
@@ -510,10 +520,10 @@ constexpr value<Width> finish_large(accumulator_array const &accumulators, std::
   }
 }
 
-template <unsigned Width> constexpr value<Width> hash_large(std::span<std::byte const> data, std::uint64_t seed) noexcept {
+template <unsigned Width, isa Isa> constexpr value<Width> hash_large(std::span<std::byte const> data, std::uint64_t seed) noexcept {
   return with_secret(seed, [data](secret_array const &secret) {
     accumulator_array accumulators = initial_accumulators;
-    fold(accumulators, data.first(((data.size() - 1) / stripe_size) * stripe_size), 0, secret, data.data() + data.size() - stripe_size);
+    fold<Isa>(accumulators, data.first(((data.size() - 1) / stripe_size) * stripe_size), 0, secret, data.data() + data.size() - stripe_size);
     return finish_large<Width>(accumulators, data.size(), secret);
   });
 }
@@ -522,7 +532,7 @@ constexpr std::uint64_t folded_length(std::uint64_t length) noexcept { return le
 
 constexpr std::size_t stripe_index(std::uint64_t folded) noexcept { return static_cast<std::size_t>((folded / stripe_size) % stripes_per_block); }
 
-template <unsigned Width> constexpr void update(xxh3_state<Width> &state, std::span<std::byte const> data) noexcept {
+template <unsigned Width, isa Isa> constexpr void update(xxh3_state<Width> &state, std::span<std::byte const> data) noexcept {
   std::uint64_t const folded = folded_length(state.length);
   auto const buffered = static_cast<std::size_t>(state.length - folded);
   state.length += data.size();
@@ -535,9 +545,9 @@ template <unsigned Width> constexpr void update(xxh3_state<Width> &state, std::s
   // The buffer is full and more input follows: fold it, then all but the last 1 to 256 bytes of data.
   std::size_t const whole = ((data.size() - 1) / buffer_size) * buffer_size;
   with_secret(state.seed, [&](secret_array const &secret) {
-    fold(state.accumulators, state.buffer, stripe_index(folded), secret, nullptr);
+    fold<Isa>(state.accumulators, state.buffer, stripe_index(folded), secret, nullptr);
     if(whole != 0) {
-      fold(state.accumulators, data.first(whole), stripe_index(folded + buffer_size), secret, nullptr);
+      fold<Isa>(state.accumulators, data.first(whole), stripe_index(folded + buffer_size), secret, nullptr);
     }
   });
   if(whole != 0) {
@@ -550,20 +560,25 @@ template <unsigned Width> constexpr void update(xxh3_state<Width> &state, std::s
 
 namespace checksum {
 
-template <unsigned Width> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept {
-  xxh3_detail::update(state, data);
+template <unsigned Width, isa Isa> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, std::span<std::byte const> data) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
+  xxh3_detail::update<Width, Isa>(state, data);
   return state;
 }
 
-template <unsigned Width, byte_range Range> constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { xxh3_detail::update(state, chunk); });
+template <unsigned Width, isa Isa, byte_range Range>
+constexpr xxh3_state<Width> xxh3_update(xxh3_state<Width> state, Range &&data) noexcept {
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = xxh3_update<Width, Isa>(state, chunk); });
   return state;
 }
 
-template <unsigned Width> constexpr xxh3_state<Width>::value_type xxh3_finalize(xxh3_state<Width> const &state) noexcept {
+template <unsigned Width, isa Isa> constexpr xxh3_state<Width>::value_type xxh3_finalize(xxh3_state<Width> const &state) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   using namespace xxh3_detail;
   if(state.length <= midsize_max) {
-    return xxh3_compute<Width>(std::span(state.buffer).first(static_cast<std::size_t>(state.length)), state.seed);
+    return xxh3_compute<Width, Isa>(std::span(state.buffer).first(static_cast<std::size_t>(state.length)), state.seed);
   }
   std::uint64_t const folded = folded_length(state.length);
   auto const buffered = static_cast<std::size_t>(state.length - folded);
@@ -578,12 +593,14 @@ template <unsigned Width> constexpr xxh3_state<Width>::value_type xxh3_finalize(
   }
   return with_secret(state.seed, [&](secret_array const &secret) {
     accumulator_array accumulators = state.accumulators;
-    fold(accumulators, std::span(state.buffer).first(((buffered - 1) / stripe_size) * stripe_size), stripe_index(folded), secret, last_stripe);
+    fold<Isa>(accumulators, std::span(state.buffer).first(((buffered - 1) / stripe_size) * stripe_size), stripe_index(folded), secret, last_stripe);
     return finish_large<Width>(accumulators, state.length, secret);
   });
 }
 
-template <unsigned Width> constexpr xxh3_state<Width>::value_type xxh3_compute(std::span<std::byte const> data, std::uint64_t seed) noexcept {
+template <unsigned Width, isa Isa> constexpr xxh3_state<Width>::value_type xxh3_compute(std::span<std::byte const> data, std::uint64_t seed) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   if(data.size() <= xxh3_detail::small_max) {
     return xxh3_detail::hash_small<Width>(data, seed);
   }
@@ -593,27 +610,27 @@ template <unsigned Width> constexpr xxh3_state<Width>::value_type xxh3_compute(s
   if(data.size() <= xxh3_detail::midsize_max) {
     return xxh3_detail::hash_midsize<Width>(data, seed);
   }
-  return xxh3_detail::hash_large<Width>(data, seed);
+  return xxh3_detail::hash_large<Width, Isa>(data, seed);
 }
 
-template <unsigned Width, byte_range Range>
+template <unsigned Width, isa Isa, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed) noexcept {
   // Contiguous ranges skip the buffer of the state.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
-      return xxh3_compute<Width>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
+      return xxh3_compute<Width, Isa>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
     }
   }
-  return xxh3_finalize(xxh3_update(xxh3_state<Width>{.seed = seed}, std::forward<Range>(data)));
+  return xxh3_finalize<Width, Isa>(xxh3_update<Width, Isa>(xxh3_state<Width>{.seed = seed}, std::forward<Range>(data)));
 }
 
-template <byte_range Range> constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed) noexcept {
-  return xxh3_compute<64>(std::forward<Range>(data), seed);
+template <isa Isa, byte_range Range> constexpr std::uint64_t xxh3_64_compute(Range &&data, std::uint64_t seed) noexcept {
+  return xxh3_compute<64, Isa>(std::forward<Range>(data), seed);
 }
 
-template <byte_range Range> constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed) noexcept {
-  return xxh3_compute<128>(std::forward<Range>(data), seed);
+template <isa Isa, byte_range Range> constexpr hash128 xxh3_128_compute(Range &&data, std::uint64_t seed) noexcept {
+  return xxh3_compute<128, Isa>(std::forward<Range>(data), seed);
 }
 
 } // namespace checksum

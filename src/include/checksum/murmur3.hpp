@@ -3,6 +3,7 @@
 
 #include <checksum/byte_range.hpp>
 #include <checksum/hash128.hpp>
+#include <checksum/isa.hpp>
 
 #include <algorithm>
 #include <array>
@@ -40,23 +41,24 @@ struct murmur3_state {
   std::array<std::byte, Width / 8> buffer{}; ///< The unfinished block: its first length % buffer.size() bytes.
 };
 
-/// Folds data into state; data may be split anywhere.
-template <unsigned Width>
+/// Folds data into state; data may be split anywhere. Isa selects the run-time loop: the variant compiled for that instruction-set preset
+/// (checksum/isa.hpp). Constant evaluation runs the same portable code for every preset.
+template <unsigned Width, isa Isa = isa::generic>
 [[nodiscard]] constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, std::span<std::byte const> data) noexcept;
 
 /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <unsigned Width, byte_range Range>
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, Range &&data) noexcept;
 
 /// The hash of the message folded into state. Messages of 4 GiB or more mix in their length modulo 2^32 for Width 32.
 template <unsigned Width> [[nodiscard]] constexpr murmur3_state<Width>::value_type murmur3_finalize(murmur3_state<Width> const &state) noexcept;
 
-/// The hash of data: murmur3_finalize(murmur3_update(murmur3_state<Width>{.seed = seed}, data)).
-template <unsigned Width>
+/// The hash of data: murmur3_finalize(murmur3_update<Width, Isa>(murmur3_state<Width>{.seed = seed}, data)).
+template <unsigned Width, isa Isa = isa::generic>
 [[nodiscard]] constexpr murmur3_state<Width>::value_type murmur3_compute(std::span<std::byte const> data, std::uint32_t seed = 0) noexcept;
 
 /// The hash of a byte range with a seed. A std::span<std::byte const> takes the overload above.
-template <unsigned Width, byte_range Range>
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 [[nodiscard]] constexpr murmur3_state<Width>::value_type murmur3_compute(Range &&data, std::uint32_t seed = 0) noexcept;
 
@@ -66,11 +68,13 @@ using murmur3_32_state = murmur3_state<32>;
 /// Running MurmurHash3_x64_128 hash.
 using murmur3_128_state = murmur3_state<128>;
 
-/// The MurmurHash3_x86_32 hash of data: murmur3_compute<32>(data, seed).
-template <byte_range Range> [[nodiscard]] constexpr murmur3_32_state::value_type murmur3_32_compute(Range &&data, std::uint32_t seed = 0) noexcept;
+/// The MurmurHash3_x86_32 hash of data: murmur3_compute<32, Isa>(data, seed).
+template <isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr murmur3_32_state::value_type murmur3_32_compute(Range &&data, std::uint32_t seed = 0) noexcept;
 
-/// The MurmurHash3_x64_128 hash of data: murmur3_compute<128>(data, seed).
-template <byte_range Range> [[nodiscard]] constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed = 0) noexcept;
+/// The MurmurHash3_x64_128 hash of data: murmur3_compute<128, Isa>(data, seed).
+template <isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed = 0) noexcept;
 
 } // namespace checksum
 
@@ -124,24 +128,23 @@ template <unsigned Width> constexpr lane_array<Width> initial_lanes(std::uint32_
 // Folds the whole blocks of data into lanes.
 template <unsigned Width> constexpr lane_array<Width> fold_blocks(lane_array<Width> lanes, std::span<std::byte const> data) noexcept;
 
-// fold_blocks(); defined in src/murmur3/block_loop.cpp for both widths. Lanes by reference keep the array out of the stack arguments
-// and the return slot.
-template <unsigned Width> void block_loop(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
+// fold_blocks(); defined in src/murmur3/ for every preset. Lanes by reference keep the array out of the stack arguments and the return slot.
+template <isa Isa, unsigned Width> void block_loop(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
 // x64_128 inputs shorter than this fold inline: the call costs up to 40 % at 20 bytes on Cortex-A72 and Cortex-M4. Inlining longer
 // ones costs 8 % on AArch32, and inlining x86_32 lost up to 11 % on Cortex-M4.
 inline constexpr std::size_t out_of_line_size = 256;
 
 // fold_blocks() during constant evaluation or for short x64_128 inputs, else block_loop().
-template <unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
+template <isa Isa, unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
 // The hash of a message of length bytes: lanes hold its whole blocks, tail holds the rest.
 template <unsigned Width>
 constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::uint64_t length, std::span<std::byte const> tail) noexcept;
 
-// The x86_32 hash of data of at least one block, defined in src/murmur3/block_loop.cpp. Its lane is a local, which stays in a register:
+// The x86_32 hash of data of at least one block, defined in src/murmur3/ for every preset. Its lane is a local, which stays in a register:
 // through block_loop() it goes through memory.
-std::uint32_t run_time_hash_32(std::span<std::byte const> data, std::uint32_t seed) noexcept;
+template <isa Isa> std::uint32_t run_time_hash_32(std::span<std::byte const> data, std::uint32_t seed) noexcept;
 
 } // namespace checksum::murmur3_detail
 
@@ -213,14 +216,14 @@ template <unsigned Width> constexpr lane_array<Width> fold_blocks(lane_array<Wid
   return lanes;
 }
 
-template <unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {
+template <isa Isa, unsigned Width> constexpr void fold(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {
   if consteval {
     lanes = fold_blocks<Width>(lanes, data);
   } else {
     if(Width == 128 && data.size() < out_of_line_size) {
       lanes = fold_blocks<Width>(lanes, data);
     } else {
-      block_loop<Width>(lanes, data);
+      block_loop<Isa, Width>(lanes, data);
     }
   }
 }
@@ -251,7 +254,9 @@ constexpr murmur3_state<Width>::value_type finish(lane_array<Width> lanes, std::
 
 namespace checksum {
 
-template <unsigned Width> constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, std::span<std::byte const> data) noexcept {
+template <unsigned Width, isa Isa> constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, std::span<std::byte const> data) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   constexpr std::size_t block_size = murmur3_detail::block_size<Width>;
   auto const buffered = static_cast<std::size_t>(state.length % block_size);
   if(state.length < block_size && data.size() >= block_size - buffered) {
@@ -269,14 +274,16 @@ template <unsigned Width> constexpr murmur3_state<Width> murmur3_update(murmur3_
   }
   std::size_t const whole = data.size() - (data.size() % block_size);
   if(whole != 0) {
-    murmur3_detail::fold<Width>(state.lanes, data.first(whole));
+    murmur3_detail::fold<Isa, Width>(state.lanes, data.first(whole));
   }
   std::ranges::copy(data.subspan(whole), state.buffer.begin());
   return state;
 }
 
-template <unsigned Width, byte_range Range> constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = murmur3_update(state, chunk); });
+template <unsigned Width, isa Isa, byte_range Range>
+constexpr murmur3_state<Width> murmur3_update(murmur3_state<Width> state, Range &&data) noexcept {
+  detail::for_each_chunk(std::forward<Range>(data),
+                         [&](std::span<std::byte const> chunk) { state = murmur3_update<Width, Isa>(state, chunk); });
   return state;
 }
 
@@ -287,40 +294,45 @@ template <unsigned Width> constexpr murmur3_state<Width>::value_type murmur3_fin
   return murmur3_detail::finish<Width>(lanes, state.length, std::span(state.buffer).first(buffered));
 }
 
-template <unsigned Width> constexpr murmur3_state<Width>::value_type murmur3_compute(std::span<std::byte const> data, std::uint32_t seed) noexcept {
+template <unsigned Width, isa Isa>
+constexpr murmur3_state<Width>::value_type murmur3_compute(std::span<std::byte const> data, std::uint32_t seed) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   std::size_t const whole = data.size() - (data.size() % murmur3_detail::block_size<Width>);
   if constexpr(Width == 32) {
     if !consteval {
       if(whole != 0) {
-        return murmur3_detail::run_time_hash_32(data, seed);
+        return murmur3_detail::run_time_hash_32<Isa>(data, seed);
       }
     }
   }
   murmur3_detail::lane_array<Width> lanes = murmur3_detail::initial_lanes<Width>(seed);
   if(whole != 0) {
-    murmur3_detail::fold<Width>(lanes, data.first(whole));
+    murmur3_detail::fold<Isa, Width>(lanes, data.first(whole));
   }
   return murmur3_detail::finish<Width>(lanes, data.size(), data.subspan(whole));
 }
 
-template <unsigned Width, byte_range Range>
+template <unsigned Width, isa Isa, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 constexpr murmur3_state<Width>::value_type murmur3_compute(Range &&data, std::uint32_t seed) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   // Contiguous ranges skip the buffer of the state.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
-      return murmur3_compute<Width>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
+      return murmur3_compute<Width, Isa>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
     }
   }
-  return murmur3_finalize(murmur3_update(murmur3_state<Width>{.seed = seed}, std::forward<Range>(data)));
+  return murmur3_finalize(murmur3_update<Width, Isa>(murmur3_state<Width>{.seed = seed}, std::forward<Range>(data)));
 }
 
-template <byte_range Range> constexpr murmur3_32_state::value_type murmur3_32_compute(Range &&data, std::uint32_t seed) noexcept {
-  return murmur3_compute<32>(std::forward<Range>(data), seed);
+template <isa Isa, byte_range Range> constexpr murmur3_32_state::value_type murmur3_32_compute(Range &&data, std::uint32_t seed) noexcept {
+  return murmur3_compute<32, Isa>(std::forward<Range>(data), seed);
 }
 
-template <byte_range Range> constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed) noexcept {
-  return murmur3_compute<128>(std::forward<Range>(data), seed);
+template <isa Isa, byte_range Range> constexpr murmur3_128_state::value_type murmur3_128_compute(Range &&data, std::uint32_t seed) noexcept {
+  return murmur3_compute<128, Isa>(std::forward<Range>(data), seed);
 }
 
 } // namespace checksum

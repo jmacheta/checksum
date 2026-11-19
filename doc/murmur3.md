@@ -33,16 +33,17 @@ deduplication of records by their 128-bit hash.
 
 ## 2. API
 
-`Width` is 32 for MurmurHash3_x86_32 and 128 for MurmurHash3_x64_128.
+`Width` is 32 for MurmurHash3_x86_32 and 128 for MurmurHash3_x64_128. `Isa` is an instruction-set preset from
+`checksum/isa.hpp`; the default is `isa::generic`.
 
 | Name | What it does |
 | --- | --- |
 | `murmur3_state<Width>` | The hash lanes, the number of bytes folded (`length`), the `seed` and the bytes of an unfinished block (`buffer`). A plain value: copy it, store it. The default is the empty message with seed 0; `murmur3_state<Width>{.seed = seed}` starts one with another seed. |
-| `murmur3_update(state, data)` | Folds `data` into `state` and returns the new state. |
+| `murmur3_update<Width, Isa>(state, data)` | Folds `data` into `state` and returns the new state. `Isa` selects the run-time loop; see section 4. |
 | `murmur3_finalize(state)` | The hash of the message folded into `state`; the state is unchanged. |
-| `murmur3_compute<Width>(data, seed = 0)` | `murmur3_finalize(murmur3_update(murmur3_state<Width>{.seed = seed}, data))`. |
+| `murmur3_compute<Width, Isa>(data, seed = 0)` | `murmur3_finalize(murmur3_update<Width, Isa>(murmur3_state<Width>{.seed = seed}, data))`. |
 | `murmur3_32_state`, `murmur3_128_state` | `murmur3_state<32>` and `murmur3_state<128>`. |
-| `murmur3_32_compute(data, seed = 0)`, `murmur3_128_compute(data, seed = 0)` | `murmur3_compute<32>(data, seed)` and `murmur3_compute<128>(data, seed)`. |
+| `murmur3_32_compute<Isa>(data, seed = 0)`, `murmur3_128_compute<Isa>(data, seed = 0)` | `murmur3_compute<32, Isa>(data, seed)` and `murmur3_compute<128, Isa>(data, seed)`. |
 
 `murmur3_state<Width>::value_type` is the hash: `std::uint32_t` for Width 32, and `hash128` for Width 128, the same
 type as XXH3-128 returns. Its `low` half is h1 and its `high` half h2, so it is the 128-bit number the reference
@@ -68,15 +69,16 @@ the unused bytes of the buffer are ignored.
 
 ## 4. CPU acceleration
 
-MurmurHash3 has no kernel, on any target. Every block updates the hash lanes through a rotation, a multiplication and
-an addition of their previous values, and in MurmurHash3_x64_128 the second lane also takes the first lane of the same
-block. Blocks cannot be processed in parallel, so vector instructions have nothing to work on. The block loop is
-compiled once per width in `src/murmur3/block_loop.cpp`; MurmurHash3_x64_128 inputs under 256 bytes fold inline
-instead, which saves the call, and the one-shot MurmurHash3_x86_32 runs a function there that keeps its lane in a
-register. On 32-bit Arm without NEON (Cortex-M, small in-order A-profile cores) MurmurHash3_x86_32 takes four blocks
-per iteration: their multiplications do not depend on the lane, so an in-order core runs them while the earlier blocks
-update it. That made it 1.66× faster at 4 KiB on a Cortex-M33 and 1.20× on a Cortex-M4; out-of-order cores already overlap the
-blocks.
+MurmurHash3 has no kernel, on any target. The `isa` preset compiles the portable block loop for its instruction set;
+flags such as `-march=native` select no kernel by themselves, and constant evaluation runs the portable code whatever
+the preset. Every block updates the hash lanes through a rotation, a multiplication and an addition of their previous
+values, and in MurmurHash3_x64_128 the second lane also takes the first lane of the same block. Blocks cannot be
+processed in parallel, so vector instructions have nothing to work on. The block loop is compiled once per width and
+preset in `src/murmur3/`; MurmurHash3_x64_128 inputs under 256 bytes fold inline instead, which saves the call, and the
+one-shot MurmurHash3_x86_32 runs a function there that keeps its lane in a register. On 32-bit Arm without NEON
+(Cortex-M, small in-order A-profile cores) MurmurHash3_x86_32 takes four blocks per iteration: their multiplications do
+not depend on the lane, so an in-order core runs them while the earlier blocks update it. That made it 1.66× faster at
+4 KiB on a Cortex-M33 and 1.20× on a Cortex-M4; out-of-order cores already overlap the blocks.
 
 MurmurHash3_x64_128 needs 64-bit multiplications, which 32-bit targets build from several 32-bit ones. On 32-bit
 targets MurmurHash3_x86_32 is the faster of the two; on 64-bit targets MurmurHash3_x64_128 is at least as fast at 20

@@ -46,12 +46,14 @@ ZFS checksums whole words only. Here a message may end inside a word: the last w
 
 ## 3. API
 
+`Isa` is an instruction-set preset from `checksum/isa.hpp`; the default is `isa::generic`.
+
 | Name | What it does |
 | --- | --- |
 | `fletcher4_state` | `sum1` to `sum4` and `word_offset`, the bytes of an unfinished word already in `sum1`. A plain value: copy it, compare it, store it. The default is the empty message. |
-| `fletcher4_update(state, data)` | Folds `data` into `state` and returns the new state. |
+| `fletcher4_update<Isa>(state, data)` | Folds `data` into `state` and returns the new state. `Isa` selects the run-time loop; see section 5. |
 | `fletcher4_finalize(state)` | The checksum, an unfinished word padded with zero bytes. |
-| `fletcher4_compute(data)` | `fletcher4_finalize(fletcher4_update(fletcher4_state{}, data))`. |
+| `fletcher4_compute<Isa>(data)` | `fletcher4_finalize(fletcher4_update<Isa>(fletcher4_state{}, data))`. |
 | `fletcher4_value` | The checksum: `std::array<std::uint64_t, 4>` holding `sum1` to `sum4`. |
 
 All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`,
@@ -77,19 +79,26 @@ lane j sums the words j, j + 4, j + 8, ... as a message of its own, and the four
 weights that follow from the definition. The sums wrap modulo 2^64 in both forms, so the result is exact. The lanes
 run in vector registers where a kernel exists, else in portable code:
 
-| Target and flags | Lanes |
+| Preset | Lanes |
 | --- | --- |
-| x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | One 256-bit vector per sum, from 128 B |
-| x86-64 without AVX2 (SSE2 is always there) | Two 128-bit vectors per sum, from 192 B |
-| AArch64, little-endian | NEON, two 128-bit vectors per sum, from 192 B |
-| 32-bit Arm with NEON, little-endian | NEON, from 192 B |
-| other 64-bit targets (RISC-V, big-endian AArch64), or `CHECKSUM_ACCELERATION=OFF` on a 64-bit target | Portable lanes, from 256 B |
-| other 32-bit targets (Cortex-M, 32-bit Arm without NEON, big-endian), or `CHECKSUM_ACCELERATION=OFF` on a 32-bit target | Word loop only; two words per iteration on 32-bit Arm without NEON |
+| `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | One 256-bit vector per sum, from 128 B |
+| `isa::generic`, `x86_pclmul` on x86-64 (SSE2 baseline) | Two 128-bit vectors per sum, from 192 B |
+| every preset of little-endian AArch64, `isa::generic` included (NEON is always there) | NEON, two 128-bit vectors per sum, from 192 B |
+| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 192 B |
+| other 64-bit targets: `isa::generic`, `isa::riscv_zbc`, `isa::riscv_v`, big-endian AArch64 | Portable lanes, from 256 B |
+| other 32-bit targets: `isa::generic`, `isa::thumb2`, `isa::thumb2_dsp`, big-endian 32-bit Arm | Word loop only; two words per iteration on 32-bit Arm without NEON |
 
-The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. Constant
-evaluation always runs a byte-by-byte loop with the same result. On 32-bit targets the 64-bit sums of four portable
-lanes do not fit the registers and ran 3× slower than the word loop, so those targets never use them. The measurements
-behind each choice are in [design/acceleration.md](design/acceleration.md#fletcher4).
+**Choosing a preset.** `fletcher4_compute<checksum::isa::x86_avx2>(data)` runs the AVX2 lanes whatever the build's
+compiler flags; flags such as `-mavx2` or `-march=native` select no kernel by themselves. The library compiles the loop
+once for every preset that `isa_available()` accepts on the target architecture and compiler, each into its own object,
+so a static link pulls in only the presets a program names. A preset without a kernel still runs the portable loop
+compiled for its instruction set. Naming a preset that `isa_available()` rejects is a compile error, not a link error.
+Presets give bit-identical results, and constant evaluation runs a byte-by-byte loop with the same result whatever the
+preset. The library does not check the CPU: call a preset only where the CPU has its instructions. On 32-bit Arm the
+presets need GCC and a build that already compiles Thumb-2 code, so a Cortex-M0 build has only `isa::generic`. On
+32-bit targets the 64-bit sums of four portable lanes do not fit the registers and ran 3× slower than the word loop, so
+those targets never use them. The measurements behind each choice are in
+[design/acceleration.md](design/acceleration.md#fletcher4).
 
 ## 6. Performance guidelines
 
@@ -98,8 +107,8 @@ Measured figures are in [performance.md](performance.md#fletcher4).
 - **Lanes start at a minimum size** of one `fletcher4_update` call (section 5): 128 B with AVX2, 192 B with SSE2 or
   NEON, 256 B for the portable lanes. ZFS blocks are larger, so they always run the lanes; with AVX2 a 4 KiB block
   hashes at about 29 000 MB/s, on par with OpenZFS.
-- **Keep acceleration on, especially with Clang:** its portable lanes reach only about 45 % of the SSE2 kernel on
-  x86-64, and 60 % of NEON on AArch64. With GCC the portable lanes are close to the kernels.
+- **Use a kernel preset with Clang:** its portable lanes reach only about 45 % of the SSE2 kernel on x86-64, and 60 %
+  of NEON on AArch64. With GCC the portable lanes are close to the kernels.
 - **On 32-bit targets without NEON**, including Cortex-M, the word loop runs about 20 MB/s at 64 MHz on a Cortex-M4.
   Aligned buffers are 16 % faster than odd start addresses.
 

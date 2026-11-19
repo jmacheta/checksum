@@ -14,11 +14,15 @@ target_sources(
           ut_crc_vectors.cpp
           ut_fletcher.cpp
           ut_fletcher4.cpp
+          ut_fletcher4_presets.cpp
+          ut_hash_presets.cpp
           ut_internet.cpp
           ut_internet_presets.cpp
+          ut_fletcher_presets.cpp
           ut_isa.cpp
           ut_murmur3.cpp
           ut_xxh3.cpp
+          ut_xxh3_presets.cpp
           ut_xxhash.cpp
   PRIVATE FILE_SET
           HEADERS

@@ -2,6 +2,7 @@
 #define CHECKSUM_FLETCHER_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/isa.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -41,33 +42,36 @@ struct fletcher_state {
   friend constexpr bool operator==(fletcher_state, fletcher_state) noexcept = default;
 };
 
-/// Folds data into state; data may be split anywhere, including inside a block.
-template <unsigned Width>
+/// Folds data into state; data may be split anywhere, including inside a block. Isa selects the run-time loop: the variant
+/// compiled for that instruction-set preset (checksum/isa.hpp). Constant evaluation runs the same portable code for every preset.
+template <unsigned Width, isa Isa = isa::generic>
 [[nodiscard]] constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, std::span<std::byte const> data) noexcept;
 
 /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <unsigned Width, byte_range Range>
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, Range &&data) noexcept;
 
 /// Folds data into the message whose checksum is checksum and returns the new checksum; the type of checksum selects Fletcher-16, -32
 /// or -64. That message must end on a whole block, since a checksum does not record an unfinished block.
-template <class Checksum>
+template <isa Isa = isa::generic, class Checksum>
   requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
 [[nodiscard]] constexpr Checksum fletcher_update(Checksum checksum, std::span<std::byte const> data) noexcept;
 
 /// Folds a byte range into the message whose checksum is checksum and returns the new checksum; that message ends on a whole block.
-template <class Checksum, byte_range Range>
+template <isa Isa = isa::generic, class Checksum, byte_range Range>
   requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
 [[nodiscard]] constexpr Checksum fletcher_update(Checksum checksum, Range &&data) noexcept;
 
 /// The checksum of state, an unfinished block padded with zero bytes.
 template <unsigned Width> [[nodiscard]] constexpr fletcher_state<Width>::value_type fletcher_finalize(fletcher_state<Width> state) noexcept;
 
-/// fletcher_finalize(fletcher_update(fletcher_state<Width>{}, data)).
-template <unsigned Width> [[nodiscard]] constexpr fletcher_state<Width>::value_type fletcher_compute(std::span<std::byte const> data) noexcept;
+/// fletcher_finalize(fletcher_update<Width, Isa>(fletcher_state<Width>{}, data)).
+template <unsigned Width, isa Isa = isa::generic>
+[[nodiscard]] constexpr fletcher_state<Width>::value_type fletcher_compute(std::span<std::byte const> data) noexcept;
 
-/// fletcher_finalize(fletcher_update(fletcher_state<Width>{}, data)) for a byte range.
-template <unsigned Width, byte_range Range> [[nodiscard]] constexpr fletcher_state<Width>::value_type fletcher_compute(Range &&data) noexcept;
+/// fletcher_finalize(fletcher_update<Width, Isa>(fletcher_state<Width>{}, data)) for a byte range.
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr fletcher_state<Width>::value_type fletcher_compute(Range &&data) noexcept;
 
 /// Running Fletcher-16 checksum.
 using fletcher16_state = fletcher_state<16>;
@@ -78,14 +82,14 @@ using fletcher32_state = fletcher_state<32>;
 /// Running Fletcher-64 checksum.
 using fletcher64_state = fletcher_state<64>;
 
-/// fletcher_compute<16>(data).
-template <byte_range Range> [[nodiscard]] constexpr std::uint16_t fletcher16_compute(Range &&data) noexcept;
+/// fletcher_compute<16, Isa>(data).
+template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr std::uint16_t fletcher16_compute(Range &&data) noexcept;
 
-/// fletcher_compute<32>(data).
-template <byte_range Range> [[nodiscard]] constexpr std::uint32_t fletcher32_compute(Range &&data) noexcept;
+/// fletcher_compute<32, Isa>(data).
+template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr std::uint32_t fletcher32_compute(Range &&data) noexcept;
 
-/// fletcher_compute<64>(data).
-template <byte_range Range> [[nodiscard]] constexpr std::uint64_t fletcher64_compute(Range &&data) noexcept;
+/// fletcher_compute<64, Isa>(data).
+template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr std::uint64_t fletcher64_compute(Range &&data) noexcept;
 
 } // namespace checksum
 
@@ -115,10 +119,10 @@ using state_word = std::conditional_t<Width == 16, std::uint32_t, std::condition
 template <unsigned Width> constexpr state_word<Width> to_word(fletcher_state<Width> state) noexcept;
 template <unsigned Width> constexpr fletcher_state<Width> from_word(state_word<Width> word) noexcept;
 
-// The same fold at run time, defined in src/fletcher/sum_loop.cpp.
-state_word<16> sum_loop(state_word<16> state, std::span<std::byte const> data) noexcept;
-state_word<32> sum_loop(state_word<32> state, std::span<std::byte const> data) noexcept;
-state_word<64> sum_loop(state_word<64> state, std::span<std::byte const> data) noexcept;
+// The same fold at run time, compiled for the preset Isa: src/fletcher/ defines it for every preset isa_available() accepts.
+template <isa Isa> state_word<16> sum_loop(state_word<16> state, std::span<std::byte const> data) noexcept;
+template <isa Isa> state_word<32> sum_loop(state_word<32> state, std::span<std::byte const> data) noexcept;
+template <isa Isa> state_word<64> sum_loop(state_word<64> state, std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::fletcher_detail
 
@@ -172,16 +176,19 @@ template <unsigned Width> constexpr fletcher_state<Width> update_bytes(fletcher_
 
 namespace checksum {
 
-template <unsigned Width> constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
+template <unsigned Width, isa Isa> constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   if consteval {
     return fletcher_detail::update_bytes(state, data);
   } else {
-    return fletcher_detail::from_word<Width>(fletcher_detail::sum_loop(fletcher_detail::to_word(state), data));
+    return fletcher_detail::from_word<Width>(fletcher_detail::sum_loop<Isa>(fletcher_detail::to_word(state), data));
   }
 }
 
-template <unsigned Width, byte_range Range> constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = fletcher_update(state, chunk); });
+template <unsigned Width, isa Isa, byte_range Range>
+constexpr fletcher_state<Width> fletcher_update(fletcher_state<Width> state, Range &&data) noexcept {
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = fletcher_update<Width, Isa>(state, chunk); });
   return state;
 }
 
@@ -196,42 +203,42 @@ template <unsigned Width> constexpr fletcher_state<Width>::value_type fletcher_f
   return static_cast<value_type>((sum2 << (Width / 2)) | sum1);
 }
 
-template <class Checksum>
+template <isa Isa, class Checksum>
   requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
 constexpr Checksum fletcher_update(Checksum checksum, std::span<std::byte const> data) noexcept {
   using state_type = fletcher_state<std::numeric_limits<Checksum>::digits>;
   using sum_type = state_type::sum_type;
   state_type const state{.sum1 = static_cast<sum_type>(checksum), .sum2 = static_cast<sum_type>(checksum >> (sizeof(sum_type) * 8))};
-  return fletcher_finalize(fletcher_update(state, data));
+  return fletcher_finalize(fletcher_update<std::numeric_limits<Checksum>::digits, Isa>(state, data));
 }
 
-template <class Checksum, byte_range Range>
+template <isa Isa, class Checksum, byte_range Range>
   requires(std::same_as<Checksum, std::uint16_t> || std::same_as<Checksum, std::uint32_t> || std::same_as<Checksum, std::uint64_t>)
 constexpr Checksum fletcher_update(Checksum checksum, Range &&data) noexcept {
   using state_type = fletcher_state<std::numeric_limits<Checksum>::digits>;
   using sum_type = state_type::sum_type;
   state_type const state{.sum1 = static_cast<sum_type>(checksum), .sum2 = static_cast<sum_type>(checksum >> (sizeof(sum_type) * 8))};
-  return fletcher_finalize(fletcher_update(state, std::forward<Range>(data)));
+  return fletcher_finalize(fletcher_update<std::numeric_limits<Checksum>::digits, Isa>(state, std::forward<Range>(data)));
 }
 
-template <unsigned Width> constexpr fletcher_state<Width>::value_type fletcher_compute(std::span<std::byte const> data) noexcept {
-  return fletcher_finalize(fletcher_update(fletcher_state<Width>{}, data));
+template <unsigned Width, isa Isa> constexpr fletcher_state<Width>::value_type fletcher_compute(std::span<std::byte const> data) noexcept {
+  return fletcher_finalize(fletcher_update<Width, Isa>(fletcher_state<Width>{}, data));
 }
 
-template <unsigned Width, byte_range Range> constexpr fletcher_state<Width>::value_type fletcher_compute(Range &&data) noexcept {
-  return fletcher_finalize(fletcher_update(fletcher_state<Width>{}, std::forward<Range>(data)));
+template <unsigned Width, isa Isa, byte_range Range> constexpr fletcher_state<Width>::value_type fletcher_compute(Range &&data) noexcept {
+  return fletcher_finalize(fletcher_update<Width, Isa>(fletcher_state<Width>{}, std::forward<Range>(data)));
 }
 
-template <byte_range Range> constexpr std::uint16_t fletcher16_compute(Range &&data) noexcept {
-  return fletcher_compute<16>(std::forward<Range>(data));
+template <isa Isa, byte_range Range> constexpr std::uint16_t fletcher16_compute(Range &&data) noexcept {
+  return fletcher_compute<16, Isa>(std::forward<Range>(data));
 }
 
-template <byte_range Range> constexpr std::uint32_t fletcher32_compute(Range &&data) noexcept {
-  return fletcher_compute<32>(std::forward<Range>(data));
+template <isa Isa, byte_range Range> constexpr std::uint32_t fletcher32_compute(Range &&data) noexcept {
+  return fletcher_compute<32, Isa>(std::forward<Range>(data));
 }
 
-template <byte_range Range> constexpr std::uint64_t fletcher64_compute(Range &&data) noexcept {
-  return fletcher_compute<64>(std::forward<Range>(data));
+template <isa Isa, byte_range Range> constexpr std::uint64_t fletcher64_compute(Range &&data) noexcept {
+  return fletcher_compute<64, Isa>(std::forward<Range>(data));
 }
 
 } // namespace checksum

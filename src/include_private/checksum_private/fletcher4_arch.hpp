@@ -1,35 +1,27 @@
 #ifndef CHECKSUM_PRIVATE_FLETCHER4_ARCH_HPP
 #define CHECKSUM_PRIVATE_FLETCHER4_ARCH_HPP
 
-// CPU kernel of the fletcher4 lane loop, from the directory of the target architecture; without the instruction-set extensions, or
-// with CHECKSUM_ACCELERATION defined to 0, the portable lanes sum everything. Each architecture header defines:
-// - lane_kernel_available; if true, lane_kernel()
-// - lane_kernel_minimum_size: shortest input for lane_kernel() (max: never)
+// CPU kernel of the fletcher4 lane loop, from the directory of the target architecture, selected by the instruction-set
+// preset Isa. Each architecture header defines, for a preset Isa:
+// - lane_kernel_available<Isa>; if true, lane_kernel<Isa>()
+// - lane_kernel_minimum_size<Isa>: shortest input for lane_kernel<Isa>() (max: never)
 
 #include <checksum/fletcher4.hpp>
+#include <checksum/isa.hpp>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 
 namespace checksum::fletcher4_detail {
 
-// Interleaved lanes: lane j folds the words j, j + 4, j + 8, ... as a message of its own.
-inline constexpr std::size_t lane_count = 4;
-
-// lane_sums[source][lane], starting at 0: the sum1 to sum4 of each lane, so that one sum of all lanes is contiguous.
-using lane_sums = std::array<std::array<std::uint64_t, lane_count>, 4>;
-
 // The lane sums of groups groups of lane_count little-endian words at data.
-inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept;
+template <isa Isa> lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept;
 
 } // namespace checksum::fletcher4_detail
 
-#if defined(CHECKSUM_ACCELERATION) && !CHECKSUM_ACCELERATION
-#include <checksum_private/generic/fletcher4.hpp>
-#elif defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_X64)
 #include <checksum_private/x86_64/fletcher4.hpp>
-#elif defined(__aarch64__) || defined(__arm__)
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__)
 #include <checksum_private/arm/fletcher4.hpp>
 #else
 #include <checksum_private/generic/fletcher4.hpp>

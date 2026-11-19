@@ -2,6 +2,7 @@
 #define CHECKSUM_XXHASH_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/isa.hpp>
 
 #include <algorithm>
 #include <array>
@@ -38,24 +39,25 @@ struct xxhash_state {
   std::array<std::byte, 4 * sizeof(value_type)> buffer{}; ///< The unfinished stripe: its first length % buffer.size() bytes.
 };
 
-/// Folds data into state; data may be split anywhere.
-template <unsigned Width>
+/// Folds data into state; data may be split anywhere. Isa selects the run-time loop: the variant compiled for that instruction-set preset
+/// (checksum/isa.hpp). Constant evaluation runs the same portable code for every preset.
+template <unsigned Width, isa Isa = isa::generic>
 [[nodiscard]] constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, std::span<std::byte const> data) noexcept;
 
 /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <unsigned Width, byte_range Range>
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, Range &&data) noexcept;
 
 /// The hash of the message folded into state. Messages of 4 GiB or more mix in their length modulo 2^32 for Width 32.
 template <unsigned Width> [[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_finalize(xxhash_state<Width> const &state) noexcept;
 
-/// The hash of data: xxhash_finalize(xxhash_update(xxhash_state<Width>{.seed = seed}, data)).
-template <unsigned Width>
+/// The hash of data: xxhash_finalize(xxhash_update<Width, Isa>(xxhash_state<Width>{.seed = seed}, data)).
+template <unsigned Width, isa Isa = isa::generic>
 [[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_compute(std::span<std::byte const> data,
                                                                        typename xxhash_state<Width>::value_type seed = 0) noexcept;
 
 /// The hash of a byte range with a seed. A std::span<std::byte const> takes the overload above.
-template <unsigned Width, byte_range Range>
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 [[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_compute(Range &&data, typename xxhash_state<Width>::value_type seed = 0) noexcept;
 
@@ -65,11 +67,13 @@ using xxh32_state = xxhash_state<32>;
 /// Running XXH64 hash.
 using xxh64_state = xxhash_state<64>;
 
-/// The XXH32 hash of data: xxhash_compute<32>(data, seed).
-template <byte_range Range> [[nodiscard]] constexpr std::uint32_t xxh32_compute(Range &&data, std::uint32_t seed = 0) noexcept;
+/// The XXH32 hash of data: xxhash_compute<32, Isa>(data, seed).
+template <isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr std::uint32_t xxh32_compute(Range &&data, std::uint32_t seed = 0) noexcept;
 
-/// The XXH64 hash of data: xxhash_compute<64>(data, seed).
-template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+/// The XXH64 hash of data: xxhash_compute<64, Isa>(data, seed).
+template <isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
 } // namespace checksum
 
@@ -128,12 +132,13 @@ template <unsigned Width> constexpr word<Width> converge(lane_array<Width> const
 // packing them into one vector register: slower than scalar code for XXH32.
 template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
-// fold_stripes(), then converge() if wanted, else 0; defined in src/xxhash/stripe_loop.cpp for both widths. Returning the merged
-// value spares the caller reloading the lanes right after their stores.
-template <unsigned Width> word<Width> stripe_loop(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
+// fold_stripes(), then converge() if wanted, else 0; defined in src/xxhash/ for every preset. Returning the merged value spares the caller
+// reloading the lanes right after their stores.
+template <isa Isa, unsigned Width> word<Width> stripe_loop(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
 
 // fold_stripes() and converge() if wanted, during constant evaluation, else stripe_loop().
-template <unsigned Width> constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
+template <isa Isa, unsigned Width> constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data,
+                                                                          bool converged) noexcept;
 
 // The final mix of a hash.
 template <unsigned Width> constexpr word<Width> avalanche(word<Width> hash) noexcept;
@@ -142,9 +147,9 @@ template <unsigned Width> constexpr word<Width> avalanche(word<Width> hash) noex
 template <unsigned Width>
 constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint64_t length, std::span<std::byte const> tail) noexcept;
 
-// The hash of data of at least one stripe, defined in src/xxhash/stripe_loop.cpp for both widths. Its lanes are locals, which GCC
-// and Clang keep in scalar registers: on Cortex-M4 an XXH32 stripe takes 24.5 cycles, against 28.6 through stripe_loop().
-template <unsigned Width> word<Width> run_time_hash(std::span<std::byte const> data, word<Width> seed) noexcept;
+// The hash of data of at least one stripe, defined in src/xxhash/ for every preset. Its lanes are locals, which GCC and Clang keep in
+// scalar registers: on Cortex-M4 an XXH32 stripe takes 24.5 cycles, against 28.6 through stripe_loop().
+template <isa Isa, unsigned Width> word<Width> run_time_hash(std::span<std::byte const> data, word<Width> seed) noexcept;
 
 } // namespace checksum::xxhash_detail
 
@@ -189,13 +194,13 @@ template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, 
   }
 }
 
-template <unsigned Width>
+template <isa Isa, unsigned Width>
 constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept {
   if consteval {
     fold_stripes<Width>(lanes, data);
     return converged ? converge<Width>(lanes) : 0;
   } else {
-    return stripe_loop<Width>(lanes, data, converged);
+    return stripe_loop<Isa, Width>(lanes, data, converged);
   }
 }
 
@@ -243,7 +248,10 @@ constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint6
 
 namespace checksum {
 
-template <unsigned Width> constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, std::span<std::byte const> data) noexcept {
+template <unsigned Width, isa Isa>
+constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, std::span<std::byte const> data) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   constexpr std::size_t stripe_size = xxhash_detail::stripe_size<Width>;
   auto const buffered = static_cast<std::size_t>(state.length % stripe_size);
   if(state.length < stripe_size && data.size() >= stripe_size - buffered) {
@@ -261,14 +269,16 @@ template <unsigned Width> constexpr xxhash_state<Width> xxhash_update(xxhash_sta
   }
   std::size_t const whole = data.size() - (data.size() % stripe_size);
   if(whole != 0) {
-    xxhash_detail::fold_and_converge<Width>(state.lanes, data.first(whole), false);
+    xxhash_detail::fold_and_converge<Isa, Width>(state.lanes, data.first(whole), false);
   }
   std::ranges::copy(data.subspan(whole), state.buffer.begin());
   return state;
 }
 
-template <unsigned Width, byte_range Range> constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = xxhash_update(state, chunk); });
+template <unsigned Width, isa Isa, byte_range Range>
+constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, Range &&data) noexcept {
+  detail::for_each_chunk(std::forward<Range>(data),
+                         [&](std::span<std::byte const> chunk) { state = xxhash_update<Width, Isa>(state, chunk); });
   return state;
 }
 
@@ -279,43 +289,47 @@ template <unsigned Width> constexpr xxhash_state<Width>::value_type xxhash_final
   return xxhash_detail::finish<Width>(converged, state.seed, state.length, std::span(state.buffer).first(buffered));
 }
 
-template <unsigned Width>
+template <unsigned Width, isa Isa>
 constexpr xxhash_state<Width>::value_type xxhash_compute(std::span<std::byte const> data, typename xxhash_state<Width>::value_type seed) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   std::size_t const whole = data.size() - (data.size() % xxhash_detail::stripe_size<Width>);
   // On 32-bit targets the four lanes of XXH64 do not fit the registers: as locals they ran 18 % slower on Cortex-M4.
   if constexpr(sizeof(std::size_t) >= sizeof(xxhash_detail::word<Width>)) {
     if !consteval {
       if(whole != 0) {
-        return xxhash_detail::run_time_hash<Width>(data, seed);
+        return xxhash_detail::run_time_hash<Isa, Width>(data, seed);
       }
     }
   }
   xxhash_detail::word<Width> converged = 0;
   if(whole != 0) {
     xxhash_detail::lane_array<Width> lanes = xxhash_detail::initial_lanes<Width>(seed);
-    converged = xxhash_detail::fold_and_converge<Width>(lanes, data.first(whole), true);
+    converged = xxhash_detail::fold_and_converge<Isa, Width>(lanes, data.first(whole), true);
   }
   return xxhash_detail::finish<Width>(converged, seed, data.size(), data.subspan(whole));
 }
 
-template <unsigned Width, byte_range Range>
+template <unsigned Width, isa Isa, byte_range Range>
   requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
 constexpr xxhash_state<Width>::value_type xxhash_compute(Range &&data, typename xxhash_state<Width>::value_type seed) noexcept {
+  static_assert(isa_available(Isa),
+                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
   // Contiguous ranges skip the buffer of the state.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
-      return xxhash_compute<Width>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
+      return xxhash_compute<Width, Isa>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
     }
   }
-  return xxhash_finalize(xxhash_update(xxhash_state<Width>{.seed = seed}, std::forward<Range>(data)));
+  return xxhash_finalize(xxhash_update<Width, Isa>(xxhash_state<Width>{.seed = seed}, std::forward<Range>(data)));
 }
 
-template <byte_range Range> constexpr std::uint32_t xxh32_compute(Range &&data, std::uint32_t seed) noexcept {
-  return xxhash_compute<32>(std::forward<Range>(data), seed);
+template <isa Isa, byte_range Range> constexpr std::uint32_t xxh32_compute(Range &&data, std::uint32_t seed) noexcept {
+  return xxhash_compute<32, Isa>(std::forward<Range>(data), seed);
 }
 
-template <byte_range Range> constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed) noexcept {
-  return xxhash_compute<64>(std::forward<Range>(data), seed);
+template <isa Isa, byte_range Range> constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed) noexcept {
+  return xxhash_compute<64, Isa>(std::forward<Range>(data), seed);
 }
 
 } // namespace checksum

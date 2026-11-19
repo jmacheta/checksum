@@ -1,17 +1,18 @@
 #ifndef CHECKSUM_PRIVATE_FLETCHER_ARCH_HPP
 #define CHECKSUM_PRIVATE_FLETCHER_ARCH_HPP
 
-// CPU kernels of the Fletcher checksums and Adler-32, from the directory of the target architecture; without the instruction-set
-// extensions, or with CHECKSUM_ACCELERATION defined to 0, the portable loops sum everything. kernel<Bits> sums
-// little-endian values of Bits bits (8 for Fletcher-16 and Adler-32, 16 for Fletcher-32, 32 for Fletcher-64), and each
-// architecture header specializes it with:
+// CPU kernels of the Fletcher checksums and Adler-32, from the directory of the target architecture, selected by the
+// instruction-set preset Isa. kernel<Bits, Isa> sums little-endian values of Bits bits (8 for Fletcher-16 and Adler-32,
+// 16 for Fletcher-32, 32 for Fletcher-64), and each architecture header specializes it with:
 // - available = true; static chunk_sums sum(std::byte const *data, std::size_t blocks), for 1 to max_blocks blocks
 // - block_size: bytes per block; max_blocks
 // - minimum_size: shortest input for the kernel (max: never)
-// - for kernel<8> also alignment: sum_chunks() of fletcher_loops.hpp adds single bytes up to an address of that alignment
-//   before the kernel
-// An optional group_kernel<Bits> with the same interface runs instead of kernel from its own minimum_size (sum_long() of
-// fletcher_loops.hpp).
+// - for kernel<8, Isa> also alignment: sum_chunks() of fletcher_loops.hpp adds single bytes up to an address of that
+//   alignment before the kernel
+// An optional group_kernel<Bits, Isa> with the same interface runs instead of kernel from its own minimum_size
+// (sum_long() of fletcher_loops.hpp).
+
+#include <checksum/isa.hpp>
 
 #include <cstdint>
 
@@ -25,14 +26,22 @@ struct chunk_sums {
 
 } // namespace checksum::fletcher_detail
 
-#if defined(CHECKSUM_ACCELERATION) && !CHECKSUM_ACCELERATION
-#include <checksum_private/generic/fletcher.hpp>
-#elif defined(__x86_64__)
+// std::conditional_t of __m128i or __m256i drops their __may_alias__ attribute, which kernel vectors do not need.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wignored-attributes"
+#endif
+
+#if defined(__x86_64__) || defined(_M_X64)
 #include <checksum_private/x86_64/fletcher.hpp>
 #elif defined(__aarch64__) || defined(__arm__)
 #include <checksum_private/arm/fletcher.hpp>
 #else
 #include <checksum_private/generic/fletcher.hpp>
+#endif
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
 #endif
 
 #endif // CHECKSUM_PRIVATE_FLETCHER_ARCH_HPP
