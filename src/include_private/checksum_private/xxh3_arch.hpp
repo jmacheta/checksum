@@ -10,7 +10,7 @@
 #include <checksum/xxh3.hpp>
 
 // std::array of __m128i or uint64x2_t drops their __may_alias__ attribute, which arrays of accumulators do not need.
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-attributes"
 #endif
@@ -31,7 +31,7 @@ template <isa Isa> struct stripe_kernel;
 #include <checksum_private/generic/xxh3.hpp>
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 

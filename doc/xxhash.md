@@ -102,10 +102,10 @@ accumulators, which a kernel keeps in vector registers. Presets are explained in
 | --- | --- |
 | `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | Two 256-bit vectors |
 | `isa::generic`, `x86_pclmul` on x86-64 | Four 128-bit vectors |
-| every preset of little-endian AArch64 with GCC or Clang, `isa::generic` included | Four lanes in NEON, four scalar |
+| every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | Four lanes in NEON, four scalar |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | All eight lanes in NEON |
 | `isa::riscv_v` (VLEN ≥ 128) | One register group; tested in QEMU only |
-| everything else: `isa::thumb2`, `thumb2_dsp`, `riscv_zbc`, big-endian targets, MSVC ARM64 | Portable loop |
+| everything else: `isa::thumb2`, `thumb2_dsp`, `riscv_zbc`, big-endian targets | Portable loop |
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#xxh3).
 

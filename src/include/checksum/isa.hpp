@@ -21,7 +21,7 @@ namespace checksum {
 /// preset includes the earlier ones of its line (x86, AArch64, 32-bit Arm), the two RISC-V presets are independent, and
 /// values are only ever appended, never reordered.
 enum class isa : std::uint8_t {
-  generic,       ///< The default: only what every CPU of the architecture has (SSE2 on x86-64; NEON on little-endian AArch64 with GCC or Clang).
+  generic,       ///< The default: only what every CPU of the architecture has (SSE2 on x86-64; NEON on little-endian AArch64).
   x86_pclmul,    ///< x86-64 with SSE4.2 and PCLMULQDQ (SSSE3 included).
   x86_avx2,      ///< x86_pclmul plus AVX2.
   x86_vpclmul,   ///< x86_avx2 plus VPCLMULQDQ.
@@ -36,7 +36,7 @@ enum class isa : std::uint8_t {
   riscv_v,       ///< RV64 with the V extension.
 };
 
-/// Whether this build has the variants of preset: generic always; x86-64 and AArch64 presets with GCC, Clang or MSVC; RISC-V
+/// Whether this build has the variants of preset: generic always; x86-64 and AArch64 presets with GCC, Clang, MSVC or clang-cl; RISC-V
 /// presets with GCC or Clang; 32-bit Arm presets with GCC only, thumb2 where the build's flags compile Thumb-2 code, thumb2_dsp
 /// where they also have the DSP extension, thumb2_neon and thumb2_crc for A-profile ARMv7 and later with a hardware
 /// floating-point ABI. Naming a preset it rejects is a compile error; the answer is the same in every translation unit.

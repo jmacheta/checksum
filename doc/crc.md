@@ -184,7 +184,7 @@ the portable loop for every preset. Presets are explained in
   `std::uint32_t` register, whatever its initial value and final XOR.
 - With a kernel `crc_lut_braided` runs the sliced code, so `crc_lut_sliced` is as fast and half the size.
 - x86-64-v3 (AVX2) does not imply PCLMULQDQ; the x86 presets all include it.
-- MSVC x64 uses the same x86 kernels; MSVC ARM64 has none.
+- MSVC and clang-cl use the same x86-64 and AArch64 kernels as GCC and Clang.
 
 Design and decisions per kernel: [design/acceleration.md](design/acceleration.md#crc).
 

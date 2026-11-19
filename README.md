@@ -86,7 +86,7 @@ ARM64 (CI tests x64).
 
 Every algorithm takes an instruction-set preset, `checksum::isa` (`checksum/isa.hpp`), as its last explicit template
 parameter. The default `isa::generic` runs on every CPU of the architecture: the portable loops plus what the
-architecture guarantees, SSE2 on x86-64 and NEON on little-endian AArch64 with GCC or Clang. The other presets add CPU
+architecture guarantees, SSE2 on x86-64 and NEON on little-endian AArch64. The other presets add CPU
 extensions; each includes the ones before it on its line:
 
 | Architecture | Presets |
@@ -96,8 +96,8 @@ extensions; each includes the ones before it on its line:
 | 32-bit Arm (GCC) | `thumb2` → `thumb2_dsp` → `thumb2_neon` → `thumb2_crc` |
 | RISC-V RV64 (GCC, Clang) | `riscv_zbc` and `riscv_v`, independent |
 
-Not supported yet: AVX-512, Arm Helium (MVE) and SVE2, and AArch32 presets with Clang. MSVC ARM64 builds the AArch64
-presets, but only fletcher4 has a kernel there; the other algorithms run their portable loops.
+GCC, Clang, MSVC and clang-cl build the same x86-64 and AArch64 kernels. Not supported yet: AVX-512, Arm Helium (MVE)
+and SVE2, and AArch32 presets with Clang.
 
 - **A preset is a compile-time choice and a promise.** `internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2
   kernel; on a CPU without AVX2 that is undefined behavior (an illegal instruction). Compiler flags such as

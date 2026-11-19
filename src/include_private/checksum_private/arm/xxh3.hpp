@@ -6,6 +6,7 @@
 
 #include <checksum/isa.hpp>
 #include <checksum_private/arm/target.hpp>
+#include <checksum_private/vector_array.hpp>
 
 #include <array>
 #include <bit>
@@ -44,7 +45,7 @@ inline constexpr std::size_t vector_count = 4;
 
 template <isa Isa> struct stripe_kernel {
   struct lanes {
-    std::array<uint64x2_t, vector_count> vectors;
+    isa_detail::vector_array<uint64x2_t, vector_count> vectors;
 #if defined(CHECKSUM_ARM64)
     std::array<std::uint64_t, 8 - (2 * vector_count)> scalars;
 #endif
@@ -99,15 +100,15 @@ CHECKSUM_ALWAYS_INLINE inline void accumulate_vector_pair(typename stripe_kernel
 #else
   uint64x2_t const second_sum = vmlal_u32(vextq_u64(second, second, 1), vget_high_u32(halves.val[0]), vget_high_u32(halves.val[1]));
 #endif
-  std::get<Index>(values.vectors) = vaddq_u64(std::get<Index>(values.vectors), first_sum);
-  std::get<Index + 1>(values.vectors) = vaddq_u64(std::get<Index + 1>(values.vectors), second_sum);
+  values.vectors[Index] = vaddq_u64(values.vectors[Index], first_sum);
+  values.vectors[Index + 1] = vaddq_u64(values.vectors[Index + 1], second_sum);
 }
 
 template <isa Isa, std::size_t Index>
 CHECKSUM_ALWAYS_INLINE inline void scramble_vector(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept {
   uint32x2_t const prime = vdup_n_u32(primes_32::prime_1);
   uint32x4_t const prime_high = vreinterpretq_u32_u64(vdupq_n_u64(std::uint64_t{primes_32::prime_1} << 32U));
-  uint64x2_t &vector = std::get<Index>(values.vectors);
+  uint64x2_t &vector = values.vectors[Index];
   uint64x2_t const key = veorq_u64(veorq_u64(vector, vshrq_n_u64(vector, scramble_shift)), load_vector<Isa>(secret + (16 * Index)));
   uint32x4_t const high = vmulq_u32(vreinterpretq_u32_u64(key), prime_high);
   vector = vmlal_u32(vreinterpretq_u64_u32(high), vmovn_u64(key), prime);

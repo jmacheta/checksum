@@ -71,10 +71,10 @@ explained in [Instruction-set presets](../README.md#instruction-set-presets).
 | `isa::x86_avxvnni` | `vpdpbusd`, 128 bytes per iteration |
 | `isa::x86_avx2`, `x86_vpclmul` | 32-byte vectors |
 | `isa::generic`, `x86_pclmul` on x86-64 | 16-byte vectors |
-| every preset of little-endian AArch64 with GCC or Clang, `isa::generic` included | NEON; 64 bytes per iteration from 320 B |
+| every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | NEON; 64 bytes per iteration from 320 B |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON |
 | `isa::thumb2_dsp` on little-endian 32-bit Arm (for Cortex-M4/M7/M33) | `usada8` + `smlad`, 8 bytes per iteration |
-| everything else: `isa::thumb2`, `riscv_zbc`, `riscv_v`, big-endian targets, MSVC ARM64 | portable loop |
+| everything else: `isa::thumb2`, `riscv_zbc`, `riscv_v`, big-endian targets | portable loop |
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
 

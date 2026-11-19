@@ -11,6 +11,7 @@
 
 #include <checksum/crc.hpp>
 #include <checksum/isa.hpp>
+#include <checksum_private/vector_array.hpp>
 
 #include <array>
 #include <bit>
@@ -20,7 +21,7 @@
 #include <utility>
 
 // std::array of __m128i or uint64x2_t drops their __may_alias__ attribute, which arrays of accumulators do not need.
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-attributes"
 #endif
@@ -93,7 +94,7 @@ typename Kernel::vector fold_blocks_with(folding_constants const &constants, std
 
 // Folds the remaining 64-byte groups into four accumulators (first block first), merges them, then fold_tail_with().
 template <bool Reflected, class Kernel>
-typename Kernel::vector fold_four_with(std::array<typename Kernel::vector, 4> accumulators, folding_constants const &constants,
+typename Kernel::vector fold_four_with(isa_detail::vector_array<typename Kernel::vector, 4> accumulators, folding_constants const &constants,
                                        std::span<std::byte const> data, std::span<std::byte const> last) noexcept;
 
 // Folds the remaining 16-byte blocks and the partial block into one accumulator; last is the final 16 message bytes.
@@ -136,7 +137,7 @@ CHECKSUM_ALWAYS_INLINE inline typename Kernel::vector fold_tail_with(typename Ke
 }
 
 template <bool Reflected, class Kernel>
-CHECKSUM_ALWAYS_INLINE inline typename Kernel::vector fold_four_with(std::array<typename Kernel::vector, 4> accumulators,
+CHECKSUM_ALWAYS_INLINE inline typename Kernel::vector fold_four_with(isa_detail::vector_array<typename Kernel::vector, 4> accumulators,
                                                                      folding_constants const &constants, std::span<std::byte const> data,
                                                                      std::span<std::byte const> last) noexcept {
   typename Kernel::vector const by_four = Kernel::pair(constants.by_four);
@@ -190,7 +191,7 @@ CHECKSUM_ALWAYS_INLINE inline std::uint32_t fold_crc32_with(folding_constants co
 #include <checksum_private/generic/crc.hpp>
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 

@@ -83,7 +83,7 @@ in the sliced and braided tables in every build.
 | `riscv_zbc` | Zbc `clmul`/`clmulh` folding, little-endian; inline assembly enables Zbc locally | Unproven: tested in QEMU only. |
 | every other preset | Portable sliced or braided loop | No CRC or carry-less instructions (Cortex-M, NEON without PMULL, SSE2). |
 
-Not done: SSE4.2-only (no such preset), NEON without PMULL (a `vmull_p8` product is slower than tables), MSVC ARM64,
+Not done: SSE4.2-only (no such preset), NEON without PMULL (a `vmull_p8` product is slower than tables),
 LoongArch, POWER8+, s390x (candidates when someone can test them). MCU CRC peripherals are a user strategy, not
 library code.
 
@@ -122,7 +122,7 @@ one's complement sum.
 
 Not done or rejected: SSE2 vectors (never beat the carry loop), compiler auto-vectorization, AArch64 `ldp` + `adcs`
 assembly (better only at 256-511 B), Thumb-1 (no `teq`; the loop test would clobber the carry), scalar RISC-V (no carry
-flag), MSVC ARM64, AVX-512 (no hardware).
+flag), AVX-512 (no hardware).
 
 Design notes:
 
@@ -154,7 +154,7 @@ them are written once, in `fletcher_loops.hpp`.
 | `thumb2_dsp`, little-endian | `usada8` + `uxtb16` + `smlad`, bytes only, from 64 B | For Cortex-M4/M7/M33. Slower than portable on A-profile; there only for QEMU coverage. 16/32-bit values: the portable 32-bit word loop is as fast. |
 | every other preset | Portable loop | |
 
-Not done: RISC-V (no hardware), MSVC ARM64, AVX-512.
+Not done: RISC-V (no hardware), AVX-512.
 
 Design notes:
 
@@ -207,7 +207,7 @@ and each architecture's `stripe_kernel` (load, store, accumulate, scramble).
 | `riscv_v` (VLEN ≥ 128) | Eight lanes in one register group (`vuint64m4_t`) | Unproven. At VLEN 64 the group holds only four lanes. |
 | every other preset | Portable loop | |
 
-Not done: MSVC ARM64, AVX-512.
+Not done: AVX-512.
 
 Design notes:
 

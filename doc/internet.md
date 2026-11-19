@@ -70,11 +70,11 @@ take over from a minimum size; presets are explained in [Instruction-set presets
 | Preset | Kernel | From |
 | --- | --- | --- |
 | `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | 32-bit halves summed into 64-bit vector lanes | 512 B |
-| every preset of little-endian AArch64 with GCC or Clang, `isa::generic` included | NEON `uadalp` into 64-bit lanes | 512 B |
+| every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | NEON `uadalp` into 64-bit lanes | 512 B |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | the same NEON kernel | 192 B |
 | `isa::thumb2`, `thumb2_dsp` (and the NEON presets on big-endian), e.g. Cortex-M3/M4/M7/M33 | `ldm` + `adcs` inline assembly, any start address | 192 B |
 | `isa::riscv_v` | widening vector add into 64-bit lanes, any vector length | 64 B |
-| everything else: `isa::generic` elsewhere, `x86_pclmul`, `riscv_zbc`, big-endian AArch64, MSVC ARM64 | portable loop | |
+| everything else: `isa::generic` elsewhere, `x86_pclmul`, `riscv_zbc`, big-endian AArch64 | portable loop | |
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#internet-checksum).
 

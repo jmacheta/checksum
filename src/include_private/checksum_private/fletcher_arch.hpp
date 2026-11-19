@@ -27,7 +27,7 @@ struct chunk_sums {
 } // namespace checksum::fletcher_detail
 
 // std::conditional_t of __m128i or __m256i drops their __may_alias__ attribute, which kernel vectors do not need.
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-attributes"
 #endif
@@ -40,7 +40,7 @@ struct chunk_sums {
 #include <checksum_private/generic/fletcher.hpp>
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 
