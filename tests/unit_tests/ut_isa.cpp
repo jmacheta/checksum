@@ -32,11 +32,25 @@ static_assert(isa_available(isa::aarch64_crc) && isa_available(isa::aarch64_pmul
 static_assert(isa_available(isa::riscv_zbc) && isa_available(isa::riscv_v) && !isa_available(isa::x86_avx2));
 #endif
 
-// A preset appended to the enumeration and to the range of isa.hpp must also get a name in isa_cpu.hpp.
+// built_presets is ascending, has no generic, and stays on one line except for RISC-V, whose two presets are independent.
+consteval bool built_presets_well_formed() {
+  auto const &list = checksum::isa_detail::built_presets;
+  for(std::size_t index = 0; index < list.size(); ++index) {
+    bool const riscv = list[index] == isa::riscv_zbc || list[index] == isa::riscv_v;
+    if(list[index] == isa::generic || (index > 0 && (list[index - 1] >= list[index] ||
+                                                     (!riscv && checksum::isa_detail::line(list[index]) != checksum::isa_detail::line(list[0]))))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static_assert(built_presets_well_formed());
+
+// A preset appended to the enumeration and to built_presets of isa.hpp must also get a name in isa_cpu.hpp.
 TEST(isa_test_support, EveryBuiltPresetHasName) {
-  for(auto index = static_cast<std::size_t>(checksum::isa_detail::first_built); index <= static_cast<std::size_t>(checksum::isa_detail::last_built);
-      ++index) {
-    EXPECT_FALSE(isa_test::name(static_cast<isa>(index)).empty()) << index;
+  for(isa preset : checksum::isa_detail::built_presets) {
+    EXPECT_FALSE(isa_test::name(preset).empty()) << static_cast<int>(preset);
   }
 }
 

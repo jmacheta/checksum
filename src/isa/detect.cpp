@@ -42,8 +42,8 @@ constexpr std::array<isa, 0> checked{};
 #endif
 
 consteval bool every_built_preset_checked() {
-  for(auto value = static_cast<unsigned>(isa_detail::first_built); value <= static_cast<unsigned>(isa_detail::last_built); ++value) {
-    if(static_cast<isa>(value) != isa::generic && std::ranges::find(checked, static_cast<isa>(value)) == checked.end()) {
+  for(isa preset : isa_detail::built_presets) {
+    if(std::ranges::find(checked, preset) == checked.end()) {
       return false;
     }
   }

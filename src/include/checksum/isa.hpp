@@ -1,6 +1,8 @@
 #ifndef CHECKSUM_ISA_HPP
 #define CHECKSUM_ISA_HPP
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 /**
@@ -79,29 +81,22 @@ constexpr isa line(isa preset) noexcept;
 // Whether preset have runs everything preset want does: want is generic or an earlier preset of the same line.
 constexpr bool includes(isa have, isa want) noexcept;
 
-// The presets besides generic that this architecture and compiler build, a range of the enumeration; the preset
-// sources (checksum_private/presets.hpp) check the same macros.
+// The presets besides generic that this architecture and compiler build, ascending; the preset sources
+// (checksum_private/presets.hpp) check the same macros.
 #if (defined(__GNUC__) && defined(__x86_64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64) && !defined(_M_ARM64EC))
-inline constexpr isa first_built = isa::x86_pclmul;
-inline constexpr isa last_built = isa::x86_avxvnni;
+inline constexpr std::array built_presets{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni};
 #elif (defined(__GNUC__) && defined(__aarch64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64))
-inline constexpr isa first_built = isa::aarch64_crc;
-inline constexpr isa last_built = isa::aarch64_pmull;
+inline constexpr std::array built_presets{isa::aarch64_crc, isa::aarch64_pmull};
 #elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' && !defined(__SOFTFP__)
-inline constexpr isa first_built = isa::thumb2;
-inline constexpr isa last_built = isa::thumb2_crc;
+inline constexpr std::array built_presets{isa::thumb2, isa::thumb2_dsp, isa::thumb2_neon, isa::thumb2_crc};
 #elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2 && defined(__ARM_FEATURE_DSP)
-inline constexpr isa first_built = isa::thumb2;
-inline constexpr isa last_built = isa::thumb2_dsp;
+inline constexpr std::array built_presets{isa::thumb2, isa::thumb2_dsp};
 #elif defined(__GNUC__) && !defined(__clang__) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2
-inline constexpr isa first_built = isa::thumb2;
-inline constexpr isa last_built = isa::thumb2;
+inline constexpr std::array built_presets{isa::thumb2};
 #elif defined(__GNUC__) && defined(__riscv) && __riscv_xlen == 64
-inline constexpr isa first_built = isa::riscv_zbc;
-inline constexpr isa last_built = isa::riscv_v;
+inline constexpr std::array built_presets{isa::riscv_zbc, isa::riscv_v};
 #else
-inline constexpr isa first_built = isa::generic;
-inline constexpr isa last_built = isa::generic;
+inline constexpr std::array<isa, 0> built_presets{};
 #endif
 
 // The preset of cpu that a dispatch engine runs: preferred (not generic) if this build has it and cpu contains it, else the
@@ -111,8 +106,8 @@ constexpr isa select(isa_set cpu, isa preferred = isa::generic) noexcept;
 // function.template operator()<select(cpu, Preferred)>(): the dispatch engines' switch over the presets of this build.
 template <isa Preferred = isa::generic, class Function> constexpr auto dispatch(isa_set cpu, Function &&function);
 
-// function.template operator()<preset>() if preset is Candidate or a later preset of this build, else for generic.
-template <isa Candidate, class Function> constexpr auto dispatch_from(isa preset, Function &function);
+// function.template operator()<preset>() if preset is built_presets[Index] or a later one, else for generic.
+template <std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function &function);
 
 } // namespace checksum::isa_detail
 
@@ -145,7 +140,15 @@ constexpr bool includes(isa have, isa want) noexcept { return want == isa::gener
 namespace checksum {
 
 constexpr bool isa_available(isa preset) noexcept {
-  return preset == isa::generic || (isa_detail::first_built <= preset && preset <= isa_detail::last_built);
+  if(preset == isa::generic) {
+    return true;
+  }
+  for(isa const built : isa_detail::built_presets) {
+    if(built == preset) {
+      return true;
+    }
+  }
+  return false;
 }
 
 constexpr isa_set::isa_set(isa preset) noexcept : bits(0) {
@@ -171,27 +174,28 @@ constexpr isa select(isa_set cpu, isa preferred) noexcept {
   if(preferred != isa::generic && isa_available(preferred) && cpu.contains(preferred)) {
     return preferred;
   }
-  for(auto value = static_cast<unsigned>(last_built); value >= static_cast<unsigned>(first_built) && value != 0; --value) {
-    if(cpu.contains(static_cast<isa>(value))) {
-      return static_cast<isa>(value);
+  for(auto it = built_presets.rbegin(); it != built_presets.rend(); ++it) {
+    if(cpu.contains(*it)) {
+      return *it;
     }
   }
   return isa::generic;
 }
 
-template <isa Candidate, class Function> constexpr auto dispatch_from(isa preset, Function &function) {
-  if constexpr(Candidate == isa::generic || Candidate > last_built) {
+template <std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function &function) {
+  if constexpr(Index == built_presets.size()) {
     return function.template operator()<isa::generic>();
   } else {
-    if(preset == Candidate) {
-      return function.template operator()<Candidate>();
+    constexpr isa candidate = built_presets[Index];
+    if(preset == candidate) {
+      return function.template operator()<candidate>();
     }
-    return dispatch_from<static_cast<isa>(static_cast<unsigned>(Candidate) + 1)>(preset, function);
+    return dispatch_from<Index + 1>(preset, function);
   }
 }
 
 template <isa Preferred, class Function> constexpr auto dispatch(isa_set cpu, Function &&function) {
-  return dispatch_from<first_built>(select(cpu, Preferred), function);
+  return dispatch_from<0>(select(cpu, Preferred), function);
 }
 
 } // namespace checksum::isa_detail

@@ -39,7 +39,7 @@ resource lock because each runs the build tool on the same tree. Keep a whole ru
 and 20 s in QEMU user mode. Debug test builds use `-Og`; `cross-arm` keeps `-O0` so the inline assembly is
 built without optimization.
 
-Preset tests run every preset the build has, from `isa_detail::first_built` to `last_built` of `checksum/isa.hpp`, and
+Preset tests run every preset the build has, listed in `isa_detail::built_presets` of `checksum/isa.hpp`, and
 skip the presets the CPU cannot run, as `detect_isa()` reports (`tests/include/isa_cpu.hpp`). `ut_dispatch.cpp` checks
 every dispatch engine against `isa::generic`, for the detected set and every preset alone. CI also runs `native-gcc`
 and `native-clang` on GitHub's AArch64 runner, where the AArch64 presets run on hardware.

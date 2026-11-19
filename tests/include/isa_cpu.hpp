@@ -12,15 +12,15 @@
 
 namespace isa_cpu {
 
-// The number of presets besides generic that this build has, from the range in isa.hpp; 1 (generic) if there are none.
-inline constexpr std::size_t built_count =
-    static_cast<std::size_t>(checksum::isa_detail::last_built) - static_cast<std::size_t>(checksum::isa_detail::first_built) + 1;
+// The number of presets that tests cover: those of isa_detail::built_presets, or 1 (generic alone) if there are none.
+inline constexpr std::size_t built_count = checksum::isa_detail::built_presets.empty() ? 1 : checksum::isa_detail::built_presets.size();
 
-// The Index-th preset of that range.
+// The Index-th of them; generic if there are none.
 template <std::size_t Index>
-inline constexpr checksum::isa built_preset = static_cast<checksum::isa>(static_cast<std::size_t>(checksum::isa_detail::first_built) + Index);
+inline constexpr checksum::isa built_preset =
+    checksum::isa_detail::built_presets.empty() ? checksum::isa::generic : checksum::isa_detail::built_presets[Index];
 
-// Calls function.template operator()<Preset>() for every preset of that range, so that a new preset is covered once it is built.
+// Calls function.template operator()<Preset>() for every preset of isa_detail::built_presets, so that a new preset is covered once it is built.
 template <class Function> void for_each_built_preset(Function &&function) {
   [&]<std::size_t... Index>(std::index_sequence<Index...>) {
     (function.template operator()<built_preset<Index>>(), ...);

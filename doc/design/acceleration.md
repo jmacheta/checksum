@@ -40,11 +40,9 @@ in [performance.md](../performance.md) only.
 
 1. Append the enumerator to `enum class isa` in `checksum/isa.hpp`; never reorder. If it extends a line, add it to
    `isa_detail::line()`.
-2. Widen `isa_detail::first_built` / `last_built` for the architecture and compiler. The range is contiguous, which
-   holds today because each architecture's presets are adjacent; a preset appended after another architecture's needs
-   that mechanism extended first.
+2. Add it to `isa_detail::built_presets` for its architecture and compiler, after the earlier rungs.
 3. Add `CHECKSUM_TARGET_<PRESET>` target options in `src/include_private/checksum_private/presets.hpp`, under the same
-   conditions as the range.
+   conditions as that list.
 4. Add one source per loop, `src/<algorithm>/<loop>_<preset>.cpp` (copy a sibling: it defines `CHECKSUM_PRESET` and
    `CHECKSUM_PRESET_TARGET` and includes the loops header), for adler32, crc (`lut_sliced`, `lut_braided`), fletcher,
    fletcher4, internet, murmur3, xxh3 and xxhash, and list them in `src/CMakeLists.txt`.
@@ -52,7 +50,7 @@ in [performance.md](../performance.md) only.
 6. Add the CPU check in `src/isa/detect.cpp`: the `checked` array and `runs()`. A `static_assert` fails for a built
    preset without one.
 7. Add its name to `tests/include/isa_cpu.hpp`; `ut_isa.cpp` fails without it. Preset tests and benchmarks pick it up
-   from the range.
+   from `built_presets`.
 8. Add a preference to `isa_detail::select()` only if the preset opens a second line on one architecture (as
    `riscv_zbc` and `riscv_v`).
 9. Update the preset tables of the user guides and the ladder in the README.

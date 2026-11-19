@@ -2,7 +2,7 @@
 #define CHECKSUM_PRIVATE_PRESETS_HPP
 
 // Target options of each instruction-set preset that this architecture and compiler build; a preset source compiles its
-// preset only where the macro is defined. isa_detail::first_built and last_built in checksum/isa.hpp check the same macros.
+// preset only where the macro is defined. isa_detail::built_presets in checksum/isa.hpp checks the same macros.
 
 #if defined(__GNUC__) && defined(__x86_64__)
 #define CHECKSUM_TARGET_X86_PCLMUL "sse4.2,pclmul"
