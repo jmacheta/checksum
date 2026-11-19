@@ -51,6 +51,9 @@ jobs:
           - { preset: cross-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf, emulator: qemu-arm, cpu_checks: "cortex-a9:thumb2_neon", required: thumb2_crc }
           # On 32-bit Arm the build's own extensions change how the thumb2 presets compile.
           - { preset: cross-arm-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf, required: thumb2_crc }
+          # Clang on 32-bit Arm: the thumb2 presets in Thumb-2 builds with the build's own NEON ("thumb,crc" adds CRC in cross-arm-clang).
+          - { preset: cross-arm-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 lld-18 g++-14-arm-linux-gnueabihf qemu-user", emulator: qemu-arm, cpu_checks: "cortex-a9:thumb2_neon", required: thumb2_crc }
+          - { preset: cross-arm-crc32-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 lld-18 g++-14-arm-linux-gnueabihf qemu-user", required: thumb2_crc }
           - { preset: cross-riscv64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-riscv64-linux-gnu qemu-user", cross: riscv64-linux-gnu, emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v", required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
           # Big-endian AArch64: Ubuntu has no cross compiler for it; the Arm GNU Toolchain comes from setup-gcc-toolchain (cached).
           - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1, required: aarch64_pmull }
