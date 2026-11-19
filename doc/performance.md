@@ -10,7 +10,7 @@ explain the strategies and CPU kernels these figures refer to; this page only me
 - **Short inputs measure throughput, not latency.** The benchmarks hash the same buffer in independent calls, which
   the CPU overlaps. When each call waits for the previous result, short inputs are slower: MurmurHash3_x86_32 at 64 B
   drops from 4 930 to 3 130 MB/s.
-- **Portable** is the library without CPU kernels (`CHECKSUM_ACCELERATION=OFF`, or a CPU without the instructions).
+- **Portable** is the library without CPU kernels (the former `CHECKSUM_ACCELERATION=OFF` option, or a CPU without the instructions).
   **SSE2**, **AVX2**, **NEON**, **DSP** and so on name the kernel that ran.
 - **Comparisons with other libraries** (zlib-ng, Intel ISA-L, OpenZFS, xxHash, Linux, DPDK, SMHasher) were built with
   the same compiler and flags and called the same way. A ratio above 1.0× means this library is faster.
@@ -38,7 +38,7 @@ hardware: its kernels are tested in QEMU only.
 
 User guide: [crc.md](crc.md).
 
-Strategies are named without their `crc_lut_` prefix. Portable means built with `CHECKSUM_ACCELERATION=OFF` or for a
+Strategies are named without their `crc_lut_` prefix. Portable means built with the former `CHECKSUM_ACCELERATION=OFF` option or for a
 CPU without the instructions listed in [crc.md](crc.md#7-cpu-acceleration).
 
 ### x86-64
@@ -139,7 +139,7 @@ User guide: [internet.md](internet.md).
 
 ### x86-64
 
-AVX2 is with `-march=native`; portable is with `CHECKSUM_ACCELERATION=OFF` and default flags.
+AVX2 is with `-march=native`; portable is with the former `CHECKSUM_ACCELERATION=OFF` option and default flags.
 
 | Input | GCC 16 portable | GCC 16 AVX2 | Clang 21 portable | Clang 21 AVX2 |
 | --- | --- | --- | --- | --- |
@@ -159,7 +159,7 @@ called the same way, this build runs at 0.97× the faster of the two at 256 B, 0
 
 ### Cortex-A72
 
-GCC 14.3, `-O2`, static binaries on one core. Portable is with `CHECKSUM_ACCELERATION=OFF`. AArch64 is
+GCC 14.3, `-O2`, static binaries on one core. Portable is with the former `CHECKSUM_ACCELERATION=OFF` option. AArch64 is
 `-march=armv8-a`; in 32-bit mode, NEON is `-march=armv8-a+crc -mfpu=neon-fp-armv8`, and `ldm` is `-mfpu=vfpv3-d16`
 (no NEON).
 
@@ -389,7 +389,7 @@ User guide: [fletcher4.md](fletcher4.md).
 ### x86-64
 
 MB/s, `-O2`, one core, each call timed in a loop over the same buffer. Portable is the library with
-`CHECKSUM_ACCELERATION=OFF` (portable lanes from 256 B), SSE2 the default x86-64 flags, AVX2 `-march=native`.
+the former `CHECKSUM_ACCELERATION=OFF` option (portable lanes from 256 B), SSE2 the default x86-64 flags, AVX2 `-march=native`.
 
 | Build | 20 B | 64 B | 128 B | 256 B | 512 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -402,7 +402,7 @@ MB/s, `-O2`, one core, each call timed in a loop over the same buffer. Portable 
 
 Below the thresholds every build runs the word loop; differences of up to 10 % there come from code placement, which
 moves with the link order. AVX2 is 1.5× the SSE2 kernel at 4 KiB. With GCC the portable lanes are within 15 % of the
-SSE2 kernel from 1500 bytes; with Clang they reach about 45 % of it, which matters only for a build with `CHECKSUM_ACCELERATION=OFF`.
+SSE2 kernel from 1500 bytes; with Clang they reach about 45 % of it, which matters only for a build with the former `CHECKSUM_ACCELERATION=OFF` option.
 
 Against the OpenZFS kernels (`fletcher_4_native` of OpenZFS f79c81d with its superscalar4, sse2, ssse3 and avx2 kernels,
 all built with GCC `-O2 -march=native`), the AVX2 build runs at 0.93× the fastest at 20 bytes, 1.09× at 256 bytes and
@@ -462,7 +462,7 @@ User guide: [xxhash.md](xxhash.md).
 
 ### x86-64
 
-XXH3-64, MB/s, GCC 16. Portable is the library with `CHECKSUM_ACCELERATION=OFF`, SSE2 the
+XXH3-64, MB/s, GCC 16. Portable is the library with the former `CHECKSUM_ACCELERATION=OFF` option, SSE2 the
 default x86-64 flags, AVX2 a build with AVX2 enabled.
 
 | Build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |

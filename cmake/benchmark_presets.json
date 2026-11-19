@@ -20,7 +20,7 @@
         {
             "name": "native-gcc-bench",
             "displayName": "Linux native benchmarks (GCC)",
-            "description": "Release -O2 -march=native benchmarks using GCC: accelerated CRC folding where the host has it",
+            "description": "Release -O2 -march=native benchmarks using GCC: every preset of the host is benchmarked where the benchmark names it; the flags affect only the portable loops",
             "inherits": [
                 "bench-common",
                 "gcc"
@@ -29,39 +29,13 @@
         {
             "name": "native-clang-bench",
             "displayName": "Linux native benchmarks (Clang)",
-            "description": "Release -O2 -march=native benchmarks using Clang: accelerated CRC folding where the host has it",
+            "description": "Release -O2 -march=native benchmarks using Clang: every preset of the host is benchmarked where the benchmark names it; the flags affect only the portable loops",
             "inherits": [
                 "bench-common",
                 "clang"
             ],
             "cacheVariables": {
                 "CMAKE_C_COMPILER": "clang"
-            }
-        },
-        {
-            "name": "native-gcc-bench-portable",
-            "displayName": "Linux native benchmarks (GCC, portable loops)",
-            "description": "Release -O2 benchmarks using GCC with default target flags and CHECKSUM_ACCELERATION=OFF: portable loops",
-            "inherits": "native-gcc-bench",
-            "cacheVariables": {
-                "CHECKSUM_ACCELERATION": "OFF"
-            },
-            "environment": {
-                "CHECKSUM_EXTRA_CFLAGS": "",
-                "CHECKSUM_EXTRA_CXXFLAGS": ""
-            }
-        },
-        {
-            "name": "native-clang-bench-portable",
-            "displayName": "Linux native benchmarks (Clang, portable loops)",
-            "description": "Release -O2 benchmarks using Clang with default target flags and CHECKSUM_ACCELERATION=OFF: portable loops",
-            "inherits": "native-clang-bench",
-            "cacheVariables": {
-                "CHECKSUM_ACCELERATION": "OFF"
-            },
-            "environment": {
-                "CHECKSUM_EXTRA_CFLAGS": "",
-                "CHECKSUM_EXTRA_CXXFLAGS": ""
             }
         }
     ],
@@ -79,24 +53,6 @@
             "name": "native-clang-bench",
             "displayName": "benchmarks [Release]",
             "configurePreset": "native-clang-bench",
-            "configuration": "Release",
-            "targets": [
-                "checksum_bench"
-            ]
-        },
-        {
-            "name": "native-gcc-bench-portable",
-            "displayName": "benchmarks [Release]",
-            "configurePreset": "native-gcc-bench-portable",
-            "configuration": "Release",
-            "targets": [
-                "checksum_bench"
-            ]
-        },
-        {
-            "name": "native-clang-bench-portable",
-            "displayName": "benchmarks [Release]",
-            "configurePreset": "native-clang-bench-portable",
             "configuration": "Release",
             "targets": [
                 "checksum_bench"

@@ -3,7 +3,6 @@
     "include": [
         "cmake/common_presets.json",
         "cmake/emulator_presets.json",
-        "cmake/x86_64_presets.json",
         "cmake/benchmark_presets.json",
         "cmake/msvc_wine_presets.json"
     ],
@@ -41,15 +40,6 @@
             "inherits": "native-gcc",
             "environment": {
                 "CHECKSUM_EXTRA_CXXFLAGS": "-fno-exceptions -fno-rtti"
-            }
-        },
-        {
-            "name": "native-gcc-portable",
-            "displayName": "Linux native (GCC, portable loops)",
-            "description": "Native Linux build using GCC with CHECKSUM_ACCELERATION=OFF: generic architecture header, portable loops only",
-            "inherits": "native-gcc",
-            "cacheVariables": {
-                "CHECKSUM_ACCELERATION": "OFF"
             }
         },
         {
@@ -118,12 +108,6 @@
             "configuration": "Debug"
         },
         {
-            "name": "native-gcc-portable-debug",
-            "displayName": "all [Debug]",
-            "configurePreset": "native-gcc-portable",
-            "configuration": "Debug"
-        },
-        {
             "name": "native-clang-libcxx-debug",
             "displayName": "all [Debug]",
             "configurePreset": "native-clang-libcxx",
@@ -163,13 +147,6 @@
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "native-gcc-no-exceptions",
-            "configuration": "Debug"
-        },
-        {
-            "name": "native-gcc-portable-debug",
-            "inherits": "test-common",
-            "displayName": "Run Tests [Debug]",
-            "configurePreset": "native-gcc-portable",
             "configuration": "Debug"
         },
         {
@@ -261,25 +238,6 @@
                 {
                     "type": "test",
                     "name": "native-gcc-no-exceptions-debug"
-                }
-            ]
-        },
-        {
-            "name": "native-gcc-portable",
-            "displayName": "Linux native (GCC, portable loops)",
-            "description": "Configure, build [Debug], test",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "native-gcc-portable"
-                },
-                {
-                    "type": "build",
-                    "name": "native-gcc-portable-debug"
-                },
-                {
-                    "type": "test",
-                    "name": "native-gcc-portable-debug"
                 }
             ]
         },

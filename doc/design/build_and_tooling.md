@@ -3,10 +3,11 @@
 ## CMake
 
 - All options are defined and documented in the top-level `CMakeLists.txt` (`CHECKSUM_TESTS`, `CHECKSUM_BENCHMARKS`,
-  `CHECKSUM_EXAMPLES`, `CHECKSUM_ACCELERATION`); nothing else reads user settings. Keep comments in CMake files to the minimum.
+  `CHECKSUM_EXAMPLES`); nothing else reads user settings. Keep comments in CMake files to the minimum.
 - Sources and headers are added with `target_sources`; headers through file sets (`PUBLIC FILE_SET HEADERS` for the
   installed API, a `PRIVATE` file set for `include_private`), not `target_include_directories`.
-- The build never adds instruction-set flags; acceleration follows the user's compiler flags.
+- The build never adds instruction-set flags: each preset source carries its own target options (`presets.hpp`,
+  `target_begin.hpp`), so any build system compiles every `src/**/*.cpp` as is.
 - Third-party code comes through CPM in `cmake/requirements.cmake`: GoogleTest when `CHECKSUM_TESTS` is on, Google
   Benchmark and zlib (the benchmark baseline) when `CHECKSUM_BENCHMARKS` is on.
 
@@ -40,6 +41,6 @@ Apply as part of every edit:
 
 ## CI
 
-GitHub Actions on Ubuntu only (`.github/workflows/ci.yml`): the workflows of the native presets and the x86-64 and
-cross presets, which build and run the correctness tests only, not the benchmarks.
+GitHub Actions (`.github/workflows/ci.yml`): the workflows of the native presets and the cross presets on Ubuntu, and
+`windows-msvc` on Windows; they build and run the correctness tests only, not the benchmarks.
 Formatting and spelling are checked locally, not in CI.

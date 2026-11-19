@@ -60,8 +60,9 @@ You need GCC 14 or newer, or Clang 18 or newer (with libstdc++ 14 or libc++ 18 o
 
 Two build tips:
 
-- CPU acceleration follows your compiler flags, for example `-march=native` or `-mcpu=cortex-a72+crc`; there is no
-  run-time CPU detection. Set `CHECKSUM_ACCELERATION=OFF` to keep only the portable code.
+- CPU acceleration is a template argument, an instruction-set preset such as `checksum::isa::x86_avx2` or
+  `checksum::isa::aarch64_crc` (`checksum/isa.hpp`); the default `isa::generic` runs on every CPU of the architecture.
+  Compiler flags select no kernel, and there is no run-time CPU detection yet.
 - Compile with `-ffunction-sections -fdata-sections` and link with `-Wl,--gc-sections`, so the binary keeps only
   the algorithms you use.
 
