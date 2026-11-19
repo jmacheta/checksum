@@ -1,9 +1,13 @@
 # Each source compiles as is (control target) and must fail with CHECKSUM_EXPECT_COMPILE_ERROR. Entries are "<source>@<regex the build
 # output must match>"; a rejected parameter set shows as std::bad_optional_access, a failed assert as the C library's assert handler.
 set(compile_fail_tests
-    "accumulator_from_temporary@deleted (function|constructor)" "engine_rejected_parameters@bad_optional_access"
-    "invalid_parameters@bad_optional_access" "precondition_in_constant_evaluation@(__assert_fail|_wassert)" "string_literal_update@byte_range"
+    "accumulator_from_temporary@deleted (function|constructor)"
+    "engine_rejected_parameters@bad_optional_access"
+    "invalid_parameters@bad_optional_access"
+    "precondition_in_constant_evaluation@(__assert_fail|_wassert)"
+    "string_literal_update@byte_range"
     "unavailable_preset@isa_available\\(\\) rejects it"
+    "unavailable_crc_preset@isa_available\\(\\) rejects it"
 )
 
 foreach (test IN LISTS compile_fail_tests)

@@ -1,7 +1,9 @@
-// Throughput of the built-in strategies, with zlib's crc32 and inline byte-table loops as baselines.
+// Throughput of the built-in strategies, crc_lut_sliced also for every preset with a CRC kernel, with zlib's crc32 and inline byte-table
+// loops as baselines.
 
 #include <checksum/crc.hpp>
 #include <checksum/crc_catalog.hpp>
+#include <checksum/isa.hpp>
 
 #include <benchmark/benchmark.h>
 #include <test_data.hpp>
@@ -36,9 +38,9 @@ void run(benchmark::State &state, auto compute) {
   state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
 }
 
-template <crc_parameters Parameters, class Strategy> void register_engine(char const *strategy, char const *name) {
-  auto *bench = benchmark::RegisterBenchmark(std::string(strategy) + "/" + name, [](benchmark::State &state) {
-    run(state, [](auto data) { return crc_engine_for<Parameters, Strategy>.compute(data); });
+template <crc_parameters Parameters, class Strategy, isa Isa> void register_engine(std::string const &strategy, char const *name) {
+  auto *bench = benchmark::RegisterBenchmark(strategy + "/" + name, [](benchmark::State &state) {
+    run(state, [](auto data) { return crc_engine_for<Parameters, Strategy, Isa>.compute(data); });
   });
   for(std::size_t const size : sizes) {
     bench->Arg(static_cast<std::int64_t>(size));
@@ -46,15 +48,23 @@ template <crc_parameters Parameters, class Strategy> void register_engine(char c
 }
 
 // Widths 8, 16, 32 and 64, each with reflected and unreflected input.
-template <class Strategy> void register_strategy(char const *strategy) {
-  register_engine<crc8_smbus, Strategy>(strategy, "crc8_smbus");
-  register_engine<crc8_maxim_dow, Strategy>(strategy, "crc8_maxim_dow");
-  register_engine<crc16_xmodem, Strategy>(strategy, "crc16_xmodem");
-  register_engine<crc16_kermit, Strategy>(strategy, "crc16_kermit");
-  register_engine<crc32_bzip2, Strategy>(strategy, "crc32_bzip2");
-  register_engine<crc32_iso_hdlc, Strategy>(strategy, "crc32_iso_hdlc");
-  register_engine<crc64_ecma_182, Strategy>(strategy, "crc64_ecma_182");
-  register_engine<crc64_xz, Strategy>(strategy, "crc64_xz");
+template <class Strategy, isa Isa = isa::generic> void register_strategy(std::string const &strategy) {
+  register_engine<crc8_smbus, Strategy, Isa>(strategy, "crc8_smbus");
+  register_engine<crc8_maxim_dow, Strategy, Isa>(strategy, "crc8_maxim_dow");
+  register_engine<crc16_xmodem, Strategy, Isa>(strategy, "crc16_xmodem");
+  register_engine<crc16_kermit, Strategy, Isa>(strategy, "crc16_kermit");
+  register_engine<crc32_bzip2, Strategy, Isa>(strategy, "crc32_bzip2");
+  register_engine<crc32_iso_hdlc, Strategy, Isa>(strategy, "crc32_iso_hdlc");
+  register_engine<crc32c, Strategy, Isa>(strategy, "crc32c");
+  register_engine<crc64_ecma_182, Strategy, Isa>(strategy, "crc64_ecma_182");
+  register_engine<crc64_xz, Strategy, Isa>(strategy, "crc64_xz");
+}
+
+// crc_lut_sliced for a preset with a CRC kernel, named sliced_<preset>, where this build has it.
+template <isa Preset> void register_preset(char const *name) {
+  if constexpr(isa_available(Preset)) {
+    register_strategy<crc_lut_sliced, Preset>(std::string("sliced_") + name);
+  }
 }
 
 // zlib's crc32 computes CRC-32/ISO-HDLC.
@@ -98,6 +108,12 @@ int main(int argc, char **argv) {
   register_strategy<crc_lut_byte>("byte");
   register_strategy<crc_lut_sliced>("sliced");
   register_strategy<crc_lut_braided>("braided");
+  register_preset<isa::x86_pclmul>("x86_pclmul");
+  register_preset<isa::x86_vpclmul>("x86_vpclmul");
+  register_preset<isa::aarch64_crc>("aarch64_crc");
+  register_preset<isa::aarch64_pmull>("aarch64_pmull");
+  register_preset<isa::thumb2_crc>("thumb2_crc");
+  register_preset<isa::riscv_zbc>("riscv_zbc");
 
   for(std::size_t const size : sizes) {
     benchmark::RegisterBenchmark("zlib/crc32_iso_hdlc", [](benchmark::State &state) {

@@ -26,24 +26,27 @@ How algorithms use CPU instructions and which architectures are worth it, per al
   build and named engines stay in read-only data.
 - **Bit-identical results.** Every accelerated path is tested against the portable one, including in QEMU for each
   architecture; the x86-64 AVX-VNNI kernel, which QEMU cannot run, is tested locally on a CPU that has it. Constant
-  evaluation always runs the portable code. No preset builds these paths, which were checked by hand only: the SSE4.2
-  `crc32` path without PCLMULQDQ (`-march=x86-64-v2`), and RVV at vector lengths other than QEMU's default of 128 bits.
+  evaluation always runs the portable code. The SSE4.2 `crc32` path without PCLMULQDQ was dropped: there is no
+  SSE4.2-only preset. RVV at vector lengths other than QEMU's default of 128 bits was checked by hand only.
 - **Measure before adding.** A kernel stays only if it beats the portable loops on real hardware at the sizes where
   it runs; thresholds come from measurements.
 
 ## CRC: which architectures are worth accelerating
 
-| Target | Verdict | Why |
+| Preset | Verdict | Why |
 | --- | --- | --- |
-| x86-64 with PCLMULQDQ / VPCLMULQDQ | Yes | Carry-less folding is 1.7× (16 B) to 25× (1 MiB) faster than the portable sliced loop; VPCLMULQDQ doubles the 128-bit kernel from 256 B on. |
-| x86-64 SSE4.2 `crc32` | Yes, CRC-32C only | One instruction per 8 bytes; covers short inputs where folding does not pay off. |
-| AArch64 / AArch32 CRC extension | Yes, CRC-32 and CRC-32C | 17× the portable sliced loop on a Cortex-A72; one unrolled stream already reaches the instruction throughput. |
-| AArch64 PMULL | Yes, for the other parameter sets | `llvm-mca` puts the fold loop at 6-33 cycles per 64 bytes across cores, far below the table loops; unmeasured on hardware. Slower than the CRC instructions on most cores, so never used for CRC-32 / CRC-32C. With `__ARM_FEATURE_SHA3` (e.g. `+sha3`) each fold XORs its three terms with one `EOR3`, which compilers do not fuse themselves: 6 to 4 cycles per 64 B on Neoverse V2 per `llvm-mca`, no change on Apple M1. |
-| RISC-V RV64 Zbc | Implemented, unproven | Scalar `clmul` needs four instructions per 16-byte fold; the gain depends on the core. Tested in QEMU only. |
+| x86-64 `isa::x86_pclmul` and up | Yes | Carry-less folding is 1.7× (16 B) to 25× (1 MiB) faster than the portable sliced loop. CRC-32C also uses the SSE4.2 `crc32` instruction from 25 B. |
+| x86-64 `isa::x86_vpclmul` and up | Yes | VPCLMULQDQ doubles the 128-bit kernel from 256 B on. |
+| x86-64 SSE4.2 alone | No, dropped | There is no SSE4.2-only preset; the `crc32` path without PCLMULQDQ was dropped. |
+| AArch64 `isa::aarch64_crc`, AArch32 `isa::thumb2_crc` | Yes, CRC-32 and CRC-32C | 17× the portable sliced loop on a Cortex-A72; one unrolled stream already reaches the instruction throughput. |
+| AArch64 `isa::aarch64_pmull` | Yes, for the other parameter sets | `llvm-mca` puts the fold loop at 6-33 cycles per 64 bytes across cores, far below the table loops; unmeasured on hardware. Slower than the CRC instructions on most cores, so never used for CRC-32 / CRC-32C. The EOR3 variant was dropped; it was an `llvm-mca` estimate only. |
+| RISC-V RV64 `isa::riscv_zbc` | Implemented, unproven | Scalar `clmul` needs four instructions per 16-byte fold; the gain depends on the core. Tested in QEMU only. |
 | Arm NEON without PMULL | No | A 64×64 carry-less product from `vmull_p8` takes about 60 instructions; 0.3-0.7× of the table loops. |
 | Big-endian AArch64 PMULL | No | NEON lane order of initializers and reinterpretations differs between compilers; the CRC instructions are still used. |
 | Cortex-M (ARMv7E-M, ARMv8-M) | Nothing to use | No CRC or carry-less instructions. Choose the table strategy and place it in RAM (about 1.5× flash; on the nRF54L15, whose instruction cache holds no data, 1.2-1.4× RRAM for `crc_lut_sliced`). MCU CRC peripherals are a user strategy, not library code; the nRF54L15 has none for general use (its radio and NFC CRC units cover only their frames, CRACEN is a crypto engine). |
 | Interleaved table streams on in-order cores | No | Braided loops help out-of-order cores only; on a Cortex-M4 they are slower and twice the size. |
+| MSVC x64 | Same x86 kernels per preset | The x86 kernels above are used for the named preset. |
+| MSVC ARM64 | No CRC kernel | Portable loops. |
 | LoongArch, POWER8+, s390x | Not done | They have carry-less multiply or CRC instructions; candidates when someone can test them. |
 
 ## CRC kernels
@@ -55,14 +58,14 @@ How algorithms use CPU instructions and which architectures are worth it, per al
 - **One modulus for every width:** a CRC of width W runs in a 64-bit register modulo
   Q = x^(64−W) · (x^W + polynomial), so one kernel per bit order covers widths 1..64 and every register type. The
   160 bytes of constants live in the slicing-by-8 and braided tables in every build.
-- **Wide x86 loop** (VPCLMULQDQ, from 256 bytes): eight 256-bit accumulators over 256-byte steps, then four over
-  128 bytes and one 64-byte step. Like Intel ISA-L, it then folds the 8 remaining blocks onto the last one in a
-  single step, each block with the constants of its own distance (`by_seven` to `by_one`), instead of a chain of
-  folds over one block.
+- **Wide x86 loop** (`isa::x86_vpclmul` and up, VPCLMULQDQ, from 256 bytes): eight 256-bit accumulators over
+  256-byte steps, then four over 128 bytes and one 64-byte step. Like Intel ISA-L, it then folds the 8 remaining
+  blocks onto the last one in a single step, each block with the constants of its own distance (`by_seven` to
+  `by_one`), instead of a chain of folds over one block.
 - **CRC instructions** run for CRC-32 and CRC-32C with reflected input in a 32-bit register, whatever the initial
-  value and final XOR. On x86-64, CRC-32C inputs from 25 bytes fold with PCLMULQDQ and reduce their last 128 bits
-  with two `crc32` instructions; from 256 bytes the wide loop leaves two blocks, and `crc32` takes those 32 bytes
-  and the last 0..63 message bytes.
+  value and final XOR. On x86-64 (`isa::x86_pclmul` and up), CRC-32C inputs from 25 bytes fold with PCLMULQDQ and
+  reduce their last 128 bits with two `crc32` instructions; from 256 bytes the wide loop leaves two blocks, and
+  `crc32` takes those 32 bytes and the last 0..63 message bytes.
 - `crc_lut_braided` runs the `crc_lut_sliced` path wherever a kernel applies.
 
 Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cortex-A72; MCU: Cortex-M4):
@@ -80,8 +83,8 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
   instead of a fold over one block and two). CRC-32 and CRC-64/XZ were unchanged.
 - Tried at 256 B without gain: starting with four accumulators as ISA-L does (7 % slower), folding all 16 blocks in
   one parallel step (5-10 % slower, 128 more bytes of constants), 64-byte alignment of the constants (within 2 %).
-- Compared with Intel ISA-L's AVX2 kernels (GCC 16 `-O2 -march=native`): 1.01× (CRC-32), 0.95× (CRC-32C) and
-  0.96× (CRC-64/XZ) at 256 B, against 0.71-0.78× before the single-step fold.
+- Compared with Intel ISA-L's AVX2 kernels (GCC 16 `-O2 -march=native` before presets, now `isa::x86_vpclmul`):
+  1.01× (CRC-32), 0.95× (CRC-32C) and 0.96× (CRC-64/XZ) at 256 B, against 0.71-0.78× before the single-step fold.
 - Each table source has its own copy of the loops it reuses (internal linkage): equal or up to 20 % faster than
   calling across sources.
 - Portable braided loop from 128 bytes, where it overtakes slicing-by-8. Five streams of 8-byte words: of 3, 4, 5, 6
@@ -92,8 +95,8 @@ Decisions, with the measurement behind each (x86-64: Core Ultra 7 155H; Arm: Cor
   4 KiB; kept in the braided loop only); `std::mdspan` for the tables (each access costs about 70 Clang
   constant-evaluation steps, so the braided table exceeds Clang's default limit, and GCC stopped inlining the braided
   fold, 30-45 % slower).
-- Arm CRC32: 4 words per iteration, then straight-line 2- and 1-word steps; a loop that runs exactly twice costs a
-  mispredicted branch (about 10 ns per call) on the A72.
+- Arm CRC32 (`isa::aarch64_crc`, `isa::thumb2_crc`): 4 words per iteration, then straight-line 2- and 1-word steps;
+  a loop that runs exactly twice costs a mispredicted branch (about 10 ns per call) on the A72.
 - Byte-table loop: the split variant for out-of-order cores costs 30-40 % on the Cortex-M4, so targets with 32-bit
   pointers run the plain loop for registers wider than 8 bits.
 

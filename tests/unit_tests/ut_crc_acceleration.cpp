@@ -1,13 +1,15 @@
-// crc_lut_sliced and crc_lut_braided must match crc_lut_byte for every catalog parameter set, on the smallest register
-// and on std::uint64_t, one-shot and split in two. The first set of each code path runs every length across the
-// thresholds and alignments of the kernels, the others the lengths around each threshold.
+// crc_lut_sliced and crc_lut_braided of every preset must match crc_lut_byte for every catalog set, on the smallest register and
+// std::uint64_t, one-shot and split; the first set of each code path runs every length, the others the lengths around each threshold.
+// The other table strategies run three common sets at every length 0..300, and every strategy is checked at compile time per preset.
 #include <checksum/crc.hpp>
 #include <checksum/crc_catalog.hpp>
+#include <checksum/isa.hpp>
 
 #include "crc_catalog_checks.hpp"
 #include "crc_test_support.hpp"
 
 #include <gtest/gtest.h>
+#include <isa_test_support.hpp>
 
 #include <algorithm>
 #include <array>
@@ -16,6 +18,10 @@
 #include <memory>
 #include <random>
 #include <span>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -23,6 +29,7 @@ namespace {
 using namespace checksum;
 
 constexpr std::size_t longest = 4096;
+constexpr std::size_t common_length = 300;
 
 // Aligned and misaligned for every load width; no CRC loop branches on the address.
 constexpr std::array<std::size_t, 2> offsets{0, 15};
@@ -75,12 +82,13 @@ code_path code_path_of(crc_parameters const &parameters) {
           .polynomial = register_bits == 32 && parameters.reflect_input ? parameters.polynomial.normal_form() : 0};
 }
 
-template <class Strategy, class Register>
+template <class Strategy, isa Preset, class Register>
 void check_against_byte(crc_parameters const &parameters, std::span<std::byte const> message, std::span<std::size_t const> lengths) {
   // On the heap: a braided engine holds 32 KiB of tables.
-  auto const reference = std::make_unique<crc_engine<Register, crc_lut_byte>>(*crc_engine<Register, crc_lut_byte>::create(parameters));
-  auto const smallest = std::make_unique<crc_engine<Register, Strategy>>(*crc_engine<Register, Strategy>::create(parameters));
-  auto const wide = std::make_unique<crc_engine<std::uint64_t, Strategy>>(*crc_engine<std::uint64_t, Strategy>::create(parameters));
+  auto const reference =
+      std::make_unique<crc_engine<Register, crc_lut_byte, isa::generic>>(*crc_engine<Register, crc_lut_byte, isa::generic>::create(parameters));
+  auto const smallest = std::make_unique<crc_engine<Register, Strategy, Preset>>(*crc_engine<Register, Strategy, Preset>::create(parameters));
+  auto const wide = std::make_unique<crc_engine<std::uint64_t, Strategy, Preset>>(*crc_engine<std::uint64_t, Strategy, Preset>::create(parameters));
   for(std::size_t const length : lengths) {
     for(std::size_t const offset : offsets) {
       auto const data = message.subspan(offset, length);
@@ -94,28 +102,121 @@ void check_against_byte(crc_parameters const &parameters, std::span<std::byte co
   }
 }
 
-template <class Strategy> void check_set(crc_parameters const &parameters, std::span<std::byte const> message, std::span<std::size_t const> lengths) {
+template <class Strategy, isa Preset>
+void check_set(crc_parameters const &parameters, std::span<std::byte const> message, std::span<std::size_t const> lengths) {
   switch(code_path_of(parameters).register_bits) {
   case 8:
-    check_against_byte<Strategy, std::uint8_t>(parameters, message, lengths);
+    check_against_byte<Strategy, Preset, std::uint8_t>(parameters, message, lengths);
     break;
   case 16:
-    check_against_byte<Strategy, std::uint16_t>(parameters, message, lengths);
+    check_against_byte<Strategy, Preset, std::uint16_t>(parameters, message, lengths);
     break;
   case 32:
-    check_against_byte<Strategy, std::uint32_t>(parameters, message, lengths);
+    check_against_byte<Strategy, Preset, std::uint32_t>(parameters, message, lengths);
     break;
   default:
-    check_against_byte<Strategy, std::uint64_t>(parameters, message, lengths);
+    check_against_byte<Strategy, Preset, std::uint64_t>(parameters, message, lengths);
   }
 }
 
-template <class Strategy> struct crc_acceleration_typed : ::testing::Test {};
+template <isa Preset> consteval bool sliced_accumulator_round_trip() {
+  auto const &engine = crc_engine_for<checksum::crc32_iso_hdlc, crc_lut_sliced, Preset>;
+  crc_accumulator<std::uint32_t, crc_lut_sliced, Preset> accumulator(engine);
+  accumulator.update(std::string_view("1234"));
+  accumulator.update(std::string_view("56789"));
+  return accumulator.value() == std::uint32_t{0xCBF43926};
+}
 
-using folding_strategies = ::testing::Types<crc_lut_sliced, crc_lut_braided>;
-TYPED_TEST_SUITE(crc_acceleration_typed, folding_strategies);
+template <isa Preset> void check_constant() {
+  static_assert((crc_engine_for<checksum::crc32_iso_hdlc, crc_lut_none, Preset>.compute(std::string_view("123456789"))) == std::uint32_t{0xCBF43926});
+  static_assert((crc_engine_for<checksum::crc32_iso_hdlc, crc_lut_nibble, Preset>.compute(std::string_view("123456789"))) ==
+                std::uint32_t{0xCBF43926});
+  static_assert((crc_engine_for<checksum::crc32_iso_hdlc, crc_lut_byte, Preset>.compute(std::string_view("123456789"))) == std::uint32_t{0xCBF43926});
+  static_assert((crc_engine_for<checksum::crc32_iso_hdlc, crc_lut_sliced, Preset>.compute(std::string_view("123456789"))) ==
+                std::uint32_t{0xCBF43926});
+  static_assert((crc_engine_for<checksum::crc32_iso_hdlc, crc_lut_braided, Preset>.compute(std::string_view("123456789"))) ==
+                std::uint32_t{0xCBF43926});
+  static_assert((crc_engine_for<checksum::crc16_xmodem, crc_lut_sliced, Preset>.compute(std::string_view("123456789"))) == std::uint16_t{0x31C3});
+  static_assert((crc_engine_for<checksum::crc64_xz, crc_lut_sliced, Preset>.compute(std::string_view("123456789"))) ==
+                std::uint64_t{0x995DC9BBDF1939FA});
+  static_assert(sliced_accumulator_round_trip<Preset>());
+}
+
+template <crc_parameters Parameters, class Strategy, isa Preset> void check_common(std::span<std::byte const> buffer) {
+  auto const &reference = crc_engine_for<Parameters, crc_lut_byte, isa::generic>;
+  auto const &engine = crc_engine_for<Parameters, Strategy, Preset>;
+  for(std::size_t length = 0; length <= common_length; ++length) {
+    for(std::size_t const offset : offsets) {
+      auto const data = buffer.subspan(offset, length);
+      ASSERT_EQ((engine.compute(data)), reference.compute(data)) << "length " << length << ", offset " << offset;
+    }
+  }
+}
+
+template <crc_parameters Parameters, isa Preset> void check_common_all(std::span<std::byte const> buffer) {
+  check_common<Parameters, crc_lut_none, Preset>(buffer);
+  check_common<Parameters, crc_lut_nibble, Preset>(buffer);
+  check_common<Parameters, crc_lut_byte, Preset>(buffer);
+}
+
+template <class PresetList> struct add_generic_if_missing;
+
+template <> struct add_generic_if_missing<testing::Types<>> {
+  using type = testing::Types<isa_test::preset<checksum::isa::generic>>;
+};
+
+template <class First, class... Rest> struct add_generic_if_missing<testing::Types<First, Rest...>> {
+  using type = std::conditional_t<First::value == checksum::isa::generic, testing::Types<First, Rest...>,
+                                  testing::Types<isa_test::preset<checksum::isa::generic>, First, Rest...>>;
+};
+
+using all_presets = add_generic_if_missing<isa_test::presets>::type;
+
+template <class Strategy, class PresetList> struct strategy_preset_pairs;
+
+template <class Strategy, class... Presets> struct strategy_preset_pairs<Strategy, testing::Types<Presets...>> {
+  using type = testing::Types<std::pair<Strategy, Presets>...>;
+};
+
+template <class First, class Second> struct concat_types;
+
+template <class... FirstTypes, class... SecondTypes> struct concat_types<testing::Types<FirstTypes...>, testing::Types<SecondTypes...>> {
+  using type = testing::Types<FirstTypes..., SecondTypes...>;
+};
+
+using folding_pairs =
+    concat_types<strategy_preset_pairs<crc_lut_sliced, all_presets>::type, strategy_preset_pairs<crc_lut_braided, all_presets>::type>::type;
+
+template <class Strategy> constexpr std::string_view strategy_name() {
+  if constexpr(std::is_same_v<Strategy, crc_lut_sliced>) {
+    return "sliced";
+  } else {
+    return "braided";
+  }
+}
+
+struct pair_name {
+  template <class Pair> static std::string GetName(int /*index*/) {
+    return std::string(strategy_name<typename Pair::first_type>()) + '_' +
+           std::string(isa_test::names.at(static_cast<std::size_t>(Pair::second_type::value)));
+  }
+};
+
+template <class Pair> struct crc_acceleration_typed : ::testing::Test {
+  void SetUp() override {
+    if(!isa_test::cpu_runs(Pair::second_type::value)) {
+      GTEST_SKIP() << "the CPU cannot run it";
+    }
+  }
+};
+
+TYPED_TEST_SUITE(crc_acceleration_typed, folding_pairs, pair_name);
 
 TYPED_TEST(crc_acceleration_typed, MatchesByteTableForEveryCatalogSet) {
+  using Strategy = typename TypeParam::first_type;
+  constexpr isa preset = TypeParam::second_type::value;
+  check_constant<preset>();
+
   auto const message = random_bytes(longest + offsets.back(), 0x5EED);
   auto const all = every_length();
   auto const thresholds = threshold_lengths();
@@ -127,8 +228,29 @@ TYPED_TEST(crc_acceleration_typed, MatchesByteTableForEveryCatalogSet) {
     if(first) {
       tested.push_back(path);
     }
-    check_set<TypeParam>(set.parameters, message, first ? all : thresholds);
+    check_set<Strategy, preset>(set.parameters, message, first ? all : thresholds);
   }
+}
+
+template <class Preset> struct crc_table_strategies_typed : isa_test::preset_test<Preset> {};
+
+TYPED_TEST_SUITE(crc_table_strategies_typed, all_presets, isa_test::preset_name);
+
+TYPED_TEST(crc_table_strategies_typed, MatchesByteTableForCommonParameters) {
+  constexpr isa preset = TypeParam::value;
+  check_constant<preset>();
+
+  auto const buffer = random_bytes(common_length + offsets.back(), 0x5EED);
+  std::span<std::byte const> const data(buffer);
+
+  SCOPED_TRACE("crc32_iso_hdlc");
+  check_common_all<checksum::crc32_iso_hdlc, preset>(data);
+
+  SCOPED_TRACE("crc16_xmodem");
+  check_common_all<checksum::crc16_xmodem, preset>(data);
+
+  SCOPED_TRACE("crc64_xz");
+  check_common_all<checksum::crc64_xz, preset>(data);
 }
 
 } // namespace

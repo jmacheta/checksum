@@ -19,7 +19,6 @@ target_link_libraries(app PRIVATE checksum::checksum)
 
 | CMake option | Default | Effect |
 | --- | --- | --- |
-| `CHECKSUM_ACCELERATION` | `ON` | Lets `crc_lut_sliced` and `crc_lut_braided` use the CPU instructions that the compiler flags enable (section 7). `OFF` keeps only the portable loops. |
 | `CHECKSUM_TESTS` | top-level project | Unit tests and negative compile tests (downloads GoogleTest). |
 | `CHECKSUM_BENCHMARKS` | `OFF` | Benchmarks (downloads Google Benchmark and zlib); on in the `native-*-bench` presets. |
 | `CHECKSUM_EXAMPLES` | top-level project | Builds `examples/`. |
@@ -103,8 +102,10 @@ CRC-64 is ECMA-182, while common usage often means CRC-64/XZ.
 
 ## 5. Engines
 
-`crc_engine<Register, Strategy>` holds a strategy's table and the prepared parameters. It is immutable, so one
-engine serves any number of computations; the running CRC is a separate `state_type` value.
+`crc_engine<Register, Strategy = crc_lut_none, isa Isa = isa::generic>` holds a strategy's table and the prepared
+parameters. It is immutable, so one engine serves any number of computations; the running CRC is a separate
+`state_type` value. The preset `Isa` selects the run-time loop of the built-in strategies; it is orthogonal to the
+table strategy.
 
 | Member | Meaning |
 | --- | --- |
@@ -115,19 +116,19 @@ engine serves any number of computations; the running CRC is a separate `state_t
 | `finalize(state)` | Turns a state into the CRC. |
 | `compute(data)`, `compute(data, bit_length)` | `finalize(update(initial(), ...))`. |
 
-`crc_engine_for<Parameters, Strategy>` is the engine built at compile time, with the smallest register
-(`crc_register_for<width>`). It is a constant in read-only data, so a program that uses it contains no
-table-building code. Equal parameter values name the same object: `crc_engine_for<crc_parameters{.polynomial = 0x83}>`
-is `crc_engine_for<checksum::crc8_smbus>`.
+`crc_engine_for<Parameters, Strategy = crc_lut_none, isa Isa = isa::generic>` is the engine built at compile time,
+with the smallest register (`crc_register_for<width>`). It is a constant in read-only data, so a program that uses
+it contains no table-building code. Equal parameter values name the same object:
+`crc_engine_for<crc_parameters{.polynomial = 0x83}>` is `crc_engine_for<checksum::crc8_smbus>`.
 
-`crc_engine<Register, Strategy>::create(parameters)` builds an engine at run time (or in a `constexpr` context).
-`Register` is `std::uint8_t`, `std::uint16_t`, `std::uint32_t` or `std::uint64_t`. A wider register than the CRC
-needs gives the same results, so one engine type can serve run-time parameter sets of any width up to 64.
+`crc_engine<Register, Strategy, Isa>::create(parameters)` builds an engine at run time (or in a `constexpr`
+context). `Register` is `std::uint8_t`, `std::uint16_t`, `std::uint32_t` or `std::uint64_t`. A wider register than
+the CRC needs gives the same results, so one engine type can serve run-time parameter sets of any width up to 64.
 
 Splitting a message anywhere gives the same CRC: `finalize(update(update(initial(), a), b)) == compute(a ++ b)`.
-`crc_accumulator` wraps that: it holds a pointer to the engine and a state, and offers `update` (chainable),
-`value()` (does not change the state), `state()` and `reset()`. The engine must outlive the accumulator;
-constructing one from a temporary engine does not compile.
+`crc_accumulator<Register, Strategy, Isa>` wraps that: it holds a pointer to the engine and a state, and offers
+`update` (chainable), `value()` (does not change the state), `state()` and `reset()`. The engine must outlive the
+accumulator; constructing one from a temporary engine does not compile.
 
 ### 5.1 Input
 
@@ -168,8 +169,8 @@ results.
 | `crc_lut_none` (default) | 11 / 16 / 32 / 64 B | Bitwise, no table. Smallest code and data. |
 | `crc_lut_nibble` | 27 / 48 / 96 / 192 B | 16-entry table, two lookups per byte. |
 | `crc_lut_byte` | 267 / 528 / 1056 / 2112 B | 256-entry table, one lookup per byte. |
-| `crc_lut_sliced` | 2.2 / 4.2 / 8.2 / 16.2 KiB | Slicing-by-8: eight 256-entry tables, one 8-byte word per step. CPU acceleration (section 7). |
-| `crc_lut_braided` | 4.2 / 8.2 / 16.2 / 32.2 KiB | Slicing-by-8 plus 8 braid tables: five interleaved streams of 8-byte words from 128 B on. CPU acceleration (section 7). |
+| `crc_lut_sliced` | 2.2 / 4.2 / 8.2 / 16.2 KiB | Slicing-by-8: eight 256-entry tables, one 8-byte word per step. CPU kernels for the engine's preset (section 7). |
+| `crc_lut_braided` | 4.2 / 8.2 / 16.2 / 32.2 KiB | Slicing-by-8 plus 8 braid tables: five interleaved streams of 8-byte words from 128 B on. CPU kernels for the engine's preset (section 7). |
 
 Sizes are `sizeof(crc_engine)` on a 64-bit host. The sliced and braided engines include 160 B of folding constants
 for the CPU kernels. Large engines belong in static storage (`crc_engine_for`, or a `static`/global object), not on
@@ -180,8 +181,8 @@ Choosing:
 - **Flash- or RAM-constrained MCU:** `crc_lut_none` or `crc_lut_nibble`.
 - **MCU with spare memory:** `crc_lut_byte`, or `crc_lut_sliced` for the best speed (section 8). A copy of the
   engine in RAM is about 1.5× faster than one in flash on a Cortex-M4.
-- **Desktop and server CPUs:** `crc_lut_sliced`. With acceleration it is the fastest strategy everywhere. Without it,
-  `crc_lut_braided` is about twice as fast from 128 B on, on out-of-order cores.
+- **Desktop and server CPUs:** `crc_lut_sliced`. With a CPU preset it is the fastest strategy everywhere. With
+  `isa::generic`, `crc_lut_braided` is about twice as fast from 128 B on, on out-of-order cores.
 
 ### 6.1 Custom strategies
 
@@ -199,51 +200,71 @@ struct my_strategy {
 a peripheral that supports only some polynomials). `update` receives the public state: below 2^width, reflected if
 the input is reflected. It must return the state after the bytes. A strategy needs to support only the registers it
 names. Strategies without `constexpr` members work with `crc_engine::create` at run time only.
+
+The engine's `Isa` preset is passed to the built-in strategies. A custom strategy keeps its interface: the engine
+calls `Strategy::update<Register>(...)` and ignores the preset for it, unless it provides
+`Strategy::template update<Register, Isa>(...)`. A hardware strategy does not need to name a preset.
 `examples/crc/hardware_strategy.cpp` drives the CRC unit of STM32 parts this way.
 
 ## 7. CPU acceleration
 
-`crc_lut_sliced` and `crc_lut_braided` use CPU instructions when the compiler flags enable them. The choice is
-made by the preprocessor in the library's sources, from the macros the compiler predefines for the flags. There is
-no run-time CPU detection, so the library must be compiled with the flags of the target CPU:
+`crc_lut_sliced` and `crc_lut_braided` use CPU instructions selected by the engine's instruction-set preset. The
+preset is a template parameter of the engine, orthogonal to the table strategy: strategies are memory/speed
+choices, presets are CPU choices. The engine passes the preset to the built-in strategies; a custom strategy keeps
+its interface (section 6.1).
 
-| Target | Flags (examples) | What runs |
-| --- | --- | --- |
-| x86-64 with PCLMULQDQ | `-mpclmul -msse4.1` | Carry-less multiplication folding for every parameter set, inputs ≥ 16 B. |
-| x86-64 with VPCLMULQDQ and AVX2 | `-march=icelake-client`, `alderlake`, `znver3`, `native` | Inputs ≥ 256 B also fold 256 B per iteration. |
-| x86-64 with SSE4.2 | `-msse4.2`, `-march=x86-64-v2` | The `crc32` instruction for CRC-32C; with PCLMULQDQ also available, CRC-32C inputs ≥ 25 B fold instead. |
-| AArch64 / AArch32 with the CRC extension | `-march=armv8-a+crc` | The CRC32 instructions for CRC-32 and CRC-32C. |
-| Little-endian AArch64 with PMULL | `-march=armv8-a+crc+crypto` | Folding for every other parameter set; with `+sha3` (Neoverse V1/V2, Apple M1 and later) each fold uses one `EOR3`. |
-| RV64, little-endian, with Zbc | `-march=rv64gc_zbc` | Folding with `clmul` / `clmulh`. |
+Compiler flags such as `-march=native`, `-mpclmul` or `-march=armv8-a+crc` select no CRC kernel; choose a preset.
+
+| Preset | Kernel |
+| --- | --- |
+| `isa::generic` | portable sliced or braided loop on every architecture. SSE2 and AArch64 NEON have no CRC instructions. |
+| `isa::x86_pclmul`, `isa::x86_avx2`, `isa::x86_vpclmul`, `isa::x86_avxvnni` on x86-64 | PCLMULQDQ folding for every parameter set from 16 B. CRC-32C also uses the SSE4.2 `crc32` instruction: inputs of at least 25 B fold first and reduce with two `crc32` instructions. |
+| `isa::x86_vpclmul`, `isa::x86_avxvnni` on x86-64 | additionally the 256-bit VPCLMULQDQ loop from 256 B. |
+| `isa::aarch64_crc` | CRC32/CRC32C instructions for CRC-32 and CRC-32C. |
+| `isa::aarch64_pmull` | CRC32/CRC32C instructions, plus PMULL folding for the other parameter sets. Little-endian AArch64 only; big-endian keeps the CRC instructions. |
+| `isa::thumb2_crc` | CRC32/CRC32C instructions (32-bit Arm, AArch32 with the CRC extension, GCC). |
+| `isa::riscv_zbc` | Zbc `clmul`/`clmulh` folding (RV64, little-endian). The inline assembly enables Zbc locally, so the build itself needs no Zbc. |
+| `isa::thumb2`, `isa::thumb2_neon`, `isa::thumb2_dsp`, `isa::riscv_v` | portable sliced or braided loops compiled for the preset. |
+
+**Choosing a preset.** `crc_engine_for<checksum::crc32c, checksum::crc_lut_sliced, checksum::isa::x86_pclmul>.compute(data)`
+runs the x86 PCLMULQDQ kernel whatever the build's compiler flags. The library compiles the loop once for every
+preset that `isa_available()` accepts on the target architecture and compiler, each into its own object, so a static
+link pulls in only the presets a program names. A preset without a kernel still runs the portable loop compiled for
+its instruction set. Naming a preset that `isa_available()` rejects is a compile error, not a link error. Presets
+give bit-identical results, and constant evaluation runs the same portable code for every preset. The library does
+not check the CPU: calling a preset on a CPU without its instructions is undefined (illegal instruction). There is
+no run-time detection yet; a later run-time layer is planned.
 
 Notes:
 
 - The CRC-32 and CRC-32C instructions apply to any parameter set with that polynomial and reflected input in a
   `std::uint32_t` register, whatever its initial value and final XOR.
-- `crc_lut_braided` runs the `crc_lut_sliced` code wherever acceleration applies, so in accelerated builds the two
-  strategies perform the same and `crc_lut_sliced` is half the size.
-- x86-64-v3 (AVX2) does not include PCLMULQDQ; add `-mpclmul`.
+- `crc_lut_braided` runs the `crc_lut_sliced` code wherever a kernel applies, so with a kernel the
+  two strategies perform the same and `crc_lut_sliced` is half the size.
+- x86-64-v3 (AVX2) does not include PCLMULQDQ; choose `isa::x86_pclmul` or a higher preset.
 - Big-endian AArch64 uses the CRC32 instructions but not PMULL.
+- `crc_lut_none`, `crc_lut_nibble` and `crc_lut_byte` run their portable loop for every preset.
 - Constant evaluation always runs the portable loops; results are identical.
-- `CHECKSUM_ACCELERATION=OFF` disables all of it.
+- MSVC x64 uses the same x86 kernels per preset. MSVC ARM64 has no CRC kernel and runs the portable loops.
 
 The design and the measurements behind each kernel are in [design/acceleration.md](design/acceleration.md).
 
 ## 8. Performance guidelines
 
-Measured figures for every strategy and platform are in [performance.md](performance.md#crc).
+Measured figures for every strategy and platform are in [performance.md](performance.md#crc). The "accelerated"
+column there is the `isa::x86_vpclmul` preset.
 
 - **Choose the strategy by memory first** (section 6). Each step from `crc_lut_none` to `crc_lut_sliced` is 1.5× to
   several times faster than the one below it, and costs more table memory.
-- **Compile for the target CPU.** `crc_lut_sliced` and `crc_lut_braided` use the instructions of section 7 only if
-  the compiler flags enable them. The kernels take over at these sizes:
+- **Choose the preset for the target CPU.** `crc_lut_sliced` and `crc_lut_braided` use the kernels of section 7 only
+  for the engine's preset. The kernels take over at these sizes:
   - carry-less folding (PCLMULQDQ, PMULL, Zbc): every parameter set, from 16 B;
-  - VPCLMULQDQ with AVX2: 256 B per iteration, from 256 B;
-  - the CRC instructions of Arm (`+crc`): CRC-32 and CRC-32C;
-  - SSE4.2 `crc32`: CRC-32C, folding from 25 B when PCLMULQDQ is also enabled.
+  - VPCLMULQDQ (`isa::x86_vpclmul` and up): 256 B per iteration, from 256 B;
+  - the Arm CRC instructions (`isa::aarch64_crc`, `isa::thumb2_crc`): CRC-32 and CRC-32C;
+  - SSE4.2 `crc32`: CRC-32C, folding from 25 B in `isa::x86_pclmul` and up.
 
   On x86-64 CRC-32 then runs at about 75 000 MB/s from 4 KiB, against about 3 000 MB/s for the portable sliced loop.
-- **Without acceleration on a desktop CPU**, `crc_lut_braided` is about twice as fast as `crc_lut_sliced` from
+- **With `isa::generic` on a desktop CPU**, `crc_lut_braided` is about twice as fast as `crc_lut_sliced` from
   128 B on. On in-order cores such as Cortex-M it is slower and twice the size.
 - **On a microcontroller, keep the engine in RAM** if it fits. Table lookups from flash wait for the memory: a copy
   of the engine in RAM is about 1.5× faster on a Cortex-M4, and `crc_lut_sliced` 1.2-1.4× faster on the nRF54L15,
@@ -257,6 +278,6 @@ Measured figures for every strategy and platform are in [performance.md](perform
 
 - **Widths 1..64** only, and only polynomials with an x^0 term.
 - **Initial values are direct**: the register content before the first message bit, never the "augmented" form.
-- **No run-time CPU detection.** Acceleration is fixed by the compiler flags of the library build; a binary built
-  with `-march=native` does not run on older CPUs.
+- **No run-time CPU detection.** The preset is chosen at compile time; calling a preset on a CPU without its
+  instructions is undefined (illegal instruction). A binary that names `x86_vpclmul` does not run on older CPUs.
 - **Not thread-safe.** A `const` engine can be shared between threads; an accumulator cannot.

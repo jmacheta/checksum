@@ -1,8 +1,10 @@
 #ifndef CHECKSUM_PRIVATE_X86_64_CRC_HPP
 #define CHECKSUM_PRIVATE_X86_64_CRC_HPP
 
-// x86-64 kernels: PCLMULQDQ folding (needs SSE4.1; VPCLMULQDQ + AVX2 add a 256-bit loop from 256 bytes) and the SSE4.2
-// crc32 instruction for CRC-32C. Included only by crc_arch.hpp.
+// x86-64 kernels: PCLMULQDQ folding and the SSE4.2 crc32 instruction for CRC-32C from the x86_pclmul preset on, plus a 256-bit
+// VPCLMULQDQ loop from 256 bytes from x86_vpclmul on. isa::generic (SSE2) has none. Included only by crc_arch.hpp.
+
+#include <checksum/isa.hpp>
 
 #include <immintrin.h>
 
@@ -13,43 +15,30 @@
 #include <span>
 
 namespace checksum::crc_detail {
+// NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/crc/*.cpp.
+namespace {
 
-#if defined(__PCLMUL__) && defined(__SSE4_1__)
-inline constexpr bool folding_available = true;
-#else
-inline constexpr bool folding_available = false;
-#endif
+template <isa Isa> inline constexpr bool folding_available = isa_detail::includes(Isa, isa::x86_pclmul);
 
 // x86 has no instruction for the CRC-32 polynomial, only for CRC-32C.
-template <std::uint32_t Polynomial> inline constexpr bool crc32_instructions_available = false;
-
-#if defined(__SSE4_2__)
-template <> inline constexpr bool crc32_instructions_available<crc32c_reflected_polynomial> = true;
-#endif
+template <isa Isa, std::uint32_t Polynomial>
+inline constexpr bool crc32_instructions_available = Polynomial == crc32c_reflected_polynomial && isa_detail::includes(Isa, isa::x86_pclmul);
 
 // A crc32 stream is latency bound (3 cycles per instruction, up to three more for the last 1-7 bytes). On an Intel Core
 // Ultra 7 155H it wins up to 24 bytes; folding is ~30 % faster at 31.
 inline constexpr std::size_t crc32_folding_minimum_size = 25;
 
-#if defined(__PCLMUL__) && defined(__SSE4_1__) && defined(__VPCLMULQDQ__) && defined(__AVX2__)
-inline constexpr std::size_t wide_folding_minimum_size = 256;
-#else
-inline constexpr std::size_t wide_folding_minimum_size = std::numeric_limits<std::size_t>::max();
-#endif
+template <isa Isa>
+inline constexpr std::size_t wide_folding_minimum_size = isa_detail::includes(Isa, isa::x86_vpclmul) ? 256 : std::numeric_limits<std::size_t>::max();
 
-#if defined(__PCLMUL__) && defined(__SSE4_1__)
-// Fold kernel of fold_blocks_with(): 128-bit vectors, low lane first.
-struct pclmul_kernel {
+// Fold kernel of fold_blocks_with(): 128-bit vectors, low lane first. Only for presets with folding_available<Isa>.
+template <isa Isa> struct pclmul_kernel {
   using vector = __m128i;
 
-#if defined(__VPCLMULQDQ__) && defined(__AVX2__)
-  static constexpr bool wide = true;
-#else
-  static constexpr bool wide = false;
-#endif
+  static constexpr bool wide = isa_detail::includes(Isa, isa::x86_vpclmul);
 
   // One iteration of eight 256-bit accumulators.
-  static constexpr std::size_t wide_minimum_size = wide_folding_minimum_size;
+  static constexpr std::size_t wide_minimum_size = wide_folding_minimum_size<Isa>;
 
   // Byte 0 lowest if reflected, byte-reversed otherwise.
   template <bool Reflected> static vector load(std::span<std::byte const> data) noexcept;
@@ -78,8 +67,7 @@ struct pclmul_kernel {
   // factor x (see make_folding_constants()), hence the one-bit shifts.
   template <bool Reflected> static std::uint64_t reduce(vector accumulator, folding_constants const &constants) noexcept;
 
-#if defined(__VPCLMULQDQ__) && defined(__AVX2__)
-  // Two blocks: byte 0 lowest if reflected, each block byte-reversed otherwise.
+  // Two blocks: byte 0 lowest if reflected, each block byte-reversed otherwise. Only where wide.
   template <bool Reflected> static __m256i load_two(std::span<std::byte const> data) noexcept;
 
   // fold() of two blocks with the constants of each lane.
@@ -94,22 +82,19 @@ struct pclmul_kernel {
   // fold_wide_blocks(), its 8 blocks folded onto the last one in parallel, then fold_tail_with() on the last 0..63 bytes.
   template <bool Reflected>
   static vector fold_wide(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
-#endif
 };
-#endif
 
-#if defined(__SSE4_2__)
-template <>
-[[gnu::always_inline]] inline std::uint32_t crc32_word<crc32c_reflected_polynomial>(std::uint32_t remainder, std::uint64_t word) noexcept {
+template <isa Isa, std::uint32_t Polynomial>
+[[gnu::always_inline]] inline std::uint32_t crc32_word(std::uint32_t remainder, std::uint64_t word) noexcept {
+  static_assert(crc32_instructions_available<Isa, Polynomial>);
   return static_cast<std::uint32_t>(_mm_crc32_u64(remainder, word));
 }
 
-template <>
-[[gnu::always_inline]] inline std::uint32_t crc32_instructions<crc32c_reflected_polynomial>(std::uint32_t remainder,
-                                                                                            std::span<std::byte const> data) noexcept {
+template <isa Isa, std::uint32_t Polynomial>
+[[gnu::always_inline]] inline std::uint32_t crc32_instructions(std::uint32_t remainder, std::span<std::byte const> data) noexcept {
   constexpr std::size_t word = 8;
   auto const update_word = [&](std::span<std::byte const> bytes) {
-    remainder = crc32_word<crc32c_reflected_polynomial>(remainder, load_little_endian<word>(bytes));
+    remainder = crc32_word<Isa, Polynomial>(remainder, load_little_endian<word>(bytes));
   };
   // Four words per iteration, then 2 and 1: inputs below 32 bytes run no loop.
   while(data.size() >= 4 * word) {
@@ -142,10 +127,10 @@ template <>
   }
   return remainder;
 }
-#endif
 
-#if defined(__PCLMUL__) && defined(__SSE4_1__)
-template <bool Reflected> [[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::load(std::span<std::byte const> data) noexcept {
+template <isa Isa>
+template <bool Reflected>
+[[gnu::always_inline]] inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::load(std::span<std::byte const> data) noexcept {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector load, the intrinsic's interface.
   vector const block = _mm_loadu_si128(reinterpret_cast<vector const *>(data.data()));
   if constexpr(Reflected) {
@@ -155,27 +140,33 @@ template <bool Reflected> [[gnu::always_inline]] inline pclmul_kernel::vector pc
   }
 }
 
-[[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::pair(folding_pair const &constants) noexcept {
+template <isa Isa> [[gnu::always_inline]] inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::pair(folding_pair const &constants) noexcept {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): aligned vector load of a constant pair.
   return _mm_load_si128(reinterpret_cast<vector const *>(constants.data()));
 }
 
-template <bool Reflected> [[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::state(std::uint64_t remainder) noexcept {
+template <isa Isa>
+template <bool Reflected>
+[[gnu::always_inline]] inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::state(std::uint64_t remainder) noexcept {
   return Reflected ? _mm_cvtsi64_si128(static_cast<long long>(remainder)) : _mm_set_epi64x(static_cast<long long>(remainder), 0);
 }
 
+template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::first_block(std::span<std::byte const> data, std::uint64_t remainder) noexcept {
+[[gnu::always_inline]] inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::first_block(std::span<std::byte const> data,
+                                                                                         std::uint64_t remainder) noexcept {
   return _mm_xor_si128(load<Reflected>(data), state<Reflected>(remainder));
 }
 
-[[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::fold(vector accumulator, vector constants, vector next) noexcept {
+template <isa Isa>
+[[gnu::always_inline]] inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::fold(vector accumulator, vector constants, vector next) noexcept {
   return _mm_xor_si128(_mm_xor_si128(_mm_clmulepi64_si128(accumulator, constants, 0x00), _mm_clmulepi64_si128(accumulator, constants, 0x11)), next);
 }
 
+template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::partial(vector accumulator, vector by_one, std::span<std::byte const> last,
-                                                                           std::size_t size) noexcept {
+[[gnu::always_inline]] inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::partial(vector accumulator, vector by_one,
+                                                                                     std::span<std::byte const> last, std::size_t size) noexcept {
   vector const reverse = _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
   vector const message = Reflected ? accumulator : _mm_shuffle_epi8(accumulator, reverse);
   // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector loads, the intrinsic's interface.
@@ -192,16 +183,18 @@ template <bool Reflected>
   }
 }
 
-[[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::multiply(std::uint64_t first, std::uint64_t second) noexcept {
+template <isa Isa>
+[[gnu::always_inline]] inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::multiply(std::uint64_t first, std::uint64_t second) noexcept {
   return _mm_clmulepi64_si128(_mm_cvtsi64_si128(static_cast<long long>(first)), _mm_cvtsi64_si128(static_cast<long long>(second)), 0x00);
 }
 
-template <int Lane> [[gnu::always_inline]] inline std::uint64_t pclmul_kernel::lane(vector value) noexcept {
+template <isa Isa> template <int Lane> [[gnu::always_inline]] inline std::uint64_t pclmul_kernel<Isa>::lane(vector value) noexcept {
   return static_cast<std::uint64_t>(_mm_extract_epi64(value, Lane));
 }
 
+template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline std::uint64_t pclmul_kernel::reduce(vector accumulator, folding_constants const &constants) noexcept {
+[[gnu::always_inline]] inline std::uint64_t pclmul_kernel<Isa>::reduce(vector accumulator, folding_constants const &constants) noexcept {
   // Stays in vector registers: each move between them and general registers costs about 3 cycles of latency.
   vector const by_one = pair(constants.by_one);
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): aligned load of the quotient and the polynomial.
@@ -222,8 +215,9 @@ template <bool Reflected>
   }
 }
 
-#if defined(__VPCLMULQDQ__) && defined(__AVX2__)
-template <bool Reflected> [[gnu::always_inline]] inline __m256i pclmul_kernel::load_two(std::span<std::byte const> data) noexcept {
+template <isa Isa>
+template <bool Reflected>
+[[gnu::always_inline]] inline __m256i pclmul_kernel<Isa>::load_two(std::span<std::byte const> data) noexcept {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector load, the intrinsic's interface.
   __m256i const blocks = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(data.data()));
   if constexpr(Reflected) {
@@ -234,17 +228,19 @@ template <bool Reflected> [[gnu::always_inline]] inline __m256i pclmul_kernel::l
   }
 }
 
-[[gnu::always_inline]] inline __m256i pclmul_kernel::fold_two(__m256i accumulators, __m256i constants, __m256i next) noexcept {
+template <isa Isa>
+[[gnu::always_inline]] inline __m256i pclmul_kernel<Isa>::fold_two(__m256i accumulators, __m256i constants, __m256i next) noexcept {
   return _mm256_xor_si256(
       _mm256_xor_si256(_mm256_clmulepi64_epi128(accumulators, constants, 0x00), _mm256_clmulepi64_epi128(accumulators, constants, 0x11)), next);
 }
 
 // Inlined only into the non-inlined long-input callers (fold_long_message(), fold_long_crc32()): a second call cost
 // 8-15 % at 256 bytes.
+template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline std::array<__m256i, 4> pclmul_kernel::fold_wide_blocks(folding_constants const &constants, std::uint64_t remainder,
-                                                                                     std::span<std::byte const> data,
-                                                                                     std::size_t &consumed) noexcept {
+[[gnu::always_inline]] inline std::array<__m256i, 4> pclmul_kernel<Isa>::fold_wide_blocks(folding_constants const &constants, std::uint64_t remainder,
+                                                                                          std::span<std::byte const> data,
+                                                                                          std::size_t &consumed) noexcept {
   constexpr std::size_t half = 32;   // bytes per 256-bit accumulator
   constexpr std::size_t eight = 256; // bytes per iteration of eight accumulators
   constexpr std::size_t four = 128;  // bytes per iteration of four
@@ -283,9 +279,10 @@ template <bool Reflected>
   return pairs;
 }
 
+template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline pclmul_kernel::vector pclmul_kernel::fold_wide(folding_constants const &constants, std::uint64_t remainder,
-                                                                             std::span<std::byte const> data) noexcept {
+[[gnu::always_inline]] inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::fold_wide(folding_constants const &constants, std::uint64_t remainder,
+                                                                                       std::span<std::byte const> data) noexcept {
   std::size_t consumed = 0;
   std::array<__m256i, 4> const pairs = fold_wide_blocks<Reflected>(constants, remainder, data, consumed);
   // Blocks 0..5 fold onto block 7 with the constants of their own distances, in parallel; block 6 folds over one.
@@ -303,45 +300,43 @@ template <bool Reflected>
   }
   return accumulator;
 }
-#endif
 
-template <bool Reflected>
+template <isa Isa, bool Reflected>
 [[gnu::always_inline]] inline std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder,
                                                         std::span<std::byte const> data) noexcept {
-  return pclmul_kernel::reduce<Reflected>(fold_blocks_with<Reflected, pclmul_kernel>(constants, remainder, data), constants);
+  return pclmul_kernel<Isa>::template reduce<Reflected>(fold_blocks_with<Reflected, pclmul_kernel<Isa>>(constants, remainder, data), constants);
 }
 
-#if defined(__SSE4_2__)
-template <>
-[[gnu::always_inline]] inline std::uint32_t fold_crc32<crc32c_reflected_polynomial>(folding_constants const &constants, std::uint32_t remainder,
-                                                                                    std::span<std::byte const> data) noexcept {
-#if defined(__VPCLMULQDQ__) && defined(__AVX2__)
-  if(data.size() >= wide_folding_minimum_size) {
-    // Blocks 0..5 fold onto blocks 6 and 7 in parallel; crc32 instructions take the 32 bytes and the last 0..63 bytes,
-    // two carry-less multiplications fewer than folding onto one block.
-    std::size_t consumed = 0;
-    std::array<__m256i, 4> const pairs = pclmul_kernel::fold_wide_blocks<true>(constants, remainder, data, consumed);
-    auto const both = [&](folding_pair const &distance) { return _mm256_broadcastsi128_si256(pclmul_kernel::pair(distance)); };
-    __m256i const last_two = pclmul_kernel::fold_two(
-        pairs[0], both(constants.by_six),
-        pclmul_kernel::fold_two(pairs[1], both(constants.by_four), pclmul_kernel::fold_two(pairs[2], both(constants.by_two), pairs[3])));
-    __m128i const low = _mm256_castsi256_si128(last_two);
-    __m128i const high = _mm256_extracti128_si256(last_two, 1);
-    std::uint32_t crc = crc32_word<crc32c_reflected_polynomial>(0, pclmul_kernel::lane<0>(low));
-    crc = crc32_word<crc32c_reflected_polynomial>(crc, pclmul_kernel::lane<1>(low));
-    crc = crc32_word<crc32c_reflected_polynomial>(crc, pclmul_kernel::lane<0>(high));
-    crc = crc32_word<crc32c_reflected_polynomial>(crc, pclmul_kernel::lane<1>(high));
-    if(consumed != data.size()) [[unlikely]] {
-      crc = crc32_instructions<crc32c_reflected_polynomial>(crc, data.subspan(consumed));
+template <isa Isa, std::uint32_t Polynomial>
+[[gnu::always_inline]] inline std::uint32_t fold_crc32(folding_constants const &constants, std::uint32_t remainder,
+                                                       std::span<std::byte const> data) noexcept {
+  using kernel = pclmul_kernel<Isa>;
+  if constexpr(kernel::wide) {
+    if(data.size() >= wide_folding_minimum_size<Isa>) {
+      // Blocks 0..5 fold onto blocks 6 and 7 in parallel; crc32 instructions take the 32 bytes and the last 0..63 bytes,
+      // two carry-less multiplications fewer than folding onto one block.
+      std::size_t consumed = 0;
+      std::array<__m256i, 4> const pairs = kernel::template fold_wide_blocks<true>(constants, remainder, data, consumed);
+      auto const both = [&](folding_pair const &distance) { return _mm256_broadcastsi128_si256(kernel::pair(distance)); };
+      __m256i const last_two =
+          kernel::fold_two(pairs[0], both(constants.by_six),
+                           kernel::fold_two(pairs[1], both(constants.by_four), kernel::fold_two(pairs[2], both(constants.by_two), pairs[3])));
+      __m128i const low = _mm256_castsi256_si128(last_two);
+      __m128i const high = _mm256_extracti128_si256(last_two, 1);
+      std::uint32_t crc = crc32_word<Isa, Polynomial>(0, kernel::template lane<0>(low));
+      crc = crc32_word<Isa, Polynomial>(crc, kernel::template lane<1>(low));
+      crc = crc32_word<Isa, Polynomial>(crc, kernel::template lane<0>(high));
+      crc = crc32_word<Isa, Polynomial>(crc, kernel::template lane<1>(high));
+      if(consumed != data.size()) [[unlikely]] {
+        crc = crc32_instructions<Isa, Polynomial>(crc, data.subspan(consumed));
+      }
+      return crc;
     }
-    return crc;
   }
-#endif
-  return fold_crc32_with<crc32c_reflected_polynomial, pclmul_kernel>(constants, remainder, data);
+  return fold_crc32_with<Isa, Polynomial, kernel>(constants, remainder, data);
 }
-#endif
-#endif
 
+} // namespace
 } // namespace checksum::crc_detail
 
 #endif // CHECKSUM_PRIVATE_X86_64_CRC_HPP

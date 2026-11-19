@@ -20,10 +20,34 @@ target_sources(
           adler32/sum_loop_x86_pclmul.cpp
           adler32/sum_loop_x86_vpclmul.cpp
           crc/lut_braided.cpp
+          crc/lut_braided_aarch64_crc.cpp
+          crc/lut_braided_aarch64_pmull.cpp
+          crc/lut_braided_riscv_v.cpp
+          crc/lut_braided_riscv_zbc.cpp
+          crc/lut_braided_thumb2.cpp
+          crc/lut_braided_thumb2_crc.cpp
+          crc/lut_braided_thumb2_dsp.cpp
+          crc/lut_braided_thumb2_neon.cpp
+          crc/lut_braided_x86_avx2.cpp
+          crc/lut_braided_x86_avxvnni.cpp
+          crc/lut_braided_x86_pclmul.cpp
+          crc/lut_braided_x86_vpclmul.cpp
           crc/lut_byte.cpp
           crc/lut_nibble.cpp
           crc/lut_none.cpp
           crc/lut_sliced.cpp
+          crc/lut_sliced_aarch64_crc.cpp
+          crc/lut_sliced_aarch64_pmull.cpp
+          crc/lut_sliced_riscv_v.cpp
+          crc/lut_sliced_riscv_zbc.cpp
+          crc/lut_sliced_thumb2.cpp
+          crc/lut_sliced_thumb2_crc.cpp
+          crc/lut_sliced_thumb2_dsp.cpp
+          crc/lut_sliced_thumb2_neon.cpp
+          crc/lut_sliced_x86_avx2.cpp
+          crc/lut_sliced_x86_avxvnni.cpp
+          crc/lut_sliced_x86_pclmul.cpp
+          crc/lut_sliced_x86_vpclmul.cpp
           fletcher/sum_loop.cpp
           fletcher/sum_loop_aarch64_crc.cpp
           fletcher/sum_loop_aarch64_pmull.cpp
@@ -123,6 +147,3 @@ target_sources(
 )
 
 target_sources(checksum PRIVATE FILE_SET private_headers TYPE HEADERS BASE_DIRS include_private)
-if (NOT CHECKSUM_ACCELERATION)
-  target_compile_definitions(checksum PRIVATE CHECKSUM_ACCELERATION=0)
-endif ()

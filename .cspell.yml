@@ -30,6 +30,7 @@ ignoreRegExpList:
  - /-D[A-Z]+/g # ignore compiler define flags
 
 words:
+- ACLE
 - adccp
 - adcs
 - addc
@@ -206,6 +207,7 @@ words:
 - umts
 - undefines
 - usada
+- usebackq
 - uxtah
 - uxtb
 - vaddq
@@ -243,6 +245,7 @@ words:
 - vsetvlmax
 - vshrq
 - vsrl
+- vswhere
 - vuint
 - vuzpq
 - vwaddu
