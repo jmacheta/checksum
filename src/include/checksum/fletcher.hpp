@@ -42,11 +42,8 @@ struct fletcher_state {
 /// Fletcher-Width with the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp). Empty: make one wherever
 /// it is needed.
 template <unsigned Width, isa Isa = isa::generic>
-  requires(Width == 16 || Width == 32 || Width == 64)
+  requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 class fletcher_engine {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-
 public:
   using state_type = fletcher_state<Width>; ///< Running checksum.
   /// The checksum: std::uint16_t, std::uint32_t or std::uint64_t.
@@ -177,19 +174,19 @@ template <unsigned Width> constexpr fletcher_state<Width> update_bytes(fletcher_
 namespace checksum {
 
 template <unsigned Width, isa Isa>
-  requires(Width == 16 || Width == 32 || Width == 64)
+  requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr isa fletcher_engine<Width, Isa>::preset() noexcept {
   return Isa;
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 16 || Width == 32 || Width == 64)
+  requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::initial() const noexcept {
   return {};
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 16 || Width == 32 || Width == 64)
+  requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_state<Width> state, std::span<std::byte const> data) const noexcept {
   if consteval {
     return fletcher_detail::update_bytes(state, data);
@@ -199,7 +196,7 @@ constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_sta
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 16 || Width == 32 || Width == 64)
+  requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 template <byte_range Range>
 constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_state<Width> state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
@@ -207,7 +204,7 @@ constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_sta
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 16 || Width == 32 || Width == 64)
+  requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr fletcher_engine<Width, Isa>::value_type fletcher_engine<Width, Isa>::finalize(fletcher_state<Width> const &state) const noexcept {
   fletcher_detail::integer<Width> const sum1 = fletcher_detail::reduce_once<Width>(state.sum1);
   fletcher_detail::integer<Width> sum2 = fletcher_detail::reduce_once<Width>(state.sum2);
@@ -219,20 +216,20 @@ constexpr fletcher_engine<Width, Isa>::value_type fletcher_engine<Width, Isa>::f
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 16 || Width == 32 || Width == 64)
+  requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::resume(value_type checksum) const noexcept {
   using sum_type = fletcher_state<Width>::sum_type;
   return {.sum1 = static_cast<sum_type>(checksum), .sum2 = static_cast<sum_type>(checksum >> (Width / 2))};
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 16 || Width == 32 || Width == 64)
+  requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr fletcher_engine<Width, Isa>::value_type fletcher_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
   return finalize(update(initial(), data));
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 16 || Width == 32 || Width == 64)
+  requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 template <byte_range Range>
 constexpr fletcher_engine<Width, Isa>::value_type fletcher_engine<Width, Isa>::compute(Range &&data) const noexcept {
   return finalize(update(initial(), std::forward<Range>(data)));

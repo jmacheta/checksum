@@ -1,9 +1,10 @@
 # cspell:words TOUPPER
 # Each source compiles as is (control target) and must fail with CHECKSUM_EXPECT_COMPILE_ERROR. Entries are "<source>@<regex the build
-# output must match>"; a rejected parameter set shows as std::bad_optional_access, a failed assert as the C library's assert handler. The
-# sources of every_algorithm_tests build once per algorithm, with CHECKSUM_TEST_<ALGORITHM> choosing the engine of test_engine.hpp.
+# output must match>"; a rejected parameter set shows as std::bad_optional_access, a failed assert as the C library's assert handler, an
+# unavailable preset as the engine's requires-clause (MSVC names no expression). The sources of every_algorithm_tests build once per
+# algorithm, with CHECKSUM_TEST_<ALGORITHM> choosing the engine of test_engine.hpp.
 set(every_algorithm_tests "accumulator_from_temporary@deleted (function|constructor)" "string_literal_update@byte_range"
-                          "unavailable_preset@isa_available\\(\\) rejects it"
+                          "unavailable_preset@(isa_available|associated constraints are not satisfied)"
 )
 set(crc_tests "engine_rejected_parameters@bad_optional_access" "invalid_parameters@bad_optional_access"
               "precondition_in_constant_evaluation@(__assert_fail|_wassert)"

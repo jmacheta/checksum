@@ -46,11 +46,8 @@ struct murmur3_state {
 /// MurmurHash3_x86_32 (Width 32) or MurmurHash3_x64_128 (Width 128) with a seed and the run-time loop compiled for the instruction-set
 /// preset Isa (checksum/isa.hpp).
 template <unsigned Width, isa Isa = isa::generic>
-  requires(Width == 32 || Width == 128)
+  requires(Width == 32 || Width == 128) && (isa_available(Isa))
 class murmur3_engine {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-
 public:
   using state_type = murmur3_state<Width>; ///< Running hash.
   /// The hash: std::uint32_t, or hash128 with low = h1 and high = h2, the 128-bit number the reference implementation stores little-endian.
@@ -276,23 +273,23 @@ template <unsigned Width> constexpr value<Width> finish(lane_array<Width> lanes,
 namespace checksum {
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 128)
+  requires(Width == 32 || Width == 128) && (isa_available(Isa))
 constexpr murmur3_engine<Width, Isa>::murmur3_engine(std::uint32_t seed) noexcept : hash_seed(seed) {}
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 128)
+  requires(Width == 32 || Width == 128) && (isa_available(Isa))
 constexpr isa murmur3_engine<Width, Isa>::preset() noexcept {
   return Isa;
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 128)
+  requires(Width == 32 || Width == 128) && (isa_available(Isa))
 constexpr murmur3_state<Width> murmur3_engine<Width, Isa>::initial() const noexcept {
   return {};
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 128)
+  requires(Width == 32 || Width == 128) && (isa_available(Isa))
 constexpr murmur3_state<Width> murmur3_engine<Width, Isa>::update(murmur3_state<Width> state, std::span<std::byte const> data) const noexcept {
   constexpr std::size_t block_size = murmur3_detail::block_size<Width>;
   auto const buffered = static_cast<std::size_t>(state.length % block_size);
@@ -318,7 +315,7 @@ constexpr murmur3_state<Width> murmur3_engine<Width, Isa>::update(murmur3_state<
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 128)
+  requires(Width == 32 || Width == 128) && (isa_available(Isa))
 template <byte_range Range>
 constexpr murmur3_state<Width> murmur3_engine<Width, Isa>::update(murmur3_state<Width> state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
@@ -326,7 +323,7 @@ constexpr murmur3_state<Width> murmur3_engine<Width, Isa>::update(murmur3_state<
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 128)
+  requires(Width == 32 || Width == 128) && (isa_available(Isa))
 constexpr murmur3_engine<Width, Isa>::value_type murmur3_engine<Width, Isa>::finalize(murmur3_state<Width> const &state) const noexcept {
   constexpr std::size_t block_size = murmur3_detail::block_size<Width>;
   auto const buffered = static_cast<std::size_t>(state.length % block_size);
@@ -335,7 +332,7 @@ constexpr murmur3_engine<Width, Isa>::value_type murmur3_engine<Width, Isa>::fin
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 128)
+  requires(Width == 32 || Width == 128) && (isa_available(Isa))
 constexpr murmur3_engine<Width, Isa>::value_type murmur3_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
   std::size_t const whole = data.size() - (data.size() % murmur3_detail::block_size<Width>);
   if constexpr(Width == 32) {
@@ -353,7 +350,7 @@ constexpr murmur3_engine<Width, Isa>::value_type murmur3_engine<Width, Isa>::com
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 128)
+  requires(Width == 32 || Width == 128) && (isa_available(Isa))
 template <byte_range Range>
 constexpr murmur3_engine<Width, Isa>::value_type murmur3_engine<Width, Isa>::compute(Range &&data) const noexcept {
   // Contiguous ranges skip the buffer of the state.

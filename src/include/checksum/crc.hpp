@@ -102,10 +102,9 @@ template <crc_register Register, crc_strategy_for<Register> Strategy> class crc_
 /// An immutable CRC engine: the strategy's table and the prepared parameters; the running CRC is a separate state_type value, so one engine
 /// serves any number of computations. Isa selects the run-time loop of the built-in strategies, the variant compiled for that
 /// instruction-set preset (checksum/isa.hpp); other strategies ignore it.
-template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_none, isa Isa = isa::generic> class crc_engine {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-
+template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_none, isa Isa = isa::generic>
+  requires(isa_available(Isa))
+class crc_engine {
 public:
   using state_type = Register; ///< Running CRC, below 2^width.
   using value_type = Register; ///< The CRC, below 2^width.
@@ -717,6 +716,7 @@ template <class Strategy, class Register> consteval bool crc_detail::takes_prese
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr crc_engine<Register, Strategy, Isa>::crc_engine(crc_parameters const &parameters,
                                                           typename Strategy::template table_type<Register> const &strategy_table) noexcept
     : table(strategy_table), form(crc_detail::make_register_form<Register>(parameters)),
@@ -726,6 +726,7 @@ constexpr crc_engine<Register, Strategy, Isa>::crc_engine(crc_parameters const &
       width(static_cast<std::uint8_t>(parameters.polynomial.width())), reflect_result(form.reflected != parameters.reflect_output) {}
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr typename crc_engine<Register, Strategy, Isa>::state_type
 crc_engine<Register, Strategy, Isa>::checked_state(state_type state) const noexcept {
   assert(state <= mask);
@@ -733,6 +734,7 @@ crc_engine<Register, Strategy, Isa>::checked_state(state_type state) const noexc
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr std::optional<crc_engine<Register, Strategy, Isa>> crc_engine<Register, Strategy, Isa>::create(crc_parameters const &parameters) noexcept {
   if(!crc_detail::fits_register<Register>(parameters)) {
     return std::nullopt;
@@ -748,22 +750,27 @@ constexpr std::optional<crc_engine<Register, Strategy, Isa>> crc_engine<Register
   return crc_engine(parameters, *table);
 }
 
-template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa> constexpr isa crc_engine<Register, Strategy, Isa>::preset() noexcept {
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr isa crc_engine<Register, Strategy, Isa>::preset() noexcept {
   return Isa;
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr typename crc_engine<Register, Strategy, Isa>::state_type crc_engine<Register, Strategy, Isa>::initial() const noexcept {
   return initial_state;
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr typename crc_engine<Register, Strategy, Isa>::state_type
 crc_engine<Register, Strategy, Isa>::update(state_type state, std::span<std::byte const> data) const noexcept {
   return crc_detail::strategy_update<Strategy, Isa>(table, checked_state(state), data);
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 template <byte_range Range>
 constexpr typename crc_engine<Register, Strategy, Isa>::state_type crc_engine<Register, Strategy, Isa>::update(state_type state,
                                                                                                                Range &&data) const noexcept {
@@ -774,6 +781,7 @@ constexpr typename crc_engine<Register, Strategy, Isa>::state_type crc_engine<Re
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr typename crc_engine<Register, Strategy, Isa>::state_type
 crc_engine<Register, Strategy, Isa>::update(state_type state, std::span<std::byte const> data, std::size_t bit_length) const noexcept {
   std::size_t bytes = bit_length / 8;
@@ -789,6 +797,7 @@ crc_engine<Register, Strategy, Isa>::update(state_type state, std::span<std::byt
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr typename crc_engine<Register, Strategy, Isa>::value_type
 crc_engine<Register, Strategy, Isa>::finalize(state_type const &state) const noexcept {
   Register const checked = checked_state(state);
@@ -796,24 +805,28 @@ crc_engine<Register, Strategy, Isa>::finalize(state_type const &state) const noe
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr typename crc_engine<Register, Strategy, Isa>::state_type crc_engine<Register, Strategy, Isa>::resume(value_type checksum) const noexcept {
   auto const state = static_cast<Register>(checked_state(checksum) ^ final_xor);
   return reflect_result ? static_cast<Register>(crc_detail::reflect(state, width)) : state;
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr typename crc_engine<Register, Strategy, Isa>::value_type
 crc_engine<Register, Strategy, Isa>::compute(std::span<std::byte const> data) const noexcept {
   return finalize(update(initial(), data));
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 template <byte_range Range>
 constexpr typename crc_engine<Register, Strategy, Isa>::value_type crc_engine<Register, Strategy, Isa>::compute(Range &&data) const noexcept {
   return finalize(update(initial(), std::forward<Range>(data)));
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 constexpr typename crc_engine<Register, Strategy, Isa>::value_type
 crc_engine<Register, Strategy, Isa>::compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept {
   return finalize(update(initial(), data, bit_length));

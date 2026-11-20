@@ -1,4 +1,4 @@
-// Naming an instruction-set preset this build lacks is a static_assert of the engine, not a link error.
+// Naming an instruction-set preset this build lacks fails the engine's requires-clause, not a link.
 #include "test_engine.hpp"
 
 #include <checksum/isa.hpp>

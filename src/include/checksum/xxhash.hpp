@@ -44,11 +44,8 @@ struct xxhash_state {
 
 /// XXH32 (Width 32) or XXH64 (Width 64) with a seed and the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp).
 template <unsigned Width, isa Isa = isa::generic>
-  requires(Width == 32 || Width == 64)
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
 class xxhash_engine {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-
 public:
   using state_type = xxhash_state<Width>;                                           ///< Running hash.
   using value_type = std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>; ///< The hash and the seed.
@@ -269,23 +266,23 @@ constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint6
 namespace checksum {
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 64)
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr xxhash_engine<Width, Isa>::xxhash_engine(value_type seed) noexcept : hash_seed(seed) {}
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 64)
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr isa xxhash_engine<Width, Isa>::preset() noexcept {
   return Isa;
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 64)
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::initial() const noexcept {
   return {};
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 64)
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::update(xxhash_state<Width> state, std::span<std::byte const> data) const noexcept {
   constexpr std::size_t stripe_size = xxhash_detail::stripe_size<Width>;
   auto const buffered = static_cast<std::size_t>(state.length % stripe_size);
@@ -311,7 +308,7 @@ constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::update(xxhash_state<Wid
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 64)
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
 template <byte_range Range>
 constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::update(xxhash_state<Width> state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
@@ -319,7 +316,7 @@ constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::update(xxhash_state<Wid
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 64)
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::finalize(xxhash_state<Width> const &state) const noexcept {
   auto const buffered = static_cast<std::size_t>(state.length % xxhash_detail::stripe_size<Width>);
   // Before the first stripe the lanes are unused, and converging them would cost 8 multiplications for nothing.
@@ -328,7 +325,7 @@ constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::final
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 64)
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
   std::size_t const whole = data.size() - (data.size() % xxhash_detail::stripe_size<Width>);
   // On 32-bit targets the four lanes of XXH64 do not fit the registers: as locals they ran 18 % slower on Cortex-M4.
@@ -348,7 +345,7 @@ constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::compu
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 32 || Width == 64)
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
 template <byte_range Range>
 constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::compute(Range &&data) const noexcept {
   // Contiguous ranges skip the buffer of the state.

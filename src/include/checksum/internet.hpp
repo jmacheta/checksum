@@ -34,10 +34,9 @@ struct internet_state {
 
 /// The Internet checksum with the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp). Empty: make one
 /// wherever it is needed.
-template <isa Isa = isa::generic> class internet_engine {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-
+template <isa Isa = isa::generic>
+  requires(isa_available(Isa))
+class internet_engine {
 public:
   using state_type = internet_state; ///< Running checksum.
   using value_type = std::uint16_t;  ///< The checksum.
@@ -135,11 +134,21 @@ constexpr internet_state combine(internet_state state, std::uint16_t sum, std::s
 
 namespace checksum {
 
-template <isa Isa> constexpr isa internet_engine<Isa>::preset() noexcept { return Isa; }
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr isa internet_engine<Isa>::preset() noexcept {
+  return Isa;
+}
 
-template <isa Isa> constexpr internet_state internet_engine<Isa>::initial() const noexcept { return {}; }
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr internet_state internet_engine<Isa>::initial() const noexcept {
+  return {};
+}
 
-template <isa Isa> constexpr internet_state internet_engine<Isa>::update(internet_state state, std::span<std::byte const> data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr internet_state internet_engine<Isa>::update(internet_state state, std::span<std::byte const> data) const noexcept {
   if consteval {
     return internet_detail::combine(state, internet_detail::sum_bytes(data), data.size());
   } else {
@@ -148,25 +157,35 @@ template <isa Isa> constexpr internet_state internet_engine<Isa>::update(interne
 }
 
 template <isa Isa>
+  requires(isa_available(Isa))
 template <byte_range Range>
 constexpr internet_state internet_engine<Isa>::update(internet_state state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-template <isa Isa> constexpr std::uint16_t internet_engine<Isa>::finalize(internet_state const &state) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr std::uint16_t internet_engine<Isa>::finalize(internet_state const &state) const noexcept {
   return static_cast<std::uint16_t>(~state.sum);
 }
 
-template <isa Isa> constexpr internet_state internet_engine<Isa>::resume(std::uint16_t checksum) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr internet_state internet_engine<Isa>::resume(std::uint16_t checksum) const noexcept {
   return {.sum = static_cast<std::uint16_t>(~checksum)};
 }
 
-template <isa Isa> constexpr std::uint16_t internet_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr std::uint16_t internet_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
   return finalize(update(initial(), data));
 }
 
-template <isa Isa> template <byte_range Range> constexpr std::uint16_t internet_engine<Isa>::compute(Range &&data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr std::uint16_t internet_engine<Isa>::compute(Range &&data) const noexcept {
   return finalize(update(initial(), std::forward<Range>(data)));
 }
 

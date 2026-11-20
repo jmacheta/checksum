@@ -36,10 +36,9 @@ template <checksum::isa Isa> using test_engine = checksum::xxhash_engine<64, Isa
 #error "define CHECKSUM_TEST_<ALGORITHM>"
 #endif
 
-// A test_engine of preset Isa: CRC-32C for CRC, a default-constructed engine otherwise.
-template <checksum::isa Isa> constexpr test_engine<Isa> make_engine();
-
-template <checksum::isa Isa> constexpr test_engine<Isa> make_engine() {
+// A test_engine of preset Isa: CRC-32C for CRC, a default-constructed engine otherwise. The deduced return type keeps an unavailable
+// preset a constraint failure of the engine rather than a candidate removed from overload resolution.
+template <checksum::isa Isa> constexpr auto make_engine() {
 #if defined(CHECKSUM_TEST_CRC)
   return *test_engine<Isa>::create(checksum::crc32c);
 #else

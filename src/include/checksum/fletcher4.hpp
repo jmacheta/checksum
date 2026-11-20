@@ -44,10 +44,9 @@ struct fletcher4_state {
 
 /// fletcher4 with the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp). Empty: make one wherever it
 /// is needed.
-template <isa Isa = isa::generic> class fletcher4_engine {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-
+template <isa Isa = isa::generic>
+  requires(isa_available(Isa))
+class fletcher4_engine {
 public:
   using state_type = fletcher4_state; ///< Running checksum.
   using value_type = fletcher4_value; ///< The checksum.
@@ -158,11 +157,21 @@ constexpr fletcher4_state update_bytes(fletcher4_state state, std::span<std::byt
 
 namespace checksum {
 
-template <isa Isa> constexpr isa fletcher4_engine<Isa>::preset() noexcept { return Isa; }
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr isa fletcher4_engine<Isa>::preset() noexcept {
+  return Isa;
+}
 
-template <isa Isa> constexpr fletcher4_state fletcher4_engine<Isa>::initial() const noexcept { return {}; }
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_state fletcher4_engine<Isa>::initial() const noexcept {
+  return {};
+}
 
-template <isa Isa> constexpr fletcher4_state fletcher4_engine<Isa>::update(fletcher4_state state, std::span<std::byte const> data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_state fletcher4_engine<Isa>::update(fletcher4_state state, std::span<std::byte const> data) const noexcept {
   if consteval {
     return fletcher4_detail::update_bytes(state, data);
   } else {
@@ -178,21 +187,28 @@ template <isa Isa> constexpr fletcher4_state fletcher4_engine<Isa>::update(fletc
 }
 
 template <isa Isa>
+  requires(isa_available(Isa))
 template <byte_range Range>
 constexpr fletcher4_state fletcher4_engine<Isa>::update(fletcher4_state state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-template <isa Isa> constexpr fletcher4_value fletcher4_engine<Isa>::finalize(fletcher4_state const &state) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_value fletcher4_engine<Isa>::finalize(fletcher4_state const &state) const noexcept {
   return fletcher4_detail::finish(state);
 }
 
-template <isa Isa> constexpr fletcher4_state fletcher4_engine<Isa>::resume(fletcher4_value checksum) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_state fletcher4_engine<Isa>::resume(fletcher4_value checksum) const noexcept {
   return {.sum1 = checksum[0], .sum2 = checksum[1], .sum3 = checksum[2], .sum4 = checksum[3]};
 }
 
-template <isa Isa> constexpr fletcher4_value fletcher4_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_value fletcher4_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
   if consteval {
     return finalize(update(initial(), data));
   } else {
@@ -200,7 +216,10 @@ template <isa Isa> constexpr fletcher4_value fletcher4_engine<Isa>::compute(std:
   }
 }
 
-template <isa Isa> template <byte_range Range> constexpr fletcher4_value fletcher4_engine<Isa>::compute(Range &&data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr fletcher4_value fletcher4_engine<Isa>::compute(Range &&data) const noexcept {
   // Contiguous ranges take compute_loop() too.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {

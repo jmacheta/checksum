@@ -126,7 +126,7 @@ supported yet: AVX-512, Arm Helium (MVE) and SVE2.
 - **A preset is a compile-time choice and a promise.** `internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2
   kernel; on a CPU without AVX2 that is undefined behavior (an illegal instruction). Compiler flags such as
   `-march=native` select no kernel, every preset gives the same result, and constant evaluation runs the portable code.
-- **What a build has:** `isa_available(preset)` is `constexpr`; naming a preset it rejects is a compile error, also in
+- **What a build has:** `isa_available(preset)` is `constexpr`; naming a preset it rejects fails the engine's `requires`-clause, also in
   an `if constexpr` branch outside a template. Portable code names its preset through a constant:
   `constexpr auto avx2 = isa_available(isa::x86_avx2) ? isa::x86_avx2 : isa::generic;`. On
   32-bit Arm the presets need a Thumb-2 build; `thumb2_dsp` also needs the DSP extension, and `thumb2_neon` and

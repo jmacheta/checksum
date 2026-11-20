@@ -59,11 +59,8 @@ struct xxh3_state {
 /// XXH3-64 (Width 64) or XXH3-128 (Width 128) with a seed, the default secret and the run-time stripe loop compiled for the
 /// instruction-set preset Isa (checksum/isa.hpp).
 template <unsigned Width, isa Isa = isa::generic>
-  requires(Width == 64 || Width == 128)
+  requires(Width == 64 || Width == 128) && (isa_available(Isa))
 class xxh3_engine {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-
 public:
   using state_type = xxh3_state<Width>;                                       ///< Running hash.
   using value_type = std::conditional_t<Width == 64, std::uint64_t, hash128>; ///< The hash.
@@ -610,30 +607,30 @@ template <unsigned Width, isa Isa> constexpr void update(xxh3_state<Width> &stat
 namespace checksum {
 
 template <unsigned Width, isa Isa>
-  requires(Width == 64 || Width == 128)
+  requires(Width == 64 || Width == 128) && (isa_available(Isa))
 constexpr xxh3_engine<Width, Isa>::xxh3_engine(std::uint64_t seed) noexcept : hash_seed(seed) {}
 
 template <unsigned Width, isa Isa>
-  requires(Width == 64 || Width == 128)
+  requires(Width == 64 || Width == 128) && (isa_available(Isa))
 constexpr isa xxh3_engine<Width, Isa>::preset() noexcept {
   return Isa;
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 64 || Width == 128)
+  requires(Width == 64 || Width == 128) && (isa_available(Isa))
 constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::initial() const noexcept {
   return {};
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 64 || Width == 128)
+  requires(Width == 64 || Width == 128) && (isa_available(Isa))
 constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::update(xxh3_state<Width> state, std::span<std::byte const> data) const noexcept {
   xxh3_detail::update<Width, Isa>(state, hash_seed, data);
   return state;
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 64 || Width == 128)
+  requires(Width == 64 || Width == 128) && (isa_available(Isa))
 template <byte_range Range>
 constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::update(xxh3_state<Width> state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data),
@@ -642,7 +639,7 @@ constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::update(xxh3_state<Width> st
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 64 || Width == 128)
+  requires(Width == 64 || Width == 128) && (isa_available(Isa))
 constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::finalize(xxh3_state<Width> const &state) const noexcept {
   using namespace xxh3_detail;
   if(state.length <= midsize_max) {
@@ -667,7 +664,7 @@ constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::finalize(
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 64 || Width == 128)
+  requires(Width == 64 || Width == 128) && (isa_available(Isa))
 constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
   if(data.size() <= xxh3_detail::small_max) {
     return xxh3_detail::hash_small<Width>(data, hash_seed);
@@ -682,7 +679,7 @@ constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::compute(s
 }
 
 template <unsigned Width, isa Isa>
-  requires(Width == 64 || Width == 128)
+  requires(Width == 64 || Width == 128) && (isa_available(Isa))
 template <byte_range Range>
 constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::compute(Range &&data) const noexcept {
   // Contiguous ranges skip the buffer of the state.

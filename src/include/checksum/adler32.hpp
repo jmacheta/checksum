@@ -33,10 +33,9 @@ struct adler32_state {
 
 /// Adler-32 with the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp). Empty: make one wherever it
 /// is needed.
-template <isa Isa = isa::generic> class adler32_engine {
-  static_assert(isa_available(Isa),
-                "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
-
+template <isa Isa = isa::generic>
+  requires(isa_available(Isa))
+class adler32_engine {
 public:
   using state_type = adler32_state; ///< Running checksum.
   using value_type = std::uint32_t; ///< The checksum.
@@ -116,11 +115,21 @@ constexpr adler32_state update_bytes(adler32_state state, std::span<std::byte co
 
 namespace checksum {
 
-template <isa Isa> constexpr isa adler32_engine<Isa>::preset() noexcept { return Isa; }
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr isa adler32_engine<Isa>::preset() noexcept {
+  return Isa;
+}
 
-template <isa Isa> constexpr adler32_state adler32_engine<Isa>::initial() const noexcept { return {}; }
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr adler32_state adler32_engine<Isa>::initial() const noexcept {
+  return {};
+}
 
-template <isa Isa> constexpr adler32_state adler32_engine<Isa>::update(adler32_state state, std::span<std::byte const> data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr adler32_state adler32_engine<Isa>::update(adler32_state state, std::span<std::byte const> data) const noexcept {
   if consteval {
     return adler32_detail::update_bytes(state, data);
   } else {
@@ -128,24 +137,36 @@ template <isa Isa> constexpr adler32_state adler32_engine<Isa>::update(adler32_s
   }
 }
 
-template <isa Isa> template <byte_range Range> constexpr adler32_state adler32_engine<Isa>::update(adler32_state state, Range &&data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr adler32_state adler32_engine<Isa>::update(adler32_state state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-template <isa Isa> constexpr std::uint32_t adler32_engine<Isa>::finalize(adler32_state const &state) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr std::uint32_t adler32_engine<Isa>::finalize(adler32_state const &state) const noexcept {
   return (adler32_detail::reduce_once(state.sum2) << 16U) | adler32_detail::reduce_once(state.sum1);
 }
 
-template <isa Isa> constexpr adler32_state adler32_engine<Isa>::resume(std::uint32_t checksum) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr adler32_state adler32_engine<Isa>::resume(std::uint32_t checksum) const noexcept {
   return {.sum1 = static_cast<std::uint16_t>(checksum), .sum2 = static_cast<std::uint16_t>(checksum >> 16U)};
 }
 
-template <isa Isa> constexpr std::uint32_t adler32_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr std::uint32_t adler32_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
   return finalize(update(initial(), data));
 }
 
-template <isa Isa> template <byte_range Range> constexpr std::uint32_t adler32_engine<Isa>::compute(Range &&data) const noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr std::uint32_t adler32_engine<Isa>::compute(Range &&data) const noexcept {
   return finalize(update(initial(), std::forward<Range>(data)));
 }
 
