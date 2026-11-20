@@ -89,7 +89,6 @@ target_sources(
           internet/sum_loop_x86_vpclmul.cpp
           isa/detect.cpp
           murmur3/block_loop.cpp
-          xxh3/multiply_fold.cpp
           murmur3/block_loop_aarch64_crc.cpp
           murmur3/block_loop_aarch64_pmull.cpp
           murmur3/block_loop_riscv_v.cpp
@@ -102,6 +101,7 @@ target_sources(
           murmur3/block_loop_x86_avxvnni.cpp
           murmur3/block_loop_x86_pclmul.cpp
           murmur3/block_loop_x86_vpclmul.cpp
+          xxh3/multiply_fold.cpp
           xxh3/stripe_loop.cpp
           xxh3/stripe_loop_aarch64_crc.cpp
           xxh3/stripe_loop_aarch64_pmull.cpp

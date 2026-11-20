@@ -57,14 +57,14 @@ consteval bool built_presets_well_formed() {
 static_assert(built_presets_well_formed());
 
 // A preset appended to the enumeration and to built_presets of isa.hpp must also get a name in isa_cpu.hpp.
-TEST(isa_test_support, EveryBuiltPresetHasName) {
+TEST(isa_test_support, every_built_preset_has_name) {
   for(isa preset : checksum::isa_detail::built_presets) {
     EXPECT_FALSE(isa_test::name(preset).empty()) << static_cast<int>(preset);
   }
 }
 
 // CHECKSUM_REQUIRED_ISA names only presets that this build has and the CPU runs; the preset tests fail on the others too.
-TEST(isa_test_support, RequiredPresetsRun) {
+TEST(isa_test_support, required_presets_run) {
   std::optional<isa_set> const required = isa_cpu::required_presets();
   ASSERT_TRUE(required) << "CHECKSUM_REQUIRED_ISA names an unknown preset";
   for(unsigned value = 1; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
@@ -73,6 +73,23 @@ TEST(isa_test_support, RequiredPresetsRun) {
       EXPECT_NE(std::ranges::find(checksum::isa_detail::built_presets, preset), checksum::isa_detail::built_presets.end())
           << "this build lacks " << isa_test::name(preset);
       EXPECT_TRUE(isa_test::cpu_runs(preset)) << "the CPU cannot run " << isa_test::name(preset);
+    }
+  }
+}
+
+TEST(detect_isa, contains_only_built_presets_and_their_lower_rungs) {
+  isa_set const cpu = checksum::detect_isa();
+  EXPECT_TRUE(cpu.contains(isa::generic));
+  for(unsigned value = 0; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
+    auto const preset = static_cast<isa>(value);
+    if(!cpu.contains(preset)) {
+      continue;
+    }
+    EXPECT_TRUE(isa_available(preset)) << isa_test::name(preset);
+    for(unsigned lower = 0; lower < value; ++lower) {
+      if(includes(preset, static_cast<isa>(lower))) {
+        EXPECT_TRUE(cpu.contains(static_cast<isa>(lower))) << isa_test::name(preset) << " without " << isa_test::name(static_cast<isa>(lower));
+      }
     }
   }
 }
@@ -151,7 +168,7 @@ std::optional<isa_set> cpuinfo_presets() {
 
 // detect_isa() reports exactly the built presets that the CPU runs: those that CHECKSUM_EXPECTED_ISA names (for runs in an
 // emulator, whose /proc/cpuinfo may be the host's) or else those of /proc/cpuinfo.
-TEST(detect_isa, MatchesTheCpu) {
+TEST(detect_isa, matches_the_cpu) {
   std::optional<std::string> const names = isa_cpu::environment("CHECKSUM_EXPECTED_ISA");
   std::optional<isa_set> const expected = names ? isa_cpu::named_presets(*names) : cpuinfo_presets();
   ASSERT_TRUE(expected || !names) << "CHECKSUM_EXPECTED_ISA names an unknown preset: " << *names;

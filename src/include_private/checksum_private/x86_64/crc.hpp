@@ -5,6 +5,7 @@
 // VPCLMULQDQ loop from 256 bytes from x86_vpclmul on. isa::generic (SSE2) has none. Included only by crc_arch.hpp.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/target.hpp>
 #include <checksum_private/vector_array.hpp>
 
 #include <immintrin.h>
@@ -19,27 +20,40 @@ namespace checksum::crc_detail {
 // NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/crc/*.cpp.
 namespace {
 
-template <isa Isa> inline constexpr bool folding_available = isa_detail::includes(Isa, isa::x86_pclmul);
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::x86_pclmul))
+struct folding_kernel<Isa> {
+  static constexpr bool available = true;
+  static constexpr std::size_t minimum_size = folding_minimum_size;
+  // One iteration of eight 256-bit accumulators.
+  static constexpr std::size_t wide_minimum_size = isa_detail::includes(Isa, isa::x86_vpclmul) ? 256 : std::numeric_limits<std::size_t>::max();
+  // Inlined into every loop: one shared copy per bit order is up to 31 % (GCC) / 43 % (Clang) slower below 256 B.
+  template <bool Reflected>
+  static std::uint64_t fold(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
+};
 
 // x86 has no instruction for the CRC-32 polynomial, only for CRC-32C.
 template <isa Isa, std::uint32_t Polynomial>
-inline constexpr bool crc32_instructions_available = Polynomial == crc32c_reflected_polynomial && isa_detail::includes(Isa, isa::x86_pclmul);
+  requires(Polynomial == crc32c_reflected_polynomial && isa_detail::includes(Isa, isa::x86_pclmul))
+struct crc32_kernel<Isa, Polynomial> {
+  static constexpr bool available = true;
+  // A crc32 stream is latency bound (3 cycles per instruction, up to three more for the last 1-7 bytes). On an Intel Core
+  // Ultra 7 155H it wins up to 24 bytes; folding is ~30 % faster at 31.
+  static constexpr std::size_t folding_minimum_size = 25;
+  // One CRC32C instruction over 8 message bytes, first byte lowest.
+  static std::uint32_t word(std::uint32_t remainder, std::uint64_t value) noexcept;
+  static std::uint32_t update(std::uint32_t remainder, std::span<std::byte const> data) noexcept;
+  // Folds at least 16 bytes, then reduces the last 128 bits with two CRC32 instructions, shorter than a Barrett reduction.
+  static std::uint32_t fold(folding_constants const &constants, std::uint32_t remainder, std::span<std::byte const> data) noexcept;
+};
 
-// A crc32 stream is latency bound (3 cycles per instruction, up to three more for the last 1-7 bytes). On an Intel Core
-// Ultra 7 155H it wins up to 24 bytes; folding is ~30 % faster at 31.
-inline constexpr std::size_t crc32_folding_minimum_size = 25;
-
-template <isa Isa>
-inline constexpr std::size_t wide_folding_minimum_size = isa_detail::includes(Isa, isa::x86_vpclmul) ? 256 : std::numeric_limits<std::size_t>::max();
-
-// Fold kernel of fold_blocks_with(): 128-bit vectors, low lane first. Only for presets with folding_available<Isa>.
+// Fold kernel of fold_blocks_with(): 128-bit vectors, low lane first.
 template <isa Isa> struct pclmul_kernel {
   using vector = __m128i;
 
   static constexpr bool wide = isa_detail::includes(Isa, isa::x86_vpclmul);
 
-  // One iteration of eight 256-bit accumulators.
-  static constexpr std::size_t wide_minimum_size = wide_folding_minimum_size<Isa>;
+  static constexpr std::size_t wide_minimum_size = folding_kernel<Isa>::wide_minimum_size;
 
   // Byte 0 lowest if reflected, byte-reversed otherwise.
   template <bool Reflected> static vector load(std::span<std::byte const> data) noexcept;
@@ -89,33 +103,32 @@ template <isa Isa> struct pclmul_kernel {
 };
 
 template <isa Isa, std::uint32_t Polynomial>
-CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_word(std::uint32_t remainder, std::uint64_t word) noexcept {
-  static_assert(crc32_instructions_available<Isa, Polynomial>);
-  return static_cast<std::uint32_t>(_mm_crc32_u64(remainder, word));
+  requires(Polynomial == crc32c_reflected_polynomial && isa_detail::includes(Isa, isa::x86_pclmul))
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_kernel<Isa, Polynomial>::word(std::uint32_t remainder, std::uint64_t value) noexcept {
+  return static_cast<std::uint32_t>(_mm_crc32_u64(remainder, value));
 }
 
 template <isa Isa, std::uint32_t Polynomial>
-CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_instructions(std::uint32_t remainder, std::span<std::byte const> data) noexcept {
-  constexpr std::size_t word = 8;
-  auto const update_word = [&](std::span<std::byte const> bytes) {
-    remainder = crc32_word<Isa, Polynomial>(remainder, load_little_endian<word>(bytes));
-  };
+  requires(Polynomial == crc32c_reflected_polynomial && isa_detail::includes(Isa, isa::x86_pclmul))
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_kernel<Isa, Polynomial>::update(std::uint32_t remainder, std::span<std::byte const> data) noexcept {
+  constexpr std::size_t word_bytes = 8;
+  auto const update_word = [&](std::span<std::byte const> bytes) { remainder = word(remainder, load_little_endian<word_bytes>(bytes)); };
   // Four words per iteration, then 2 and 1: inputs below 32 bytes run no loop.
-  while(data.size() >= 4 * word) {
+  while(data.size() >= 4 * word_bytes) {
     update_word(data);
-    update_word(data.subspan(word));
-    update_word(data.subspan(2 * word));
-    update_word(data.subspan(3 * word));
-    data = data.subspan(4 * word);
+    update_word(data.subspan(word_bytes));
+    update_word(data.subspan(2 * word_bytes));
+    update_word(data.subspan(3 * word_bytes));
+    data = data.subspan(4 * word_bytes);
   }
-  if(data.size() >= 2 * word) {
+  if(data.size() >= 2 * word_bytes) {
     update_word(data);
-    update_word(data.subspan(word));
-    data = data.subspan(2 * word);
+    update_word(data.subspan(word_bytes));
+    data = data.subspan(2 * word_bytes);
   }
-  if(data.size() >= word) {
+  if(data.size() >= word_bytes) {
     update_word(data);
-    data = data.subspan(word);
+    data = data.subspan(word_bytes);
   }
   // The last 0..7 bytes in at most three instructions.
   if(data.size() >= 4) {
@@ -306,18 +319,21 @@ CHECKSUM_ALWAYS_INLINE inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::fol
   return accumulator;
 }
 
-template <isa Isa, bool Reflected>
-CHECKSUM_ALWAYS_INLINE inline std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder,
-                                                        std::span<std::byte const> data) noexcept {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::x86_pclmul))
+template <bool Reflected>
+CHECKSUM_ALWAYS_INLINE inline std::uint64_t folding_kernel<Isa>::fold(folding_constants const &constants, std::uint64_t remainder,
+                                                                      std::span<std::byte const> data) noexcept {
   return pclmul_kernel<Isa>::template reduce<Reflected>(fold_blocks_with<Reflected, pclmul_kernel<Isa>>(constants, remainder, data), constants);
 }
 
 template <isa Isa, std::uint32_t Polynomial>
-CHECKSUM_ALWAYS_INLINE inline std::uint32_t fold_crc32(folding_constants const &constants, std::uint32_t remainder,
-                                                       std::span<std::byte const> data) noexcept {
+  requires(Polynomial == crc32c_reflected_polynomial && isa_detail::includes(Isa, isa::x86_pclmul))
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_kernel<Isa, Polynomial>::fold(folding_constants const &constants, std::uint32_t remainder,
+                                                                                std::span<std::byte const> data) noexcept {
   using kernel = pclmul_kernel<Isa>;
   if constexpr(kernel::wide) {
-    if(data.size() >= wide_folding_minimum_size<Isa>) {
+    if(data.size() >= kernel::wide_minimum_size) {
       // Blocks 0..5 fold onto blocks 6 and 7 in parallel; crc32 instructions take the 32 bytes and the last 0..63 bytes,
       // two carry-less multiplications fewer than folding onto one block.
       std::size_t consumed = 0;
@@ -328,12 +344,12 @@ CHECKSUM_ALWAYS_INLINE inline std::uint32_t fold_crc32(folding_constants const &
                            kernel::fold_two(pairs[1], both(constants.by_four), kernel::fold_two(pairs[2], both(constants.by_two), pairs[3])));
       __m128i const low = _mm256_castsi256_si128(last_two);
       __m128i const high = _mm256_extracti128_si256(last_two, 1);
-      std::uint32_t crc = crc32_word<Isa, Polynomial>(0, kernel::template lane<0>(low));
-      crc = crc32_word<Isa, Polynomial>(crc, kernel::template lane<1>(low));
-      crc = crc32_word<Isa, Polynomial>(crc, kernel::template lane<0>(high));
-      crc = crc32_word<Isa, Polynomial>(crc, kernel::template lane<1>(high));
+      std::uint32_t crc = word(0, kernel::template lane<0>(low));
+      crc = word(crc, kernel::template lane<1>(low));
+      crc = word(crc, kernel::template lane<0>(high));
+      crc = word(crc, kernel::template lane<1>(high));
       if(consumed != data.size()) [[unlikely]] {
-        crc = crc32_instructions<Isa, Polynomial>(crc, data.subspan(consumed));
+        crc = update(crc, data.subspan(consumed));
       }
       return crc;
     }

@@ -1,8 +1,12 @@
+// CRC engines: reference values, splits, ranges, bit lengths, resume and edge parameters, on every strategy and register.
+
 #include "crc_test_support.hpp"
 
 #include <checksum/crc.hpp>
 
+#include <engine_checks.hpp>
 #include <gtest/gtest.h>
+#include <test_data.hpp>
 
 #include <algorithm>
 #include <array>
@@ -30,13 +34,6 @@ using crc_test::for_each_engine;
 using crc_test::models;
 using crc_test::tag;
 
-template <class Strategy>
-concept every_register_strategy = crc_strategy_for<Strategy, std::uint8_t> && crc_strategy_for<Strategy, std::uint16_t> &&
-                                  crc_strategy_for<Strategy, std::uint32_t> && crc_strategy_for<Strategy, std::uint64_t>;
-
-static_assert(every_register_strategy<crc_lut_none> && every_register_strategy<crc_lut_nibble> && every_register_strategy<crc_lut_byte> &&
-              every_register_strategy<crc_lut_sliced> && every_register_strategy<crc_lut_braided>);
-
 // Arrays of char and char8_t (string literals) are rejected, and so are volatile elements.
 static_assert(byte_range<std::string_view>);
 static_assert(byte_range<std::array<std::byte, 4> const &>);
@@ -55,20 +52,6 @@ static_assert(!byte_range<std::vector<std::uint16_t> &>);
 static_assert(!byte_range<std::span<std::byte volatile>>);
 static_assert(!byte_range<unsigned char volatile (&)[4]>);
 static_assert(!byte_range<std::span<char const volatile>>);
-
-// An engine is its table entries plus at most 64 bytes of prepared values.
-template <class Engine> constexpr bool engine_size_is(std::size_t entries) { return sizeof(Engine) >= entries && sizeof(Engine) <= entries + 64; }
-static_assert(sizeof(crc_engine<std::uint32_t, crc_lut_none>) <= 32);
-static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_none>>(0));
-static_assert(engine_size_is<crc_engine<std::uint32_t, crc_lut_nibble>>(16 * sizeof(std::uint32_t)));
-static_assert(engine_size_is<crc_engine<std::uint32_t, crc_lut_byte>>(1024));
-static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_byte>>(2048));
-// The slicing-by-8 and braided tables also hold 20 x 8 bytes of folding constants. The braided table is the 8
-// slicing-by-8 slices plus 8 braid slices.
-static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_sliced>>(16384 + 160));
-static_assert(engine_size_is<crc_engine<std::uint64_t, crc_lut_braided>>(32768 + 160));
-static_assert(!std::is_default_constructible_v<crc_engine<std::uint32_t>>);
-static_assert(std::is_trivially_copyable_v<crc_engine<std::uint32_t, crc_lut_byte>> && std::is_copy_assignable_v<crc_engine<std::uint32_t>>);
 
 // Every local model on every strategy at compile time.
 template <class Strategy, std::size_t... Index> constexpr bool checks_at_compile_time(std::index_sequence<Index...> /*unused*/) {
@@ -113,15 +96,7 @@ static_assert(crc_engine_for<crc15_can>.update(crc_engine_for<crc15_can>.update(
                                                std::span(two_bytes).subspan(1),
                                                3) == crc_engine_for<crc15_can>.update(crc_engine_for<crc15_can>.initial(), two_bytes, 11));
 
-TEST(CrcEngine, CreateRejectsTooNarrowRegister) {
-  EXPECT_FALSE((crc_engine<std::uint8_t>::create(crc12_umts)));
-  EXPECT_FALSE((crc_engine<std::uint16_t, crc_lut_sliced>::create(crc32)));
-  EXPECT_FALSE((crc_engine<std::uint32_t, crc_lut_none>::create(crc_test::model_parameters<12>)));
-  EXPECT_TRUE((crc_engine<std::uint16_t, crc_lut_nibble>::create(crc12_umts)));
-  EXPECT_FALSE((crc_lut_byte::make_table<std::uint8_t>(crc12_umts)));
-}
-
-TEST(CrcEngine, CheckValues) {
+TEST(crc, reference_values) {
   for(crc_model const &model : models) {
     for_each_engine(model, [&](auto const &engine) {
       EXPECT_EQ(engine.compute(crc_test::check_text), model.check) << model.name;
@@ -131,7 +106,7 @@ TEST(CrcEngine, CheckValues) {
   }
 }
 
-TEST(CrcEngine, InitialAndFinalize) {
+TEST(crc, initial_and_finalize) {
   for(crc_model const &model : models) {
     for_each_engine(model, [&](auto const &engine) {
       std::uint64_t expected_initial = model.initial_value;
@@ -149,7 +124,7 @@ TEST(CrcEngine, InitialAndFinalize) {
 }
 
 // Every range kind gives the same result, including non-contiguous ranges, which are copied in 64-byte chunks.
-TEST(CrcEngine, ByteRangeAdapters) {
+TEST(crc, byte_ranges) {
   auto const bytes = random_bytes(200, 7);
   std::vector<unsigned char> uchars;
   std::vector<signed char> schars;
@@ -177,7 +152,7 @@ TEST(CrcEngine, ByteRangeAdapters) {
 
 // Every length 0..320 (every block and threshold of the loops, at most 256 bytes, with every tail), then every 37th up
 // to 1023, at an aligned and a misaligned start, against the reference.
-TEST(CrcEngine, EquivalenceLengthsAndOffsets) {
+TEST(crc, every_size_and_offset) {
   constexpr std::size_t max_length = 1024;
   constexpr std::size_t every_length = 320;
   constexpr std::size_t length_step = 37;
@@ -200,7 +175,7 @@ TEST(CrcEngine, EquivalenceLengthsAndOffsets) {
 }
 
 // Every byte split of a 64-byte message, every bit split of its first 64 bits, and bit-by-bit updates.
-TEST(CrcEngine, ChunkingInvariance) {
+TEST(crc, split_anywhere) {
   auto const message = random_bytes(64, 99);
   std::span<std::byte const> const data(message);
   for(crc_model const &model : models) {
@@ -226,8 +201,61 @@ TEST(CrcEngine, ChunkingInvariance) {
   }
 }
 
+// Pieces of every size up to 70 bytes, across the 8-byte words, 16-byte blocks, 40-byte braids and 64-byte steps.
+TEST(crc, split_into_chunks) {
+  auto const message = random_bytes(300, 97);
+  std::span<std::byte const> const data(message);
+  for(crc_model const &model : models) {
+    auto const expected = crc_test::reference_crc(model, data);
+    for_each_engine(model, [&](auto const &engine) {
+      for(std::size_t chunk_size = 1; chunk_size <= 70; ++chunk_size) {
+        ASSERT_EQ(engine_checks::chunked(engine, data, chunk_size), expected) << model.name << " chunk " << chunk_size;
+      }
+    });
+  }
+}
+
+// Longer than every block and threshold of the loops, one-shot and in 4099-byte pieces.
+TEST(crc, long_message) {
+  auto const message = random_bytes(20'000, 96);
+  std::span<std::byte const> const data(message);
+  for(crc_model const &model : models) {
+    auto const expected = crc_test::reference_crc(model, data);
+    for_each_engine(model, [&](auto const &engine) {
+      EXPECT_EQ(engine.compute(data), expected) << model.name;
+      EXPECT_EQ(engine_checks::chunked(engine, data, 4099), expected) << model.name;
+    });
+  }
+}
+
+constexpr auto constant_message = random_array<64>();
+
+// Every prefix computed at compile time on every strategy, plus a split into pieces.
+TEST(crc, constant_evaluation) {
+  static constexpr auto prefixes = [] {
+    std::array<std::array<std::uint32_t, constant_message.size() + 1>, 5> result{};
+    for(std::size_t size = 0; size <= constant_message.size(); ++size) {
+      auto const data = std::span(constant_message).first(size);
+      result[0][size] = crc_engine_for<crc32, crc_lut_none>.compute(data);
+      result[1][size] = crc_engine_for<crc32, crc_lut_nibble>.compute(data);
+      result[2][size] = crc_engine_for<crc32, crc_lut_byte>.compute(data);
+      result[3][size] = crc_engine_for<crc32, crc_lut_sliced>.compute(data);
+      result[4][size] = crc_engine_for<crc32, crc_lut_braided>.compute(data);
+    }
+    return result;
+  }();
+  static constexpr auto split = engine_checks::chunked(crc_engine_for<crc32, crc_lut_sliced>, std::span(constant_message), 7);
+  auto const expected = crc_test::reference_prefixes(models[9], constant_message);
+  for(auto const &strategy : prefixes) {
+    for(std::size_t size = 0; size <= constant_message.size(); ++size) {
+      ASSERT_EQ(strategy[size], expected[size]) << "size " << size;
+    }
+  }
+  EXPECT_EQ(split, expected.back());
+}
+
 // A stored CRC continues the message after any number of bytes: resume() undoes finalize() for every model, register and strategy.
-TEST(CrcEngine, ResumeFromChecksum) {
+TEST(crc, resume_from_checksum) {
   auto const message = random_bytes(64, 98);
   std::span<std::byte const> const data(message);
   for(crc_model const &model : models) {
@@ -251,7 +279,7 @@ static_assert([] {
 }());
 
 // Bit lengths 0..320 against the reference; multiples of 8 equal the byte overloads.
-TEST(CrcEngine, BitLengths) {
+TEST(crc, bit_lengths) {
   auto const message = random_bytes(40, 5);
   std::span<std::byte const> const data(message);
   for(crc_model const &model : models) {
@@ -269,7 +297,7 @@ TEST(CrcEngine, BitLengths) {
 }
 
 // A partial last byte uses only its message bits (bits 0..count-1 if reflected, else 7..8-count).
-TEST(CrcEngine, TailBitsUseOnlyMessageBits) {
+TEST(crc, tail_bits_use_only_message_bits) {
   for(crc_model const &model : models) {
     for_each_engine(model, [&](auto const &engine) {
       auto const start = engine.update(engine.initial(), crc_test::check_text);
@@ -286,9 +314,9 @@ TEST(CrcEngine, TailBitsUseOnlyMessageBits) {
   }
 }
 
-// Random parameters of every width 1..64 in every reflection combination, against the reference. Half of the
-// variants use an all-ones initial value and final XOR.
-TEST(CrcEngine, AllWidthsAgainstReference) {
+// Edge parameters: random parameters of every width 1..64 in every reflection combination, against the reference. Half of
+// the variants use an all-ones initial value and final XOR.
+TEST(crc, edge_values) {
   std::mt19937_64 generator(2024);
   auto const message = random_bytes(40, 11);
   std::span<std::byte const> const data(message);
@@ -320,17 +348,8 @@ TEST(CrcEngine, AllWidthsAgainstReference) {
   }
 }
 
-TEST(CrcEngine, WiderRegisterSameResult) {
-  auto const message = random_bytes(100, 3);
-  auto const narrow = *crc_engine<std::uint16_t>::create(crc12_umts);
-  auto const wide = *crc_engine<std::uint64_t, crc_lut_sliced>::create(crc12_umts);
-  EXPECT_EQ(narrow.compute(message), wide.compute(message));
-  EXPECT_EQ(narrow.initial(), wide.initial());
-  EXPECT_EQ(narrow.update(narrow.initial(), message), wide.update(wide.initial(), message));
-}
-
 // Parameters known only at run time.
-TEST(CrcEngine, RuntimeParameters) {
+TEST(crc, run_time_parameters) {
   std::uint64_t const user_normal_form = 0x04C11DB7;
   unsigned const user_width = 32;
   auto const engine = crc_polynomial::create(user_normal_form, user_width).and_then([](crc_polynomial polynomial) {
@@ -341,68 +360,6 @@ TEST(CrcEngine, RuntimeParameters) {
   EXPECT_EQ(engine->compute("123456789"sv), 0xCBF43926U);
 }
 
-// A user strategy, not constexpr, supporting only std::uint32_t and the CRC-32 polynomial. Its table is the reflected
-// input flag.
-struct crc32_only {
-  template <class Register> using table_type = bool;
-
-  template <class Register>
-    requires std::same_as<Register, std::uint32_t>
-  static std::optional<table_type<Register>> make_table(crc_parameters const &parameters) noexcept;
-
-  template <class Register>
-    requires std::same_as<Register, std::uint32_t>
-  static Register update(table_type<Register> const &reflected, Register state, std::span<std::byte const> data) noexcept;
-};
-
-template <class Register>
-  requires std::same_as<Register, std::uint32_t>
-std::optional<crc32_only::table_type<Register>> crc32_only::make_table(crc_parameters const &parameters) noexcept {
-  if(parameters.polynomial != *crc_polynomial::create(0x04C11DB7, 32)) {
-    return std::nullopt;
-  }
-  return parameters.reflect_input;
-}
-
-template <class Register>
-  requires std::same_as<Register, std::uint32_t>
-Register crc32_only::update(table_type<Register> const &reflected, Register state, std::span<std::byte const> data) noexcept {
-  for(std::byte const byte : data) {
-    if(reflected) {
-      state ^= std::to_integer<std::uint32_t>(byte);
-      for(int bit = 0; bit < 8; ++bit) {
-        state = (state & 1U) != 0 ? (state >> 1U) ^ 0xEDB88320U : state >> 1U;
-      }
-    } else {
-      state ^= std::to_integer<std::uint32_t>(byte) << 24U;
-      for(int bit = 0; bit < 8; ++bit) {
-        state = (state & 0x80000000U) != 0 ? (state << 1U) ^ 0x04C11DB7U : state << 1U;
-      }
-    }
-  }
-  return state;
-}
-
-static_assert(crc_strategy_for<crc32_only, std::uint32_t>);
-static_assert(!crc_strategy_for<crc32_only, std::uint16_t>);
-static_assert(!crc_strategy_for<crc32_only, std::uint64_t>);
-static_assert(!every_register_strategy<crc32_only>);
-
-TEST(CrcEngine, UserStrategy) {
-  auto const iso_hdlc = crc_engine<std::uint32_t, crc32_only>::create(crc32);
-  auto const mpeg2 = crc_engine<std::uint32_t, crc32_only>::create(crc_test::model_parameters<10>);
-  ASSERT_TRUE(iso_hdlc);
-  ASSERT_TRUE(mpeg2);
-  EXPECT_FALSE((crc_engine<std::uint32_t, crc32_only>::create(crc15_can)));
-  EXPECT_EQ(iso_hdlc->compute("123456789"sv), 0xCBF43926U);
-  EXPECT_EQ(mpeg2->compute("123456789"sv), 0x0376E6E7U);
-  auto const message = random_bytes(300, 8);
-  for(std::size_t bits = 0; bits <= message.size() * 8; bits += 7) {
-    EXPECT_EQ(iso_hdlc->compute(message, bits), crc_test::reference_crc(models[9], message, bits));
-    EXPECT_EQ(mpeg2->compute(message, bits), crc_test::reference_crc(models[10], message, bits));
-  }
-}
-
 // Violated preconditions fail an assert unless NDEBUG is defined.
 #if !defined(NDEBUG)
 // The abort of the assert exits without a core dump: a crash reporter that collects it takes about a second.
@@ -410,7 +367,7 @@ void exit_on_abort() {
   (void)std::signal(SIGABRT, [](int /*signal*/) { std::_Exit(EXIT_FAILURE); });
 }
 
-TEST(CrcEngineDeathTest, PreconditionsAreChecked) {
+TEST(crc_DeathTest, preconditions_are_checked) {
   auto const &engine = crc_engine_for<crc15_can>;
   std::array<std::byte, 2> const data{};
   EXPECT_DEATH((exit_on_abort(), (void)engine.update(0x8000, data)), "state <= mask");

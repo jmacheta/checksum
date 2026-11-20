@@ -50,9 +50,9 @@ template <class Register> unsigned top_byte(Register const *table, std::size_t i
 // in flight, and carrying next across iterations stops compilers re-associating it onto the critical path.
 template <bool Reflected, class Register>
 Register loop_byte_fast(Register const *table, Register remainder, std::span<std::byte const> data) noexcept {
-  // The split loop costs 30-40 % on in-order cores (Cortex-M4, 16- and 32-bit registers). ponytail: pointer width
-  // stands in for in-order cores; 64-bit in-order ones (A53, A55) are unmeasured, select by core if they lose there.
-  if constexpr(sizeof(void *) < sizeof(std::uint64_t) && sizeof(Register) > 1) {
+  // The split loop costs 30-40 % on in-order cores (Cortex-M4, 16- and 32-bit registers). ponytail: 32-bit targets
+  // stand in for in-order cores; 64-bit in-order ones (A53, A55) are unmeasured, select by core if they lose there.
+  if constexpr(target_detail::word32_target && sizeof(Register) > 1) {
     return loop_byte<Reflected>(table, remainder, data);
   } else {
     constexpr unsigned top = register_bits<Register> - byte_bits;
@@ -122,20 +122,20 @@ template <bool Reflected, class Register> Register loop_sliced(Register const *t
 // True if run_sliced() runs the CRC32 instructions: CRC-32 or CRC-32C, reflected, std::uint32_t register.
 template <isa Isa, bool Reflected, class Register> constexpr bool uses_crc32_instructions(Register polynomial) noexcept {
   if constexpr(Reflected && std::same_as<Register, std::uint32_t>) {
-    return (crc32_instructions_available<Isa, crc32_reflected_polynomial> && polynomial == crc32_reflected_polynomial) ||
-           (crc32_instructions_available<Isa, crc32c_reflected_polynomial> && polynomial == crc32c_reflected_polynomial);
+    return (crc32_kernel<Isa, crc32_reflected_polynomial>::available && polynomial == crc32_reflected_polynomial) ||
+           (crc32_kernel<Isa, crc32c_reflected_polynomial>::available && polynomial == crc32c_reflected_polynomial);
   } else {
     return false;
   }
 }
 
-// At least folding_block_size bytes; only where folding_available<Isa>.
+// At least folding_block_size bytes; only where folding_kernel<Isa>::available.
 template <isa Isa, bool Reflected, class Register>
 CHECKSUM_ALWAYS_INLINE inline Register fold_message(folding_constants const &folding, Register remainder, std::span<std::byte const> data) noexcept {
   // The kernel takes the register in 64-bit form: a non-reflected register is top-aligned.
   constexpr unsigned extension = 64 - register_bits<Register>;
   std::uint64_t const wide = Reflected ? std::uint64_t{remainder} : std::uint64_t{remainder} << extension;
-  std::uint64_t const folded = fold_blocks<Isa, Reflected>(folding, wide, data);
+  std::uint64_t const folded = folding_kernel<Isa>::template fold<Reflected>(folding, wide, data);
   return static_cast<Register>(Reflected ? folded : folded >> extension);
 }
 
@@ -149,49 +149,50 @@ CHECKSUM_NOINLINE Register fold_long_message(folding_constants const &folding, R
 // Not inlined, for the same reason as fold_long_message().
 template <isa Isa, std::uint32_t Polynomial>
 CHECKSUM_NOINLINE std::uint32_t fold_long_crc32(folding_constants const &folding, std::uint32_t remainder, std::span<std::byte const> data) noexcept {
-  return fold_crc32<Isa, Polynomial>(folding, remainder, data);
+  return crc32_kernel<Isa, Polynomial>::fold(folding, remainder, data);
 }
 
-// CRC32 instructions; with a folding kernel, inputs of at least crc32_folding_minimum_size bytes go to fold_crc32().
+// CRC32 instructions; with a folding kernel, inputs of at least their folding_minimum_size bytes go to crc32_kernel::fold().
 template <isa Isa, std::uint32_t Polynomial>
 std::uint32_t run_crc32_instructions(folding_constants const &folding, std::uint32_t remainder, std::span<std::byte const> data) noexcept {
-  if constexpr(folding_available<Isa> && crc32_folding_minimum_size != std::numeric_limits<std::size_t>::max()) {
-    if constexpr(wide_folding_minimum_size<Isa> != std::numeric_limits<std::size_t>::max()) {
-      if(data.size() >= wide_folding_minimum_size<Isa>) {
+  using instructions = crc32_kernel<Isa, Polynomial>;
+  if constexpr(folding_kernel<Isa>::available && instructions::folding_minimum_size != std::numeric_limits<std::size_t>::max()) {
+    if constexpr(folding_kernel<Isa>::wide_minimum_size != std::numeric_limits<std::size_t>::max()) {
+      if(data.size() >= folding_kernel<Isa>::wide_minimum_size) {
         return fold_long_crc32<Isa, Polynomial>(folding, remainder, data);
       }
     }
-    if(data.size() >= crc32_folding_minimum_size) {
-      return fold_crc32<Isa, Polynomial>(folding, remainder, data);
+    if(data.size() >= instructions::folding_minimum_size) {
+      return instructions::fold(folding, remainder, data);
     }
   }
-  return crc32_instructions<Isa, Polynomial>(remainder, data);
+  return instructions::update(remainder, data);
 }
 
-// CRC32 instructions where they handle the parameter set, else folding from folding_minimum_size bytes, else
+// CRC32 instructions where they handle the parameter set, else folding from its minimum_size bytes, else
 // loop_sliced(). table: the crc_lut_sliced table or the first 8 slices of the crc_lut_braided one.
 template <isa Isa, bool Reflected, class Register>
 Register run_sliced(Register const *table, folding_constants const &folding, Register polynomial, Register remainder,
                     std::span<std::byte const> data) noexcept {
   if constexpr(Reflected && std::same_as<Register, std::uint32_t>) {
-    if constexpr(crc32_instructions_available<Isa, crc32_reflected_polynomial>) {
+    if constexpr(crc32_kernel<Isa, crc32_reflected_polynomial>::available) {
       if(polynomial == crc32_reflected_polynomial) {
         return run_crc32_instructions<Isa, crc32_reflected_polynomial>(folding, remainder, data);
       }
     }
-    if constexpr(crc32_instructions_available<Isa, crc32c_reflected_polynomial>) {
+    if constexpr(crc32_kernel<Isa, crc32c_reflected_polynomial>::available) {
       if(polynomial == crc32c_reflected_polynomial) {
         return run_crc32_instructions<Isa, crc32c_reflected_polynomial>(folding, remainder, data);
       }
     }
   }
-  if constexpr(folding_available<Isa>) {
-    if constexpr(wide_folding_minimum_size<Isa> != std::numeric_limits<std::size_t>::max()) {
-      if(data.size() >= wide_folding_minimum_size<Isa>) {
+  if constexpr(folding_kernel<Isa>::available) {
+    if constexpr(folding_kernel<Isa>::wide_minimum_size != std::numeric_limits<std::size_t>::max()) {
+      if(data.size() >= folding_kernel<Isa>::wide_minimum_size) {
         return fold_long_message<Isa, Reflected>(folding, remainder, data);
       }
     }
-    if(data.size() >= folding_minimum_size) {
+    if(data.size() >= folding_kernel<Isa>::minimum_size) {
       return fold_message<Isa, Reflected>(folding, remainder, data);
     }
   }
@@ -242,7 +243,7 @@ Register loop_braided(Register const *table, Register remainder, std::span<std::
 template <isa Isa, bool Reflected, class Register>
 Register run_braided(Register const *table, folding_constants const &folding, Register polynomial, Register remainder,
                      std::span<std::byte const> data) noexcept {
-  if constexpr(!folding_available<Isa>) {
+  if constexpr(!folding_kernel<Isa>::available) {
     if(data.size() >= braided_minimum_size && !uses_crc32_instructions<Isa, Reflected>(polynomial)) {
       remainder = loop_braided<Reflected>(table, remainder, data);
     }

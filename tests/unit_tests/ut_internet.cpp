@@ -1,7 +1,8 @@
-// Internet checksum: published examples, an independent model, splits and ranges.
+// Internet checksum: published examples, an independent model, splits, ranges, resume and edge values.
 
 #include <checksum/internet.hpp>
 
+#include <engine_checks.hpp>
 #include <gtest/gtest.h>
 #include <test_data.hpp>
 
@@ -17,6 +18,7 @@
 namespace {
 
 using namespace checksum;
+using engine_checks::continued;
 
 template <std::size_t Size> constexpr std::array<std::byte, Size> bytes(std::array<unsigned, Size> const &values) {
   std::array<std::byte, Size> result{};
@@ -50,13 +52,14 @@ static_assert(internet_compute(ipv4_header) == 0xB861);
 static_assert(internet_compute(std::span<std::byte const>{}) == 0xFFFF);
 static_assert(internet_compute(std::string_view("\x01")) == 0xFEFF);
 
-TEST(internet, published_examples) {
+TEST(internet, reference_values) {
   EXPECT_EQ(internet_engine{}.update({}, rfc1071_example), (internet_state{.sum = 0xDDF2, .odd = false}));
   EXPECT_EQ(internet_compute(rfc1071_example), 0x220D);
   EXPECT_EQ(internet_compute(ipv4_header), 0xB861);
 }
 
-TEST(internet, zero_and_all_ones) {
+// Zero and all-ones bytes: both zeros of one's complement.
+TEST(internet, edge_values) {
   EXPECT_EQ(internet_compute(std::span<std::byte const>{}), 0xFFFF);
   EXPECT_EQ(internet_compute(std::vector<std::byte>(1000)), 0xFFFF);
   // Sums to 0xFFFF, the non-zero representation of zero.
@@ -93,7 +96,7 @@ TEST(internet, odd_length) {
 }
 
 // All lengths past the unrolled loop, its tail and the thresholds of every CPU kernel, at every alignment of a word.
-TEST(internet, matches_model) {
+TEST(internet, every_size_and_offset) {
   auto const data = random_bytes(1100 + 16, 1);
   for(std::size_t offset = 0; offset < 16; ++offset) {
     for(std::size_t size = 0; size <= 1100; ++size) {
@@ -103,7 +106,7 @@ TEST(internet, matches_model) {
   }
 }
 
-TEST(internet, matches_model_with_carries) {
+TEST(internet, every_size_with_carries) {
   // High bytes force carries out of every word the loop adds.
   std::vector<std::byte> data = random_bytes(1 << 16, 2);
   for(std::size_t index = 0; index < data.size(); index += 3) {
@@ -125,22 +128,10 @@ TEST(internet, matches_model_with_carries) {
   }
 }
 
-TEST(internet, split_anywhere) {
-  auto const data = random_bytes(80, 3);
-  std::uint16_t const whole = internet_compute(data);
-  auto const message = std::span<std::byte const>(data);
-  for(std::size_t first = 0; first <= data.size(); ++first) {
-    for(std::size_t second = first; second <= data.size(); ++second) {
-      internet_state state = internet_engine{}.update({}, message.first(first));
-      state = internet_engine{}.update(state, message.subspan(first, second - first));
-      state = internet_engine{}.update(state, message.subspan(second));
-      ASSERT_EQ(internet_engine{}.finalize(state), whole) << "split at " << first << " and " << second;
-    }
-  }
-}
+TEST(internet, split_anywhere) { engine_checks::check_split_anywhere(internet_engine{}, random_bytes(80, 3)); }
 
-// An odd running state entering chunks long enough for the CPU kernel.
-TEST(internet, split_before_long_chunks) {
+// An odd running state entering chunks long enough for the CPU kernel, and pieces of every size up to 70 bytes.
+TEST(internet, split_into_chunks) {
   auto const data = random_bytes(1200, 5);
   std::uint16_t const whole = internet_compute(data);
   auto const message = std::span<std::byte const>(data);
@@ -148,19 +139,25 @@ TEST(internet, split_before_long_chunks) {
     internet_state const state = internet_engine{}.update(internet_engine{}.update({}, message.first(first)), message.subspan(first));
     ASSERT_EQ(internet_engine{}.finalize(state), whole) << "split at " << first;
   }
+  for(std::size_t chunk_size = 1; chunk_size <= 70; ++chunk_size) {
+    ASSERT_EQ(engine_checks::chunked(internet_engine{}, message.first(300), chunk_size), reference(message.first(300))) << "chunk " << chunk_size;
+  }
+}
+
+// More than one pass of every kernel, one-shot and in 4099-byte pieces.
+TEST(internet, long_message) {
+  auto const data = random_bytes((std::size_t{1} << 20U) + 7, 9);
+  EXPECT_EQ(internet_compute(data), reference(data));
+  EXPECT_EQ(engine_checks::chunked(internet_engine{}, data, 4099), reference(data));
 }
 
 constexpr std::size_t constant_message_size = 300;
 
 // Pseudo-random bytes the constant evaluator can produce.
-constexpr std::array<std::byte, constant_message_size> constant_message = [] {
-  std::array<std::byte, constant_message_size> result{};
-  fill_random(result);
-  return result;
-}();
+constexpr auto constant_message = random_array<constant_message_size>();
 
 // Every prefix computed at compile time, plus one split at an odd offset.
-TEST(internet, constant_evaluation_matches_run_time) {
+TEST(internet, constant_evaluation) {
   static constexpr auto prefixes = [] {
     std::array<std::uint16_t, constant_message_size + 1> result{};
     for(std::size_t size = 0; size <= constant_message_size; ++size) {
@@ -177,16 +174,10 @@ TEST(internet, constant_evaluation_matches_run_time) {
   EXPECT_EQ(split, internet_compute(message));
 }
 
-// Continues the message whose checksum is checksum with data.
-template <class Range> constexpr std::uint16_t continued(std::uint16_t checksum, Range const &data) {
-  constexpr internet_engine internet;
-  return internet.finalize(internet.update(internet.resume(checksum), data));
-}
-
 static_assert(resumable_engine<internet_engine<>> && resumable_engine<internet_dispatch_engine>);
 static_assert(internet_engine{}.resume(0x220D) == internet_state{.sum = 0xDDF2, .odd = false});
 static_assert(std::same_as<decltype(internet_engine{}.update({}, rfc1071_example)), internet_state>);
-static_assert(continued(internet_compute(std::span(rfc1071_example).first(4)), std::span(rfc1071_example).subspan(4)) == 0x220D);
+static_assert(continued(internet_engine{}, internet_compute(std::span(rfc1071_example).first(4)), std::span(rfc1071_example).subspan(4)) == 0x220D);
 
 // A stored checksum continues the message after any even number of bytes, at compile time and at run time. After an odd number it
 // does not: the checksum does not record that the next byte is the low byte of a word.
@@ -196,7 +187,7 @@ TEST(internet, resume_from_checksum) {
     auto const message = std::span(constant_message).first(constant_size);
     std::array<std::uint16_t, (constant_size / 2) + 1> result{};
     for(std::size_t word = 0; word < result.size(); ++word) {
-      result[word] = continued(internet_compute(message.first(2 * word)), message.subspan(2 * word));
+      result[word] = continued(internet_engine{}, internet_compute(message.first(2 * word)), message.subspan(2 * word));
     }
     return result;
   }();
@@ -208,17 +199,17 @@ TEST(internet, resume_from_checksum) {
   auto const message = std::span<std::byte const>(data);
   std::uint16_t const whole = reference(message);
   for(std::size_t first = 0; first <= data.size(); first += 2) {
-    ASSERT_EQ(continued(internet_compute(message.first(first)), message.subspan(first)), whole) << "split at " << first;
+    ASSERT_EQ(continued(internet_engine{}, internet_compute(message.first(first)), message.subspan(first)), whole) << "split at " << first;
   }
   std::list<std::byte> const tail(data.begin() + 100, data.end());
-  EXPECT_EQ(continued(internet_compute(message.first(100)), tail), whole);
-  EXPECT_NE(continued(internet_compute(message.first(1)), message.subspan(1)), whole);
+  EXPECT_EQ(continued(internet_engine{}, internet_compute(message.first(100)), tail), whole);
+  EXPECT_NE(continued(internet_engine{}, internet_compute(message.first(1)), message.subspan(1)), whole);
 
   // Both zeros of one's complement: 0xFFFF after only zero bytes, 0 after a message that sums to 0xFFFF.
   std::array<std::byte, 4> const zeros{};
-  EXPECT_EQ(continued(internet_compute(zeros), message), whole);
-  EXPECT_EQ(continued(std::uint16_t{0}, zeros), 0);
-  EXPECT_EQ(continued(std::uint16_t{0xFFFF}, zeros), 0xFFFF);
+  EXPECT_EQ(continued(internet_engine{}, internet_compute(zeros), message), whole);
+  EXPECT_EQ(continued(internet_engine{}, std::uint16_t{0}, zeros), 0);
+  EXPECT_EQ(continued(internet_engine{}, std::uint16_t{0xFFFF}, zeros), 0xFFFF);
 }
 
 TEST(internet, byte_ranges) {

@@ -5,6 +5,5 @@
 #ifdef CHECKSUM_TARGET_RISCV_V
 #define CHECKSUM_PRESET riscv_v
 #define CHECKSUM_PRESET_TARGET CHECKSUM_TARGET_RISCV_V
-#define CHECKSUM_PRESET_RISCV_V
 #include <checksum_private/xxh3_loops.hpp>
 #endif

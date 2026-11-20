@@ -63,27 +63,6 @@ static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_none>::create(crc32_iso
 static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_nibble>::create(crc32_iso_hdlc, isa::aarch64_pmull)->preset() == isa::generic);
 static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_byte>::create(crc32_iso_hdlc, isa::riscv_zbc)->preset() == isa::generic);
 
-TEST(detect_isa, ContainsOnlyBuiltPresetsAndTheirLowerRungs) {
-  isa_set const cpu = detect_isa();
-  EXPECT_TRUE(cpu.contains(isa::generic));
-  for(unsigned value = 0; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
-    auto const preset = static_cast<isa>(value);
-    if(!cpu.contains(preset)) {
-      continue;
-    }
-    EXPECT_TRUE(isa_available(preset)) << isa_test::name(preset);
-    for(unsigned lower = 0; lower < value; ++lower) {
-      if(isa_detail::includes(preset, static_cast<isa>(lower))) {
-        EXPECT_TRUE(cpu.contains(static_cast<isa>(lower))) << isa_test::name(preset) << " without " << isa_test::name(static_cast<isa>(lower));
-      }
-    }
-  }
-}
-
-std::span<std::byte const> at(std::vector<std::byte> const &buffer, std::size_t offset, std::size_t size) {
-  return std::span<std::byte const>(buffer).subspan(offset, size);
-}
-
 constexpr std::size_t sizes[] = {0, 1, 3, 63, 64, 255, 1500, 4097, 70'000};
 
 template <crc_parameters Parameters, class Strategy> void check_crc(isa_set cpu, std::vector<std::byte> const &buffer) {
@@ -162,15 +141,20 @@ void check_engines(isa_set cpu, std::vector<std::byte> const &buffer) {
 }
 
 // Default-constructed engines detect the CPU themselves.
-TEST(dispatch, DefaultEnginesChooseTheDetectedPreset) {
+TEST(dispatch, default_engines_choose_the_detected_preset) {
   isa const best = isa_detail::select(detect_isa());
   EXPECT_EQ(internet_dispatch_engine{}.preset(), best);
   EXPECT_EQ(adler32_dispatch_engine{}.preset(), best);
+  EXPECT_EQ(fletcher_dispatch_engine<16>{}.preset(), best);
   EXPECT_EQ(fletcher_dispatch_engine<32>{}.preset(), best);
+  EXPECT_EQ(fletcher_dispatch_engine<64>{}.preset(), best);
   EXPECT_EQ(fletcher4_dispatch_engine{}.preset(), best);
   EXPECT_EQ(xxh3_dispatch_engine<64>{}.preset(), best);
+  EXPECT_EQ(xxh3_dispatch_engine<128>{}.preset(), best);
+  EXPECT_EQ(xxhash_dispatch_engine<32>{}.preset(), best);
   EXPECT_EQ(xxhash_dispatch_engine<64>{}.preset(), best);
   EXPECT_EQ(murmur3_dispatch_engine<32>{}.preset(), best);
+  EXPECT_EQ(murmur3_dispatch_engine<128>{}.preset(), best);
   auto const crc = crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(crc32_iso_hdlc);
   ASSERT_TRUE(crc.has_value());
   EXPECT_EQ(crc->preset(), isa_detail::select(detect_isa(), isa::riscv_zbc));
@@ -181,13 +165,13 @@ TEST(dispatch, DefaultEnginesChooseTheDetectedPreset) {
   EXPECT_EQ(crc->compute(data), (crc_engine_for<crc32_iso_hdlc, crc_lut_byte>.compute(data)));
 }
 
-TEST(dispatch, DetectedSetMatchesGeneric) {
+TEST(dispatch, detected_set_matches_generic) {
   auto const buffer = random_bytes(70'008, 11);
   check_engines(detect_isa(), buffer);
   check_crcs(detect_isa(), buffer);
 }
 
-TEST(dispatch, PresetsOfOtherArchitecturesRunGeneric) {
+TEST(dispatch, presets_of_other_architectures_run_generic) {
   auto const buffer = random_bytes(70'008, 12);
   for(isa const preset : {isa::x86_avxvnni, isa::aarch64_pmull, isa::thumb2_crc, isa::riscv_v}) {
     if(!isa_available(preset)) {
@@ -202,7 +186,7 @@ TEST(dispatch, PresetsOfOtherArchitecturesRunGeneric) {
 template <class Preset> using dispatch_presets = isa_test::preset_test<Preset>;
 TYPED_TEST_SUITE(dispatch_presets, isa_test::presets, isa_test::preset_name);
 
-TYPED_TEST(dispatch_presets, ExplicitPresetMatchesGeneric) {
+TYPED_TEST(dispatch_presets, explicit_preset_matches_generic) {
   constexpr isa preset = TypeParam::value;
   EXPECT_EQ(isa_detail::select(preset), preset);
   auto const buffer = random_bytes(70'008, 13);

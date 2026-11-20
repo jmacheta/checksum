@@ -5,21 +5,25 @@
 // 128-bit SSE2 vectors (the x86-64 baseline). Included only by fletcher4_arch.hpp.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/target.hpp>
 
 #include <immintrin.h>
 
 #include <cstddef>
-#include <limits>
 
 namespace checksum::fletcher4_detail {
 
-template <isa Isa> inline constexpr bool lane_kernel_available = Isa == isa::generic || isa_detail::line(Isa) == isa::x86_pclmul;
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+struct lane_kernel<Isa> {
+  static constexpr bool available = true;
+  static constexpr std::size_t minimum_size = isa_detail::includes(Isa, isa::x86_avx2) ? 128 : 192;
+  static lane_sums sum(std::byte const *data, std::size_t groups) noexcept;
+};
 
 template <isa Isa>
-inline constexpr std::size_t lane_kernel_minimum_size =
-    lane_kernel_available<Isa> ? (isa_detail::includes(Isa, isa::x86_avx2) ? 128 : 192) : std::numeric_limits<std::size_t>::max();
-
-template <isa Isa> lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept {
+  requires(target_detail::any_preset<Isa>)
+lane_sums lane_kernel<Isa>::sum(std::byte const *data, std::size_t groups) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     __m256i sum1 = _mm256_setzero_si256();
     __m256i sum2 = sum1;

@@ -5,7 +5,7 @@
 // isa::aarch64_pmull on little-endian AArch64. Included only by crc_arch.hpp.
 
 #include <checksum/isa.hpp>
-#include <checksum_private/arm/target.hpp>
+#include <checksum_private/target.hpp>
 
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
@@ -25,26 +25,34 @@ namespace checksum::crc_detail {
 // NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/crc/*.cpp.
 namespace {
 
-#if defined(CHECKSUM_ARM64) && !defined(__AARCH64EB__)
-inline constexpr bool pmull_target = true;
-#else
-inline constexpr bool pmull_target = false;
-#endif
-
-template <isa Isa> inline constexpr bool folding_available = pmull_target && isa_detail::includes(Isa, isa::aarch64_pmull);
+template <isa Isa, std::uint32_t Polynomial>
+inline constexpr bool crc32_instructions = (Polynomial == crc32_reflected_polynomial || Polynomial == crc32c_reflected_polynomial) &&
+                                           (isa_detail::includes(Isa, isa::aarch64_crc) || isa_detail::includes(Isa, isa::thumb2_crc));
 
 template <isa Isa, std::uint32_t Polynomial>
-inline constexpr bool crc32_instructions_available = (Polynomial == crc32_reflected_polynomial || Polynomial == crc32c_reflected_polynomial) &&
-                                                     (isa_detail::includes(Isa, isa::aarch64_crc) || isa_detail::includes(Isa, isa::thumb2_crc));
-
-// CRC32 instructions alone, never folding: one CRC32X stream takes 8 cycles per 64 bytes on a Cortex-A72, while llvm-mca
-// puts the PMULL loop at 10 (A72, A76), 24-33 (A510, A53, A55) and 6-9 (Neoverse N1/V1/V2, Apple M1) plus a reduction.
-inline constexpr std::size_t crc32_folding_minimum_size = std::numeric_limits<std::size_t>::max();
-
-template <isa Isa> inline constexpr std::size_t wide_folding_minimum_size = std::numeric_limits<std::size_t>::max();
+  requires(crc32_instructions<Isa, Polynomial>)
+struct crc32_kernel<Isa, Polynomial> {
+  static constexpr bool available = true;
+  // CRC32 instructions alone, never folding: one CRC32X stream takes 8 cycles per 64 bytes on a Cortex-A72, while llvm-mca
+  // puts the PMULL loop at 10 (A72, A76), 24-33 (A510, A53, A55) and 6-9 (Neoverse N1/V1/V2, Apple M1) plus a reduction.
+  static constexpr std::size_t folding_minimum_size = std::numeric_limits<std::size_t>::max();
+  // One CRC32 instruction (two on 32-bit Arm) over 8 message bytes, first byte lowest.
+  static std::uint32_t word(std::uint32_t remainder, std::uint64_t value) noexcept;
+  static std::uint32_t update(std::uint32_t remainder, std::span<std::byte const> data) noexcept;
+};
 
 #if defined(CHECKSUM_ARM64) && !defined(__AARCH64EB__)
-// Fold kernel of fold_blocks_with(): 128-bit NEON vectors, lane 0 low. Only for presets with folding_available<Isa>.
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::aarch64_pmull))
+struct folding_kernel<Isa> {
+  static constexpr bool available = true;
+  static constexpr std::size_t minimum_size = folding_minimum_size;
+  static constexpr std::size_t wide_minimum_size = std::numeric_limits<std::size_t>::max();
+  template <bool Reflected>
+  static std::uint64_t fold(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
+};
+
+// Fold kernel of fold_blocks_with(): 128-bit NEON vectors, lane 0 low.
 template <isa Isa> struct pmull_kernel {
   using vector = uint64x2_t;
 
@@ -103,35 +111,33 @@ CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_step(std::uint32_t remainder, 
 }
 
 template <isa Isa, std::uint32_t Polynomial>
-CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_word(std::uint32_t remainder, std::uint64_t word) noexcept {
-  static_assert(crc32_instructions_available<Isa, Polynomial>);
-  return crc32_step<Polynomial>(remainder, word);
+  requires(crc32_instructions<Isa, Polynomial>)
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_kernel<Isa, Polynomial>::word(std::uint32_t remainder, std::uint64_t value) noexcept {
+  return crc32_step<Polynomial>(remainder, value);
 }
 
 template <isa Isa, std::uint32_t Polynomial>
-CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_instructions(std::uint32_t remainder, std::span<std::byte const> data) noexcept {
-  static_assert(crc32_instructions_available<Isa, Polynomial>);
-  constexpr std::size_t word = 8;
-  auto const update_word = [&](std::span<std::byte const> bytes) {
-    remainder = crc32_word<Isa, Polynomial>(remainder, load_little_endian<word>(bytes));
-  };
+  requires(crc32_instructions<Isa, Polynomial>)
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_kernel<Isa, Polynomial>::update(std::uint32_t remainder, std::span<std::byte const> data) noexcept {
+  constexpr std::size_t word_bytes = 8;
+  auto const update_word = [&](std::span<std::byte const> bytes) { remainder = word(remainder, load_little_endian<word_bytes>(bytes)); };
   // Four words per iteration, then 2 and 1: one word per iteration is loop bound (~2 cycles per word instead of 1 on a
   // Cortex-A72). A loop running exactly twice costs a branch miss there, which this moves from 32-47 to 64-95 bytes.
-  while(data.size() >= 4 * word) {
+  while(data.size() >= 4 * word_bytes) {
     update_word(data);
-    update_word(data.subspan(word));
-    update_word(data.subspan(2 * word));
-    update_word(data.subspan(3 * word));
-    data = data.subspan(4 * word);
+    update_word(data.subspan(word_bytes));
+    update_word(data.subspan(2 * word_bytes));
+    update_word(data.subspan(3 * word_bytes));
+    data = data.subspan(4 * word_bytes);
   }
-  if(data.size() >= 2 * word) {
+  if(data.size() >= 2 * word_bytes) {
     update_word(data);
-    update_word(data.subspan(word));
-    data = data.subspan(2 * word);
+    update_word(data.subspan(word_bytes));
+    data = data.subspan(2 * word_bytes);
   }
-  if(data.size() >= word) {
+  if(data.size() >= word_bytes) {
     update_word(data);
-    data = data.subspan(word);
+    data = data.subspan(word_bytes);
   }
   // The last 0..7 bytes in at most three instructions.
   if(data.size() >= 4) {
@@ -240,9 +246,11 @@ CHECKSUM_ALWAYS_INLINE inline std::uint64_t pmull_kernel<Isa>::reduce(vector acc
   }
 }
 
-template <isa Isa, bool Reflected>
-CHECKSUM_ALWAYS_INLINE inline std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder,
-                                                        std::span<std::byte const> data) noexcept {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::aarch64_pmull))
+template <bool Reflected>
+CHECKSUM_ALWAYS_INLINE inline std::uint64_t folding_kernel<Isa>::fold(folding_constants const &constants, std::uint64_t remainder,
+                                                                      std::span<std::byte const> data) noexcept {
   return pmull_kernel<Isa>::template reduce<Reflected>(fold_blocks_with<Reflected, pmull_kernel<Isa>>(constants, remainder, data), constants);
 }
 #endif

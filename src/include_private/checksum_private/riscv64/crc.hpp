@@ -5,6 +5,7 @@
 // CRC instruction. Included only by crc_arch.hpp.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/target.hpp>
 
 #include <bit>
 #include <cstddef>
@@ -16,16 +17,17 @@ namespace checksum::crc_detail {
 // NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/crc/*.cpp.
 namespace {
 
-template <isa Isa> inline constexpr bool folding_available = isa_detail::includes(Isa, isa::riscv_zbc);
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_zbc))
+struct folding_kernel<Isa> {
+  static constexpr bool available = true;
+  static constexpr std::size_t minimum_size = folding_minimum_size;
+  static constexpr std::size_t wide_minimum_size = std::numeric_limits<std::size_t>::max();
+  template <bool Reflected>
+  static std::uint64_t fold(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
+};
 
-template <isa Isa, std::uint32_t Polynomial> inline constexpr bool crc32_instructions_available = false;
-
-inline constexpr std::size_t crc32_folding_minimum_size = std::numeric_limits<std::size_t>::max();
-
-template <isa Isa> inline constexpr std::size_t wide_folding_minimum_size = std::numeric_limits<std::size_t>::max();
-
-// Fold kernel of fold_blocks_with(): 128-bit polynomials in an unsigned __int128, low lane in the low half. Only for
-// presets with folding_available<Isa>.
+// Fold kernel of fold_blocks_with(): 128-bit polynomials in an unsigned __int128, low lane in the low half.
 template <isa Isa> struct clmul_kernel {
   __extension__ using vector = unsigned __int128;
 
@@ -136,9 +138,11 @@ CHECKSUM_ALWAYS_INLINE inline std::uint64_t clmul_kernel<Isa>::reduce(vector acc
   }
 }
 
-template <isa Isa, bool Reflected>
-CHECKSUM_ALWAYS_INLINE inline std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder,
-                                                        std::span<std::byte const> data) noexcept {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_zbc))
+template <bool Reflected>
+CHECKSUM_ALWAYS_INLINE inline std::uint64_t folding_kernel<Isa>::fold(folding_constants const &constants, std::uint64_t remainder,
+                                                                      std::span<std::byte const> data) noexcept {
   return clmul_kernel<Isa>::template reduce<Reflected>(fold_blocks_with<Reflected, clmul_kernel<Isa>>(constants, remainder, data), constants);
 }
 

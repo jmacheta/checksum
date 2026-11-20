@@ -2,12 +2,15 @@
 
 ## Layout
 
-- Unit tests: Google Test, `tests/unit_tests/ut_<algorithm>.cpp`, or `ut_<algorithm>_<area>.cpp` when an algorithm has
-  several. Shared test data and helpers are headers in `tests/unit_tests/include/` (and
-  `tests/include/` for what benchmarks share), maintained by hand.
+- Unit tests: Google Test, one executable `checksum_ut` (and `checksum_ut_unchecked`, built with `NDEBUG`). Every
+  algorithm has the same files, suites and cases; see [Unit test layout](#unit-test-layout). Shared test data and
+  helpers are headers in `tests/unit_tests/include/` (and `tests/include/` for what benchmarks share), maintained by
+  hand.
 - Negative compile tests: `tests/compile_fail`. Each is a CTest test that builds an `EXCLUDE_FROM_ALL` target and
   passes only if the build output matches the expected diagnostic; each source also builds as a control target
-  without the error.
+  without the error. `accumulator_from_temporary`, `string_literal_update` and `unavailable_preset` build once per
+  algorithm (`compile_fail.<algorithm>_<source>`; `test_engine.hpp` picks the engine from `CHECKSUM_TEST_<ALGORITHM>`);
+  the rejected-parameter and precondition tests exist for CRC only, the one algorithm with parameters and asserts.
 - Bare metal: `tests/bare_metal/isa_check.cpp`, one program without Google Test, built instead of the unit tests when
   `CMAKE_SYSTEM_NAME` is `Generic` (`cmake/bare_metal_presets.json`, Arm GNU Toolchain `arm-none-eabi` on PATH). Its
   `static_assert`s check the presets that the flags promise and build against the preset's `CHECKSUM_EXPECTED_ISA` and
@@ -19,12 +22,57 @@
   benchmark executable. Calls are independent, so short-input figures are throughput, not latency.
 - Write tests alongside the component they exercise.
 
+## Unit test layout
+
+Algorithms are `adler32`, `crc`, `fletcher`, `fletcher4`, `internet`, `murmur3`, `xxh3` and `xxhash`. Suites and cases are
+`snake_case`; a suite is the algorithm or `<algorithm>_<area>`, death-test suites end in `_DeathTest`. An algorithm
+with several widths is a typed suite with one instance per width (`fletcher/fletcher16`, `murmur3/x86_32`,
+`xxhash/xxh64`, `xxh3/xxh3_128`); a preset suite has one instance per built preset (`internet_presets/x86_avx2`).
+
+| File | Suite | Contents |
+| --- | --- | --- |
+| `ut_<algorithm>.cpp` | `<algorithm>` | The canonical cases below, then the algorithm's own cases |
+| `ut_<algorithm>_presets.cpp` | `<algorithm>_presets` | Every built preset against `isa::generic` |
+| `ut_accumulator.cpp` | `accumulator` | A static and a dispatch engine of every algorithm and width; CRC bit-length updates |
+| `ut_dispatch.cpp` | `dispatch`, `dispatch_presets` | Every dispatch engine and width against `isa::generic`, for the detected set and each preset alone |
+| `ut_isa.cpp` | `detect_isa`, `isa_test_support` | Presets, `detect_isa()` and the preset helpers of the tests |
+| `ut_crc_<area>.cpp` | `crc_<area>` | CRC only: `catalog`, `parameters`, `polynomial`, `strategies`, `vectors`, `unchecked` (`NDEBUG`) |
+
+Cases of `ut_<algorithm>.cpp`, the same name for the same check:
+
+| Case | Checks |
+| --- | --- |
+| `reference_values` | Published values, reference vectors or an independent model |
+| `every_size_and_offset` | Every size past the largest block, from several start offsets, against the model or the vectors |
+| `split_anywhere` | Every split into three updates of a short message (`engine_checks::check_split_anywhere`) |
+| `split_into_chunks` | Pieces of every size up to past the blocks; a short prefix before long pieces |
+| `long_message` | About 1 MiB (20 KB for CRC), one-shot and in 4099-byte pieces |
+| `byte_ranges` | Strings, `unsigned char` vectors and non-contiguous ranges equal the span overload |
+| `constant_evaluation` | Prefixes computed at compile time equal the run-time results |
+| `edge_values` | Extreme states, seeds and parameters: largest sums, block offsets, all-ones seeds, every CRC width |
+| `resume_from_checksum` | Resumable engines only: a stored result continues the message |
+
+Cases of `ut_<algorithm>_presets.cpp`, with the checks of `engine_checks.hpp`:
+
+| Case | Checks |
+| --- | --- |
+| `constant_evaluation` | The preset's engine and `<algorithm>_compute<..., preset>` during constant evaluation and at run time |
+| `match_generic_for_every_size` | Every size up to 2048 bytes (MurmurHash3 and XXH32/64: 1024, CRC: 640) from every start offset modulo 8 |
+| `match_generic_for_large_sizes` | Sizes around 512 and 1024 bytes and up to about 1 MB, four start offsets |
+| `match_generic_through_updates_and_splits` | Three updates split around blocks, buffers and thresholds; resume, empty updates, ranges |
+| `match_generic_for_all_ones` | Checksums only: all-ones runs around every kernel's chunk sizes from the largest sums |
+
+CRC runs these on CRC-32C (`crc_lut_sliced`) and CRC-64/XZ (`crc_lut_braided`), plus
+`match_byte_table_for_common_parameters`; `crc_folding_presets` checks every catalog set on `crc_lut_sliced` and
+`crc_lut_braided` of every preset, `isa::generic` included. An algorithm's own cases, such as `chunk_boundaries` or
+`field_update`, keep descriptive names.
+
 ## What to run
 
 During development run only the tests of the algorithm you touched: `ctest --preset native-gcc-debug -R <regex>`
-with the suite names (`internet`, `adler32`, `fletcher`, `[Cc]rc`, `xxh`, `murmur3`; MurmurHash3 and XXH32/XXH64
-presets are in `hash_presets`, dispatch engines in `dispatch`). Before finishing run the rows below that apply; the
-full matrix only for shared code.
+with the algorithm name (`adler32`, `crc`, `fletcher`, `internet`, `murmur3`, `xxh3`, `xxhash`), which matches its
+unit, preset and compile-fail tests; `fletcher` also matches `fletcher4`, and dispatch engines are in `dispatch`. Before
+finishing run the rows below that apply; the full matrix only for shared code.
 
 | Change | Presets |
 | --- | --- |
@@ -33,7 +81,7 @@ full matrix only for shared code.
 | Preconditions, exceptions, RTTI | also `native-gcc-no-exceptions`; the unit tests include one executable built with `NDEBUG` |
 | x86-64-only code (`x86_64/` headers, x86 preset sources) | the native presets only; presets the CPU lacks are skipped |
 | Arm or RISC-V code (`arm/`, `riscv64/` headers, their preset sources) | also the cross presets of that architecture in `cmake/emulator_presets.json` (QEMU user mode, `-cpu max`) |
-| Shared code: `*_loops.hpp`, the table loops, `generic/` headers, `isa.hpp`, `detect.cpp` | also every cross preset: `cross-aarch64`, `cross-aarch64be`, `cross-arm`, `cross-arm-crc32`, `cross-riscv64` |
+| Shared code: `*_loops.hpp`, `*_arch.hpp`, the table loops, `target.hpp`, `presets.hpp`, `isa.hpp`, `detect.cpp` | also every cross preset: `cross-aarch64`, `cross-aarch64be`, `cross-arm`, `cross-arm-crc32`, `cross-riscv64` |
 | `detect.cpp`, `compiled_isa.hpp`, the 32-bit Arm presets | also the `bare-cortex-*` workflows (`qemu-system-arm`) and the CPU checks below |
 | Code that differs under MSVC (intrinsics, `#if _MSC_VER`, GCC-only constructs) | also `cmake --workflow --preset windows-msvc-wine` (MSVC x64 in Wine; setup in `build_and_tooling.md`); also `cmake --workflow --preset windows-clang-cl-wine` for code that differs by `_MSC_VER`, `__clang__` or `__GNUC__`; MSVC ARM64 is build-only locally (`windows-msvc-arm64-wine`) and runs its tests in CI |
 | `x86_vpclmul` or `x86_avxvnni` kernels | a CPU with them, or Intel SDE (`sde64 -adl -- checksum_ut`, below); QEMU has neither |
@@ -53,7 +101,7 @@ and `native-clang` on GitHub's AArch64 runner, where the AArch64 presets run on 
 
 `CHECKSUM_REQUIRED_ISA` (preset names as in `CHECKSUM_EXPECTED_ISA` below, each with the earlier rungs of its line)
 turns those skips into failures: a preset test fails if the CPU cannot run a required preset, a benchmark executable
-exits with an error, and `isa_test_support.RequiredPresetsRun` fails if a required preset is unknown, not built, or not
+exits with an error, and `isa_test_support.required_presets_run` fails if a required preset is unknown, not built, or not
 run. Every CI job sets it (`required` in `ci.yml`) to what its CPU guarantees: `x86_avx2` on GitHub's x86-64 runners
 (VPCLMULQDQ and AVX-VNNI vary between their CPUs), `aarch64_pmull` on its Arm runners (Neoverse N2) and in QEMU,
 `thumb2_crc` and `riscv_zbc,riscv_v` in QEMU `-cpu max`. The bare-metal check asserts its presets by itself.
@@ -70,7 +118,7 @@ CHECKSUM_EXPECTED_ISA=x86_avxvnni CHECKSUM_REQUIRED_ISA=x86_avxvnni sde64 -adl -
 
 The `cross-riscv64` jobs run the RVV, detection and dispatch tests again at `-cpu max,vlen=256` and `vlen=512`.
 
-`detect_isa.MatchesTheCpu` (`ut_isa.cpp`, Linux) requires exactly the built presets that the CPU runs: those that
+`detect_isa.matches_the_cpu` (`ut_isa.cpp`, Linux) requires exactly the built presets that the CPU runs: those that
 `CHECKSUM_EXPECTED_ISA` names (comma-separated preset names, each with the earlier rungs of its line), or else the
 feature list of `/proc/cpuinfo`, where only `riscv_zbc` may be missing (older kernels and QEMU have no Zbc key). It
 skips without either; QEMU user mode emulates `/proc/cpuinfo` for Arm and RISC-V only in newer versions, so the

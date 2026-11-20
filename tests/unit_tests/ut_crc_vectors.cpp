@@ -3,6 +3,7 @@
 #include <checksum/crc.hpp>
 
 #include "crc_reference_vectors.hpp"
+#include "crc_test_support.hpp"
 
 #include <gtest/gtest.h>
 
@@ -60,11 +61,10 @@ template <class Strategy> void check_all_sets() {
   }
 }
 
-template <class Strategy> struct crc_vectors_typed : ::testing::Test {};
+template <class Strategy> struct crc_vectors : ::testing::Test {};
 
-using all_strategies = ::testing::Types<crc_lut_none, crc_lut_nibble, crc_lut_byte, crc_lut_sliced, crc_lut_braided>;
-TYPED_TEST_SUITE(crc_vectors_typed, all_strategies);
+TYPED_TEST_SUITE(crc_vectors, crc_test::strategies, crc_test::strategy_names);
 
-TYPED_TEST(crc_vectors_typed, ReferenceVectors) { check_all_sets<TypeParam>(); }
+TYPED_TEST(crc_vectors, reference_values) { check_all_sets<TypeParam>(); }
 
 } // namespace

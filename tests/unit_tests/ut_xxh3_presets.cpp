@@ -3,109 +3,61 @@
 #include <checksum/isa.hpp>
 #include <checksum/xxh3.hpp>
 
+#include <engine_checks.hpp>
 #include <gtest/gtest.h>
 #include <isa_test_support.hpp>
 #include <test_data.hpp>
 
-#include <cstddef>
 #include <cstdint>
-#include <list>
-#include <span>
 #include <string_view>
-#include <vector>
 
 namespace {
 
 using namespace checksum;
 using namespace std::literals;
 
-constexpr std::uint64_t test_seed = 0x9E3779B97F4A7C15U;
+constexpr std::uint64_t seed = 0x9E3779B97F4A7C15U;
 
-std::span<std::byte const> at(std::vector<std::byte> const &buffer, std::size_t offset, std::size_t size) {
-  return std::span<std::byte const>(buffer).subspan(offset, size);
+// Calls check(xxh3_engine<Width, Preset>(seed), xxh3_engine<Width>(seed)) for every width.
+template <isa Preset, class Check> void for_each_width(Check check) {
+  check(xxh3_engine<64, Preset>(seed), xxh3_engine<64>(seed));
+  check(xxh3_engine<128, Preset>(seed), xxh3_engine<128>(seed));
 }
 
-template <unsigned Width, class Preset> void check_constant() {
-  constexpr isa preset = Preset::value;
-  static_assert((xxh3_compute<Width, preset>("abc"sv)) == (xxh3_compute<Width, isa::generic>("abc"sv)));
-  static_assert((xxh3_compute<Width, preset>("123456789"sv, test_seed)) == (xxh3_compute<Width, isa::generic>("123456789"sv, test_seed)));
-  constexpr xxh3_engine<Width, preset> engine(test_seed);
-  constexpr xxh3_engine<Width> generic(test_seed);
-  static_assert(engine.finalize(engine.update(engine.update(engine.initial(), "1234"sv), "56789"sv)) ==
-                generic.finalize(generic.update(generic.update(generic.initial(), "1234"sv), "56789"sv)));
-  EXPECT_EQ((xxh3_compute<Width, preset>("abc"sv)), (xxh3_compute<Width, isa::generic>("abc"sv)));
-  EXPECT_EQ((xxh3_compute<Width, preset>("123456789"sv, test_seed)), (xxh3_compute<Width, isa::generic>("123456789"sv, test_seed)));
-}
-
-template <unsigned Width, class Preset> void check_sizes(std::vector<std::byte> const &buffer) {
-  constexpr isa preset = Preset::value;
-  for(std::size_t offset = 0; offset <= 7; ++offset) {
-    for(std::size_t size = 0; size <= 2048; ++size) {
-      auto const data = at(buffer, offset, size);
-      ASSERT_EQ((xxh3_compute<Width, preset>(data, test_seed)), (xxh3_compute<Width, isa::generic>(data, test_seed)))
-          << "offset " << offset << ", size " << size;
-    }
-  }
-}
-
-template <unsigned Width, class Preset> void check_large(std::vector<std::byte> const &buffer) {
-  constexpr isa preset = Preset::value;
-  for(std::size_t const size : {511UZ, 512UZ, 513UZ, 4096UZ, 10'000UZ, 65'536UZ, 100'003UZ, 999'999UZ}) {
-    for(std::size_t const offset : {0UZ, 1UZ, 3UZ, 7UZ}) {
-      auto const data = at(buffer, offset, size);
-      ASSERT_EQ((xxh3_compute<Width, preset>(data, test_seed)), (xxh3_compute<Width, isa::generic>(data, test_seed)))
-          << "offset " << offset << ", size " << size;
-    }
-  }
-}
-
-template <unsigned Width, class Preset> void check_updates(std::vector<std::byte> const &buffer) {
-  constexpr isa preset = Preset::value;
-  constexpr xxh3_engine<Width, preset> engine(test_seed);
-  constexpr xxh3_engine<Width> generic(test_seed);
-  for(std::size_t const split :
-      {1UZ, 63UZ, 64UZ, 65UZ, 127UZ, 128UZ, 129UZ, 240UZ, 241UZ, 255UZ, 256UZ, 257UZ, 511UZ, 512UZ, 513UZ, 1024UZ, 1299UZ}) {
-    for(std::size_t const offset : {0UZ, 1UZ, 3UZ, 7UZ}) {
-      auto const head = at(buffer, offset, split);
-      auto const tail = at(buffer, offset + split, 1300 - split);
-      auto const expected = generic.finalize(generic.update(generic.update(generic.initial(), head), tail));
-      auto actual = engine.update(engine.initial(), head.first(split / 2));
-      actual = engine.update(actual, head.subspan(split / 2));
-      actual = engine.update(actual, tail);
-      ASSERT_EQ(engine.finalize(actual), expected) << "split " << split << ", offset " << offset;
-    }
-  }
-  auto const value = (xxh3_compute<Width, isa::generic>(buffer, test_seed));
-  EXPECT_EQ((xxh3_compute<Width, preset>(buffer, test_seed)), value);
-  std::list<std::byte> const list(buffer.begin(), buffer.end());
-  EXPECT_EQ((xxh3_compute<Width, preset>(list, test_seed)), (xxh3_compute<Width, isa::generic>(list, test_seed)));
-  EXPECT_EQ(engine.compute(buffer), value);
+template <unsigned Width, isa Preset> void check_constant() {
+  static_assert((xxh3_compute<Width, Preset>("abc"sv)) == (xxh3_compute<Width>("abc"sv)));
+  static_assert((xxh3_compute<Width, Preset>("123456789"sv, seed)) == (xxh3_compute<Width>("123456789"sv, seed)));
+  constexpr xxh3_engine<Width, Preset> engine(seed);
+  constexpr xxh3_engine<Width> generic(seed);
+  static_assert(engine.finalize(engine.update(engine.update(engine.initial(), "1234"sv), "56789"sv)) == generic.compute("123456789"sv));
+  EXPECT_EQ((xxh3_compute<Width, Preset>("abc"sv)), (xxh3_compute<Width>("abc"sv)));
+  auto const buffer = random_bytes(1003, 4);
+  EXPECT_EQ((xxh3_compute<Width, Preset>(at(buffer, 3, 1000), seed)), (xxh3_compute<Width>(at(buffer, 3, 1000), seed)));
 }
 
 template <class Preset> using xxh3_presets = isa_test::preset_test<Preset>;
 TYPED_TEST_SUITE(xxh3_presets, isa_test::presets, isa_test::preset_name);
 
+// Constant evaluation runs the portable code for every preset.
 TYPED_TEST(xxh3_presets, constant_evaluation) {
-  check_constant<64, TypeParam>();
-  check_constant<128, TypeParam>();
+  check_constant<64, TypeParam::value>();
+  check_constant<128, TypeParam::value>();
 }
 
-TYPED_TEST(xxh3_presets, match_generic_for_every_size_to_2048) {
-  std::vector<std::byte> const buffer = random_bytes(2048 + 8, 1);
-  check_sizes<64, TypeParam>(buffer);
-  check_sizes<128, TypeParam>(buffer);
+TYPED_TEST(xxh3_presets, match_generic_for_every_size) {
+  auto const buffer = random_bytes(2048 + 8, 1);
+  for_each_width<TypeParam::value>([&](auto const &engine, auto const &generic) { engine_checks::check_every_size(engine, generic, buffer); });
 }
 
 TYPED_TEST(xxh3_presets, match_generic_for_large_sizes) {
-  std::vector<std::byte> const buffer = random_bytes(1'000'008, 2);
-  check_large<64, TypeParam>(buffer);
-  check_large<128, TypeParam>(buffer);
+  auto const buffer = random_bytes(1'000'008, 2);
+  for_each_width<TypeParam::value>([&](auto const &engine, auto const &generic) { engine_checks::check_large_sizes(engine, generic, buffer); });
 }
 
 TYPED_TEST(xxh3_presets, match_generic_through_updates_and_splits) {
-  std::vector<std::byte> const buffer = random_bytes(3000, 3);
-  check_updates<64, TypeParam>(buffer);
-  check_updates<128, TypeParam>(buffer);
+  auto const buffer = random_bytes(3000, 3);
+  for_each_width<TypeParam::value>(
+      [&](auto const &engine, auto const &generic) { engine_checks::check_updates_and_splits(engine, generic, buffer); });
 }
 
 } // namespace

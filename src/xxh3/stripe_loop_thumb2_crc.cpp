@@ -5,6 +5,5 @@
 #ifdef CHECKSUM_TARGET_THUMB2_CRC
 #define CHECKSUM_PRESET thumb2_crc
 #define CHECKSUM_PRESET_TARGET CHECKSUM_TARGET_THUMB2_CRC
-#define CHECKSUM_PRESET_ARM_NEON
 #include <checksum_private/xxh3_loops.hpp>
 #endif

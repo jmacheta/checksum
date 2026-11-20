@@ -6,12 +6,18 @@
 
 // Every std header of this file and of the architecture headers comes before the target region, so that their inline functions
 // compile for the build's own target.
-#include <checksum/xxh3.hpp>
 #include <checksum/isa.hpp>
+#include <checksum/xxh3.hpp>
 
+#include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 #include <checksum_private/target_begin.hpp>
 
@@ -19,7 +25,7 @@
 
 namespace checksum::xxh3_detail {
 
-#if defined(CHECKSUM_PRESET_RISCV_V)
+#if CHECKSUM_PRESET_HAS(RISCV_V)
 #define CHECKSUM_XXH3_FOLD_TARGET [[gnu::target(CHECKSUM_TARGET_RISCV_V)]]
 #else
 #define CHECKSUM_XXH3_FOLD_TARGET
@@ -59,8 +65,8 @@ CHECKSUM_XXH3_FOLD_TARGET void fold_stripes_kernel(accumulator_array &accumulato
 template <isa Isa>
 CHECKSUM_XXH3_FOLD_TARGET void stripe_any(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe,
                                           secret_array const &secret, std::byte const *last_stripe) noexcept {
-  if constexpr(stripe_kernel_available<Isa>) {
-    if(data.size() >= stripe_kernel_minimum_size<Isa>) {
+  if constexpr(stripe_kernel<Isa>::available) {
+    if(data.size() >= stripe_kernel<Isa>::minimum_size) {
       fold_stripes_kernel<Isa, stripe_kernel<Isa>>(accumulators, data, block_stripe, secret, last_stripe);
       return;
     }

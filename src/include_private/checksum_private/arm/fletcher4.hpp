@@ -2,32 +2,36 @@
 #define CHECKSUM_PRIVATE_ARM_FLETCHER4_HPP
 
 // NEON kernel of the fletcher4 lanes on little-endian AArch64 for every preset and on little-endian 32-bit Arm from
-// thumb2_neon: the four lanes of each sum in two 128-bit vectors. The preset sources define CHECKSUM_PRESET_ARM_NEON to
-// enable the 32-bit Arm section. Included only by fletcher4_arch.hpp.
+// thumb2_neon: the four lanes of each sum in two 128-bit vectors. Included only by fletcher4_arch.hpp.
 
 #include <checksum/isa.hpp>
-#include <checksum_private/arm/target.hpp>
+#include <checksum_private/target.hpp>
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
-#if defined(CHECKSUM_ARM64) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
+#if defined(CHECKSUM_ARM64) || CHECKSUM_PRESET_HAS(NEON)
 
 #include <arm_neon.h>
 
 namespace checksum::fletcher4_detail {
 
-using arm_detail::arm64_target;
+template <isa Isa>
+inline constexpr bool neon_kernel =
+    std::endian::native == std::endian::little && (target_detail::arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
 
 template <isa Isa>
-inline constexpr bool lane_kernel_available =
-    std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
-
-template <isa Isa> inline constexpr std::size_t lane_kernel_minimum_size = lane_kernel_available<Isa> ? 192 : std::numeric_limits<std::size_t>::max();
+  requires(neon_kernel<Isa>)
+struct lane_kernel<Isa> {
+  static constexpr bool available = true;
+  static constexpr std::size_t minimum_size = 192;
+  static lane_sums sum(std::byte const *data, std::size_t groups) noexcept;
+};
 
 // Lanes 0 and 1 in the low vectors, 2 and 3 in the high ones.
-template <isa Isa> lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept {
+template <isa Isa>
+  requires(neon_kernel<Isa>)
+lane_sums lane_kernel<Isa>::sum(std::byte const *data, std::size_t groups) noexcept {
   uint64x2_t sum1_low = vdupq_n_u64(0);
   uint64x2_t sum1_high = vdupq_n_u64(0);
   uint64x2_t sum2_low = vdupq_n_u64(0);
@@ -61,10 +65,6 @@ template <isa Isa> lane_sums lane_kernel(std::byte const *data, std::size_t grou
 }
 
 } // namespace checksum::fletcher4_detail
-
-#else
-
-#include <checksum_private/generic/fletcher4.hpp>
 
 #endif
 

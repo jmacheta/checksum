@@ -1,16 +1,16 @@
 // byte_range rejects string literals, since their terminating '\0' would be hashed.
-#include <checksum/crc.hpp>
+#include "test_engine.hpp"
 
-#include <cstdint>
+#include <checksum/isa.hpp>
+
 #include <string_view>
 
 using namespace std::literals;
 
-constexpr checksum::crc_parameters test_parameters{.polynomial = *checksum::crc_polynomial::create(0x1021, 16)};
-auto const engine = *checksum::crc_engine<std::uint16_t>::create(test_parameters);
+auto const engine = make_engine<checksum::isa::generic>();
 
 #ifdef CHECKSUM_EXPECT_COMPILE_ERROR
-auto const test_state = engine.update(engine.initial(), "123456789");
+[[maybe_unused]] auto const test_state = engine.update(engine.initial(), "123456789");
 #else
-auto const test_state = engine.update(engine.initial(), "123456789"sv);
+[[maybe_unused]] auto const test_state = engine.update(engine.initial(), "123456789"sv);
 #endif

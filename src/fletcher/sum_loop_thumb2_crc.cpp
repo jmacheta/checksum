@@ -5,7 +5,6 @@
 #ifdef CHECKSUM_TARGET_THUMB2_CRC
 #define CHECKSUM_PRESET thumb2_crc
 #define CHECKSUM_PRESET_TARGET CHECKSUM_TARGET_THUMB2_CRC
-#define CHECKSUM_PRESET_ARM_NEON
 #define CHECKSUM_FLETCHER_ENTRY
 #include <checksum_private/fletcher_loops.hpp>
 #endif

@@ -2,13 +2,13 @@
 #define CHECKSUM_PRIVATE_ARM_INTERNET_HPP
 
 // Arm kernels of the Internet checksum: NEON pairwise add-accumulate on little-endian AArch64 for every preset and on
-// little-endian 32-bit Arm from thumb2_neon on, else an ldm + adcs chain on 32-bit Arm from thumb2 on. The thumb2_neon and
-// thumb2_crc sources define CHECKSUM_PRESET_ARM_NEON to enable the NEON section. Included only by internet_arch.hpp.
+// little-endian 32-bit Arm from thumb2_neon on, else an ldm + adcs chain on 32-bit Arm from thumb2 on. Included only by
+// internet_arch.hpp.
 
 #include <checksum/isa.hpp>
-#include <checksum_private/arm/target.hpp>
+#include <checksum_private/target.hpp>
 
-#if defined(CHECKSUM_ARM64) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
+#if defined(CHECKSUM_ARM64) || CHECKSUM_PRESET_HAS(NEON)
 #include <arm_neon.h>
 #endif
 
@@ -17,24 +17,28 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <span>
 
 namespace checksum::internet_detail {
 
-using arm_detail::arm64_target;
+using target_detail::arm64_target;
 
 // NEON lanes are read as little-endian words; the presets of 32-bit Arm compile Thumb-2 code.
 template <isa Isa>
 inline constexpr bool neon_kernel = std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
 template <isa Isa> inline constexpr bool ldm_kernel = !arm64_target && !neon_kernel<Isa> && isa_detail::includes(Isa, isa::thumb2);
 
-template <isa Isa> inline constexpr bool block_sum_available = neon_kernel<Isa> || ldm_kernel<Isa>;
-
-// The NEON kernel is above where it overtakes the portable loop on a Cortex-A72, about 370 bytes in AArch64 and 110 in
-// AArch32: the 64-bit loop is fast, the 32-bit one is not. The ldm kernel is faster from 192 bytes on a Cortex-M4.
 template <isa Isa>
-inline constexpr std::size_t block_sum_minimum_size = block_sum_available<Isa> ? (arm64_target ? 512 : 192) : std::numeric_limits<std::size_t>::max();
+  requires(neon_kernel<Isa> || ldm_kernel<Isa>)
+struct block_kernel<Isa> {
+  static constexpr bool available = true;
+  // The NEON kernel is above where it overtakes the portable loop on a Cortex-A72, about 370 bytes in AArch64 and 110 in
+  // AArch32: the 64-bit loop is fast, the 32-bit one is not. The ldm kernel is faster from 192 bytes on a Cortex-M4.
+  static constexpr std::size_t minimum_size = arm64_target ? 512 : 192;
+  // The ldm kernel from an odd address: the words that start at the next byte are this message's shifted by one byte, so
+  // their sum is byte-swapped. One more byte after them keeps the size taken even.
+  static block_total sum(std::span<std::byte const> data) noexcept;
+};
 
 inline constexpr std::size_t neon_block_size = 64;
 
@@ -52,7 +56,7 @@ template <isa Isa> block_total ldm_sum(std::span<std::byte const> data) noexcept
 // A byte at an even offset: the first byte of a native 16-bit word.
 template <isa Isa> std::uint64_t first_byte_value(std::byte value) noexcept;
 
-#if defined(CHECKSUM_ARM64) || (defined(__arm__) && defined(CHECKSUM_PRESET_ARM_NEON))
+#if defined(CHECKSUM_ARM64) || CHECKSUM_PRESET_HAS(NEON)
 
 template <isa Isa> block_total neon_sum(std::span<std::byte const> data) noexcept {
   std::size_t const message_size = data.size();
@@ -128,9 +132,9 @@ template <isa Isa> std::uint64_t first_byte_value(std::byte value) noexcept {
   return std::to_integer<std::uint64_t>(value) << (std::endian::native == std::endian::little ? 0U : 8U);
 }
 
-// The ldm kernel from an odd address: the words that start at the next byte are this message's shifted by one byte, so
-// their sum is byte-swapped. One more byte after them keeps the size taken even.
-template <isa Isa> block_total block_sum(std::span<std::byte const> data) noexcept {
+template <isa Isa>
+  requires(neon_kernel<Isa> || ldm_kernel<Isa>)
+block_total block_kernel<Isa>::sum(std::span<std::byte const> data) noexcept {
   if constexpr(neon_kernel<Isa>) {
     return neon_sum<Isa>(data);
   } else {

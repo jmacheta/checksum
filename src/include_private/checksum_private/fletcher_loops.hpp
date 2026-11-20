@@ -30,12 +30,6 @@ template <class Sum> struct sum_pair {
   Sum sum2 = 0;
 };
 
-#if defined(__aarch64__) || defined(_M_ARM64)
-inline constexpr bool narrow_value_sums = true;
-#else
-inline constexpr bool narrow_value_sums = false;
-#endif
-
 } // namespace checksum::fletcher_detail
 
 #include <checksum_private/target_begin.hpp>
@@ -261,8 +255,8 @@ template <isa Isa, class Value, std::uint64_t Modulus, std::size_t Limit, class 
 CHECKSUM_ALWAYS_INLINE inline State sum_portable(State state, std::span<std::byte const> data) noexcept {
   // The widest integer the target adds natively, or 64 bits for 32-bit values. AArch64 sums 16-bit values in 32 bits:
   // Fletcher-32 at 20 bytes ran 7 % faster on a Cortex-A72 (a reduction every 360 values costs little), but 9 % slower on x86-64.
-  using accumulator =
-      std::conditional_t<sizeof(Value) == 4, std::uint64_t, std::conditional_t<sizeof(Value) == 2 && narrow_value_sums, std::uint32_t, std::size_t>>;
+  using accumulator = std::conditional_t<sizeof(Value) == 4, std::uint64_t,
+                                         std::conditional_t<sizeof(Value) == 2 && target_detail::arm64_target, std::uint32_t, std::size_t>>;
   // 32-bit targets sum 16-bit values as 32-bit words, two values each; 64-bit targets keep the 4-value formula on native words.
   constexpr bool sums_words = sizeof(Value) == 2 && std::numeric_limits<std::size_t>::digits == 32;
   constexpr std::size_t size = sizeof(Value);
@@ -404,9 +398,7 @@ template <isa Isa, class Value> constexpr bool runs_kernel(std::size_t size) noe
 }
 
 template <isa Isa, class Value> constexpr std::size_t kernel_minimum() noexcept {
-  // An unavailable kernel (e.g. NEON on big-endian) bounds nothing: the portable loop then sums inputs of any size.
-  using value_kernel = kernel<std::numeric_limits<Value>::digits, Isa>;
-  return value_kernel::available ? value_kernel::minimum_size : std::numeric_limits<std::size_t>::max();
+  return kernel<std::numeric_limits<Value>::digits, Isa>::minimum_size;
 }
 
 template <isa Isa, unsigned Width> sums_of<Width> sum_blocks(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {

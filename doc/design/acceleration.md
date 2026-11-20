@@ -8,9 +8,9 @@ in [performance.md](../performance.md) only.
 
 - **Compile-time presets.** Every function takes an `isa` preset (`checksum/isa.hpp`) as a template parameter,
   `isa::generic` by default. Each `<algorithm>_arch.hpp` selects one directory per architecture (`x86_64/`, `arm/`,
-  `riscv64/`, `generic/`) and includes its header. That header selects kernels with
-  `if constexpr(isa_detail::includes(Isa, isa::<preset>))`, never on compiler macros, and uses the portable code
-  without a kernel. Every helper is a template on the preset, so each preset's copy has its own name. No static state.
+  `riscv64/`) and includes its header; other architectures include none and run the portable code. Kernels are
+  selected by the preset (`isa_detail::includes(Isa, isa::<preset>)`), never on compiler macros. Every helper is a
+  template on the preset, so each preset's copy has its own name. No static state.
 - **One source per preset.** `src/<algorithm>/<loop>_<preset>.cpp` builds only where `checksum_private/presets.hpp`
   defines the preset's target options, and compiles the loops under a target pragma (`target_begin.hpp`,
   `target_end.hpp`) after every std header. The build system adds no flags, and flags such as `-march=native` select no
@@ -33,9 +33,22 @@ in [performance.md](../performance.md) only.
   `sysctlbyname` on Apple AArch64. Elsewhere (bare metal, other BSDs) only the macros count, so a Cortex-A9 build
   with the `thumb2_crc` sources never runs them. Kernel headers without a Zbc key (before Linux 6.8) report no
   `riscv_zbc` unless the flags have Zbc. The FreeBSD and Apple queries are untested in CI.
-- **One interface per algorithm.** Every architecture header defines the same constants (`*_available`, size
-  thresholds) and, where they are true, the same functions; callers use them only in `if constexpr` branches.
-  Intrinsics appear nowhere else.
+- **One kernel shape.** `<algorithm>_arch.hpp` defines each kernel as a class template on the preset whose primary
+  template means "no kernel": `available = false`, `minimum_size` the maximum. An architecture header specializes it
+  for the presets that have the kernel, with a `requires` clause on the preset (`target_detail::any_preset<Isa>` for
+  all of them), `available = true`, its `minimum_size` (shortest input it runs for) and its static functions. The
+  kernels are `crc_detail::folding_kernel<Isa>` and `crc32_kernel<Isa, Polynomial>`, `internet_detail::block_kernel<Isa>`
+  and `carry_chain<Isa>`, `fletcher_detail::kernel<Bits, Isa>` and `group_kernel<Bits, Isa>`,
+  `fletcher4_detail::lane_kernel<Isa>` and `xxh3_detail::stripe_kernel<Isa>`. The loops use them only in
+  `if constexpr(<kernel>::available)` branches; intrinsics appear nowhere else. MSVC matches an out-of-class member
+  definition of a constrained specialization only with a trailing return type when the return type is a member type.
+- **One target shape.** Loops and kernels adapt to the target only through `checksum_private/target.hpp`:
+  `CHECKSUM_ARM64` and `arm64_target` (`__aarch64__` with GCC/Clang, `_M_ARM64` with MSVC and clang-cl, so every
+  compiler builds the same AArch64 kernels), `arm32_target`, `word32_target` (32-bit pointers) and
+  `in_order_target<Isa>` (32-bit Arm below `thumb2_neon`).
+- **Intrinsic headers per preset.** A 32-bit Arm or RISC-V section that needs NEON, DSP or RVV types is compiled only
+  where `CHECKSUM_PRESET_HAS(NEON)`, `(DSP)` or `(RISCV_V)` (`presets.hpp`) is 1 for the preset of the source, so
+  every preset source is the same few lines.
 - **Shared algorithm, per-architecture primitives.** The algorithm is written once over a small kernel type (load,
   multiply, fold, reduce); an architecture header supplies only the primitives.
 - **Constants computed by `constexpr` code** and stored with the tables, so the data layout is the same in every build
@@ -50,9 +63,7 @@ in [performance.md](../performance.md) only.
   checksum's `ldm` + `adcs` kernel also runs on big-endian 32-bit Arm).
 - **No call below the threshold.** Where a kernel exists, the kernel and the loop after it sit in a separate
   non-inlined function, so short inputs run the inline portable loop without a call or a stack frame.
-- **One shared AArch64 test.** `CHECKSUM_ARM64` from `arm/target.hpp` (`__aarch64__` with GCC/Clang, `_M_ARM64` with
-  MSVC and clang-cl), so every compiler builds the same AArch64 kernels. MSVC distinguishes no NEON vector types (all
-  are `__n128`): no overloads on them.
+- **MSVC NEON types.** MSVC distinguishes no NEON vector types (all are `__n128`): no overloads on them.
 - **clang-cl target pragma.** clang-cl builds Clang's presets and kernels with Clang's target pragma; `detect_isa()`
   uses CPUID through `<intrin.h>` under `_M_X64` (MSVC and clang-cl), so clang-cl needs no compiler-rt.
 - **No SIMD vectors in `std::array`.** Do not use SIMD vectors in `std::array` (or another MS STL template): the MS STL
@@ -71,7 +82,8 @@ in [performance.md](../performance.md) only.
 4. Add one source per loop, `src/<algorithm>/<loop>_<preset>.cpp` (copy a sibling: it defines `CHECKSUM_PRESET` and
    `CHECKSUM_PRESET_TARGET` and includes the loops header), for adler32, crc (`lut_sliced`, `lut_braided`), fletcher,
    fletcher4, internet, murmur3, xxh3 and xxhash, and list them in `src/CMakeLists.txt`.
-5. Select its kernels in the architecture headers with `if constexpr(isa_detail::includes(Isa, isa::<preset>))`.
+5. Specialize the kernels for it in the architecture headers (`requires(isa_detail::includes(Isa, isa::<preset>))`). If
+   they need intrinsic types the build may lack, add `CHECKSUM_PRESET_HAS_<FEATURE>_<preset>` to `presets.hpp`.
 6. Add the CPU check in `src/isa/detect.cpp`: the `checked` array and `runs()`. A `static_assert` fails for a built
    preset without one. Add its macros to `compiler_guarantees()` in `checksum_private/compiled_isa.hpp`.
 7. Add its name to `tests/include/isa_cpu.hpp`; `ut_isa.cpp` fails without it. Preset tests and benchmarks pick it up
@@ -85,7 +97,7 @@ in [performance.md](../performance.md) only.
 Folding (Intel, "Fast CRC Computation for Generic Polynomials Using PCLMULQDQ Instruction"): four 128-bit accumulators
 fold 64 bytes per iteration, then 16-byte blocks; a last partial block folds with the 16 bytes that end the message; a
 Barrett reduction gives the register. `fold_blocks_with<Reflected, Kernel>` implements it once over `pclmul_kernel`,
-`pmull_kernel` and `clmul_kernel`. A CRC of width W runs in a 64-bit register modulo Q = x^(64−W) · (x^W +
+`pmull_kernel` and `clmul_kernel`, the primitives behind each architecture's `folding_kernel`. A CRC of width W runs in a 64-bit register modulo Q = x^(64−W) · (x^W +
 polynomial), so one kernel per bit order covers widths 1..64 and every register type; its 160 bytes of constants live
 in the sliced and braided tables in every build.
 
@@ -147,7 +159,8 @@ Design notes:
   Inputs shorter than a word take 4-, 2- and 1-byte loads before any other branch.
 - `fold()` adds a value to its rotation by half its width; one final fold after the chains merge, in the native word
   width.
-- On Arm `__builtin_addc` materializes every carry, so non-x86 targets count carries with `adds` + `cinc`.
+- On Arm `__builtin_addc` materializes every carry, so only x86-64 has a `carry_chain` (`__builtin_addcll`,
+  `_addcarry_u64`); other targets count carries with `adds` + `cinc`.
 - Vector kernels work in passes small enough that 64-bit lanes never overflow.
 - The `ldm` kernel returns its last carry separately: added into a 32-bit sum of 0xFFFFFFFF it would be lost. It
   clobbers only r2-r5, so it builds at `-O0` with a frame pointer.
@@ -211,8 +224,10 @@ the four side by side. A NEON XXH32 was slower than scalar; SSE2, AVX2 and NEON 
 ## XXH3
 
 Inputs up to 240 bytes run straight-line code (0-16, 17-128, 129-240) and never reach a kernel. Longer inputs fold
-64-byte stripes into eight 64-bit accumulators; `fold_stripes<Kernel>` implements the loop once over `portable_kernel`
-and each architecture's `stripe_kernel` (load, store, accumulate, scramble).
+64-byte stripes into eight 64-bit accumulators; `fold_stripes<Kernel>` implements the loop over `portable_kernel`, and
+`xxh3_loops.hpp` the same loop over each architecture's `stripe_kernel` (load, store, accumulate, scramble). The second
+copy is first declared inside the target region, since GCC fixes a function's target at its first declaration; on
+RISC-V it carries the RVV target attribute.
 
 | Preset | Kernel | Why |
 | --- | --- | --- |
@@ -230,6 +245,9 @@ Design notes:
 - Kernels run from the first stripe: every kernel beats the portable loop at 256 B, the shortest input that reaches it.
 - Lanes and accumulate steps are spelled out, not loops: GCC at `-O2` kept looped lanes in memory.
 - No software prefetch: it helped only at 1 MiB.
+- The 128-bit products of 17-240 B inputs and of the merge are one multiplication with `unsigned __int128`, or MSVC's
+  `_umul128` (x64) and `__umulh` (ARM64). 32-bit targets call the out-of-line `run_time_multiply_fold()`: inlined, its
+  four multiplications overflow the 1 KiB instruction cache of an STM32L4.
 - Seed 0 uses the default secret in read-only data; another seed derives the 192-byte secret on the stack in each call
   that folds stripes.
 - Streaming folds in place, but `xxh3_engine::update` copies the 328-byte state in and out per call; the `byte_range` overload

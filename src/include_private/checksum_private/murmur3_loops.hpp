@@ -7,6 +7,7 @@
 // Every std header of this file comes before the target region, so that their inline functions compile for the build's own target.
 #include <checksum/isa.hpp>
 #include <checksum/murmur3.hpp>
+#include <checksum_private/target.hpp>
 
 #include <bit>
 #include <cstddef>
@@ -17,18 +18,11 @@
 
 namespace checksum::murmur3_detail {
 
-// 32-bit Arm without a NEON preset runs in order and gains from x86_32 blocks taken four at a time. Out-of-order cores already overlap
-// the blocks.
-#if defined(__arm__)
-template <isa Isa> inline constexpr bool groups_of_four = !isa_detail::includes(Isa, isa::thumb2_neon);
-#else
-template <isa Isa> inline constexpr bool groups_of_four = false;
-#endif
-
 // fold_blocks<32>() four blocks per iteration: the scrambles do not depend on the lane, so they run while earlier blocks update the lane.
 template <isa Isa> CHECKSUM_ALWAYS_INLINE inline lane_array<32> fold_blocks_by_four(lane_array<32> lanes, std::span<std::byte const> data) noexcept;
 
-// fold_blocks<32>() or fold_blocks_by_four(), per groups_of_four.
+// fold_blocks_by_four() on in-order targets, which gain from blocks taken four at a time; out-of-order cores already overlap
+// the blocks. Else fold_blocks<32>().
 template <isa Isa> CHECKSUM_ALWAYS_INLINE inline lane_array<32> fold_blocks_32(lane_array<32> lanes, std::span<std::byte const> data) noexcept;
 
 // The run-time block loop for preset Isa; block_loop() forwards to it.
@@ -63,7 +57,7 @@ template <isa Isa> lane_array<32> fold_blocks_by_four(lane_array<32> lanes, std:
 }
 
 template <isa Isa> lane_array<32> fold_blocks_32(lane_array<32> lanes, std::span<std::byte const> data) noexcept {
-  return groups_of_four<Isa> ? fold_blocks_by_four<Isa>(lanes, data) : fold_blocks<32>(lanes, data);
+  return target_detail::in_order_target<Isa> ? fold_blocks_by_four<Isa>(lanes, data) : fold_blocks<32>(lanes, data);
 }
 
 template <isa Isa, unsigned Width> void block_loop_any(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {

@@ -1,9 +1,10 @@
-// ZFS fletcher4: OpenZFS reference values, an independent model, splits, ranges and wraparound.
+// ZFS fletcher4: OpenZFS reference values, an independent model, splits, ranges, resume and edge values.
 
 #include <checksum/fletcher4.hpp>
 
 #include <fletcher4_reference_vectors.hpp>
 
+#include <engine_checks.hpp>
 #include <gtest/gtest.h>
 #include <test_data.hpp>
 
@@ -24,11 +25,7 @@ using namespace std::literals;
 // Every prefix of this size stays within the default step limit of Clang's constant evaluator.
 constexpr std::size_t constant_message_size = 200;
 
-constexpr std::array<std::byte, constant_message_size> constant_message = [] {
-  std::array<std::byte, constant_message_size> result{};
-  fill_random(result);
-  return result;
-}();
+constexpr auto constant_message = random_array<constant_message_size>();
 
 static_assert(fletcher4_compute("abcdefgh"sv) == fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
 static_assert(fletcher4_compute(std::span<std::byte const>{}) == fletcher4_value{});
@@ -55,7 +52,7 @@ fletcher4_value reference(std::span<std::byte const> data) {
   return {a, b, c, d};
 }
 
-TEST(fletcher4, reference_vectors) {
+TEST(fletcher4, reference_values) {
   std::vector<std::byte> data(fletcher4_test::long_message_size);
   fill_random(data);
   auto const message = std::span<std::byte const>(data);
@@ -63,17 +60,19 @@ TEST(fletcher4, reference_vectors) {
     ASSERT_EQ(fletcher4_compute(message.first(4 * words)), fletcher4_test::prefixes[words]) << "words " << words;
     ASSERT_EQ(reference(message.first(4 * words)), fletcher4_test::prefixes[words]) << "words " << words;
   }
-  EXPECT_EQ(fletcher4_compute(message), fletcher4_test::long_message);
-  EXPECT_EQ(reference(message), fletcher4_test::long_message);
-  fletcher4_state state{};
-  for(std::size_t start = 0; start < message.size(); start += 4099) {
-    state = fletcher4_engine{}.update(state, message.subspan(start, std::min<std::size_t>(4099, message.size() - start)));
-  }
-  EXPECT_EQ(fletcher4_engine{}.finalize(state), fletcher4_test::long_message);
+}
+
+// The OpenZFS value of a message of 1 MiB, one-shot and in 4099-byte pieces.
+TEST(fletcher4, long_message) {
+  std::vector<std::byte> data(fletcher4_test::long_message_size);
+  fill_random(data);
+  EXPECT_EQ(fletcher4_compute(data), fletcher4_test::long_message);
+  EXPECT_EQ(reference(data), fletcher4_test::long_message);
+  EXPECT_EQ(engine_checks::chunked(fletcher4_engine{}, data, 4099), fletcher4_test::long_message);
 }
 
 // All lengths, including unfinished words, at every alignment of a word.
-TEST(fletcher4, matches_model) {
+TEST(fletcher4, every_size_and_offset) {
   auto const data = random_bytes(1100 + 16, 4);
   for(std::size_t offset = 0; offset < 16; ++offset) {
     for(std::size_t size = 0; size <= 1100; ++size) {
@@ -84,7 +83,7 @@ TEST(fletcher4, matches_model) {
 }
 
 // sum3 and sum4 wrap around 2^64; the other sizes end with an unfinished word.
-TEST(fletcher4, all_ones) {
+TEST(fletcher4, long_all_ones) {
   std::vector<std::byte> const data(fletcher4_test::all_ones_size, std::byte{0xFF});
   EXPECT_EQ(fletcher4_compute(data), fletcher4_test::all_ones);
   EXPECT_EQ(reference(data), fletcher4_test::all_ones);
@@ -94,22 +93,10 @@ TEST(fletcher4, all_ones) {
   }
 }
 
-TEST(fletcher4, split_anywhere) {
-  auto const data = random_bytes(80, 3);
-  auto const message = std::span<std::byte const>(data);
-  fletcher4_state const whole = fletcher4_engine{}.update(fletcher4_state{}, message);
-  for(std::size_t first = 0; first <= data.size(); ++first) {
-    for(std::size_t second = first; second <= data.size(); ++second) {
-      fletcher4_state state = fletcher4_engine{}.update(fletcher4_state{}, message.first(first));
-      state = fletcher4_engine{}.update(state, message.subspan(first, second - first));
-      state = fletcher4_engine{}.update(state, message.subspan(second));
-      ASSERT_EQ(state, whole) << "split at " << first << " and " << second;
-    }
-  }
-}
+TEST(fletcher4, split_anywhere) { engine_checks::check_split_anywhere(fletcher4_engine{}, random_bytes(80, 3)); }
 
-// An unfinished word entering long chunks.
-TEST(fletcher4, split_before_long_chunks) {
+// An unfinished word entering long chunks, and pieces of every size up to 70 bytes.
+TEST(fletcher4, split_into_chunks) {
   auto const data = random_bytes(5000, 5);
   auto const message = std::span<std::byte const>(data);
   auto const whole = reference(message);
@@ -117,6 +104,9 @@ TEST(fletcher4, split_before_long_chunks) {
     fletcher4_state const state =
         fletcher4_engine{}.update(fletcher4_engine{}.update(fletcher4_state{}, message.first(first)), message.subspan(first));
     ASSERT_EQ(fletcher4_engine{}.finalize(state), whole) << "split at " << first;
+  }
+  for(std::size_t chunk_size = 1; chunk_size <= 70; ++chunk_size) {
+    ASSERT_EQ(engine_checks::chunked(fletcher4_engine{}, message.first(300), chunk_size), reference(message.first(300))) << "chunk " << chunk_size;
   }
 }
 
@@ -144,7 +134,7 @@ TEST(fletcher4, lanes_continue_state) {
 }
 
 // Every prefix computed at compile time, plus splits inside a word.
-TEST(fletcher4, constant_evaluation_matches_run_time) {
+TEST(fletcher4, constant_evaluation) {
   static constexpr auto prefixes = [] {
     std::array<fletcher4_value, constant_message_size + 1> result{};
     for(std::size_t size = 0; size <= constant_message_size; ++size) {
@@ -212,8 +202,8 @@ TEST(fletcher4, byte_ranges) {
             fletcher4_engine{}.update(fletcher4_state{}, data));
 }
 
-// The word offset is taken modulo 4, at compile time and at run time.
-TEST(fletcher4, word_offset_modulo_4) {
+// The word offset is taken modulo 4 from the largest sums, at compile time and at run time.
+TEST(fletcher4, edge_values) {
   auto const data = random_bytes(37, 6);
   auto const message = std::span<std::byte const>(data);
   constexpr std::uint64_t largest = ~std::uint64_t{0};

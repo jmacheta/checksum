@@ -19,43 +19,19 @@
 #include <limits>
 #include <span>
 
-#if defined(_MSC_VER) && !defined(__clang__)
-#include <intrin.h>
-#endif
-
 #include <checksum_private/target_begin.hpp>
 
 #include <checksum_private/internet_arch.hpp>
 
 namespace checksum::internet_detail {
 
-// The widest integer the target adds natively. Its carries are worth 2^bits, which is 1 modulo 0xFFFF for any multiple of 16 bits.
-using word = std::size_t;
-
 static_assert(std::numeric_limits<word>::digits % 16 == 0);
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big);
 
 inline constexpr std::size_t word_size = sizeof(word);
 
-// GCC and Clang turn __builtin_addcll into an adc chain on x86-64, MSVC _addcarry_u64 (and _addcarry_u32 on x86); GCC 14 on
-// Arm materializes every carry instead.
-#if defined(_MSC_VER) && !defined(__clang__) && (defined(_M_X64) || defined(_M_IX86))
-inline constexpr bool carry_flag_chain = true;
-#elif defined(__x86_64__) && defined(__has_builtin)
-#if __has_builtin(__builtin_addcll)
-inline constexpr bool carry_flag_chain = true;
-#else
-inline constexpr bool carry_flag_chain = false;
-#endif
-#else
-inline constexpr bool carry_flag_chain = false;
-#endif
-
 // Every function below is a template on the preset, so that each preset's copy has its own name.
 template <isa Isa, class Integer> Integer load(std::byte const *data) noexcept;
-
-// left + right + carry (0 or 1) as one add with carry, the carry out in carry; only where carry_flag_chain.
-template <isa Isa> word add_carry(word left, word right, word &carry) noexcept;
 
 // sum + value, counting the carry out in carries, or adding it back at once with a carry flag chain.
 template <isa Isa> void add_with_carry(word &sum, word &carries, word value) noexcept;
@@ -82,29 +58,10 @@ template <isa Isa, class Integer> Integer load(std::byte const *data) noexcept {
   return value;
 }
 
-template <isa Isa> word add_carry(word left, word right, word &carry) noexcept {
-  word sum = 0;
-#if defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64)
-  carry = _addcarry_u64(static_cast<unsigned char>(carry), left, right, &sum);
-#elif defined(_MSC_VER) && !defined(__clang__) && defined(_M_IX86)
-  carry = _addcarry_u32(static_cast<unsigned char>(carry), left, right, &sum);
-#elif defined(_MSC_VER) && !defined(__clang__)
-  // MSVC on ARM64 has no add-with-carry intrinsic and never runs the chain, but parses this body.
-  word const partial = left + right;
-  sum = partial + carry;
-  carry = (partial < left || sum < partial) ? 1U : 0U;
-#else
-  unsigned long long carry_out = 0;
-  sum = static_cast<word>(__builtin_addcll(left, right, carry, &carry_out)); // a 64-bit word: only x86-64 runs the chain
-  carry = static_cast<word>(carry_out);
-#endif
-  return sum;
-}
-
 template <isa Isa> void add_with_carry(word &sum, word &carries, word value) noexcept {
-  if constexpr(carry_flag_chain) {
+  if constexpr(carry_chain<Isa>::available) {
     word carry = 0;
-    sum = add_carry<Isa>(sum, value, carry);
+    sum = carry_chain<Isa>::add(sum, value, carry);
     sum += carry;
   } else {
     sum += value;
@@ -120,8 +77,8 @@ template <isa Isa, std::size_t Count> CHECKSUM_ALWAYS_INLINE inline void add_wor
 #pragma GCC unroll 8
 #endif
   for(std::size_t index = 0; index < Count; ++index) {
-    if constexpr(carry_flag_chain) {
-      sum = add_carry<Isa>(sum, load<Isa, word>(data + (index * word_size)), carry);
+    if constexpr(carry_chain<Isa>::available) {
+      sum = carry_chain<Isa>::add(sum, load<Isa, word>(data + (index * word_size)), carry);
     } else {
       add_with_carry<Isa>(sum, carries, load<Isa, word>(data + (index * word_size)));
     }
@@ -191,15 +148,15 @@ template <isa Isa> std::uint16_t to_big_endian(std::uint16_t sum) noexcept {
 }
 
 template <isa Isa> CHECKSUM_NOINLINE std::uint16_t sum_long(std::span<std::byte const> data) noexcept {
-  block_total const total = block_sum<Isa>(data);
+  block_total const total = block_kernel<Isa>::sum(data);
   return to_big_endian<Isa>(sum_words<Isa>(data.subspan(total.size), total.sum));
 }
 
 // Words in native byte order: on little-endian targets this sums byte-swapped 16-bit words, and the swap of their sum is
 // the big-endian sum.
 template <isa Isa> std::uint16_t sum_any(std::span<std::byte const> data) noexcept {
-  if constexpr(block_sum_available<Isa>) {
-    if(data.size() >= block_sum_minimum_size<Isa>) [[unlikely]] {
+  if constexpr(block_kernel<Isa>::available) {
+    if(data.size() >= block_kernel<Isa>::minimum_size) [[unlikely]] {
       return sum_long<Isa>(data);
     }
   }

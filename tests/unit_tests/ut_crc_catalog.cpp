@@ -4,6 +4,7 @@
 #include <checksum/crc_catalog.hpp>
 
 #include "crc_catalog_checks.hpp"
+#include "crc_test_support.hpp"
 
 #include <gtest/gtest.h>
 
@@ -81,12 +82,11 @@ template <class Strategy, class Register> void check_entry(catalog_check const &
   EXPECT_EQ((*engine)->compute(check_message()), entry.check) << entry.name << ", " << sizeof(Register) * 8 << "-bit register";
 }
 
-template <class Strategy> struct crc_catalog_typed : ::testing::Test {};
+template <class Strategy> struct crc_catalog : ::testing::Test {};
 
-using all_strategies = ::testing::Types<crc_lut_none, crc_lut_nibble, crc_lut_byte, crc_lut_sliced, crc_lut_braided>;
-TYPED_TEST_SUITE(crc_catalog_typed, all_strategies);
+TYPED_TEST_SUITE(crc_catalog, crc_test::strategies, crc_test::strategy_names);
 
-TYPED_TEST(crc_catalog_typed, AllParameterSetsMatchCheckValue) {
+TYPED_TEST(crc_catalog, reference_values) {
   for(catalog_check const &entry : catalog_checks) {
     unsigned const width = entry.parameters.polynomial.width();
     if(width <= 8) {
@@ -106,7 +106,7 @@ static_assert(&crc32 == &crc32_iso_hdlc && &crc32c == &crc32_iscsi && &crc16_cci
 // Parameters are a template argument by value: an inline set equal to a catalog set names the same engine.
 static_assert(crc_parameters{.polynomial = *crc_polynomial::create(0x07, 8)} == crc8_smbus);
 
-TEST(CrcCatalogAlias, SameEngineObjectAsCanonical) {
+TEST(crc_catalog, aliases_name_the_canonical_engine) {
   EXPECT_EQ(&crc_engine_for<crc32>, &crc_engine_for<crc32_iso_hdlc>);
   EXPECT_EQ(&crc_engine_for<crc32c>, &crc_engine_for<crc32_iscsi>);
   EXPECT_EQ(&crc_engine_for<crc16_ccitt_false>, &crc_engine_for<crc16_ibm_3740>);

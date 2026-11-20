@@ -1,8 +1,9 @@
-// MurmurHash3_x86_32 and MurmurHash3_x64_128: reference values, splits, alignments and ranges.
+// MurmurHash3_x86_32 and MurmurHash3_x64_128: reference values, splits, alignments, ranges and edge values.
 
 #include <checksum/murmur3.hpp>
 #include <murmur3_reference_vectors.hpp>
 
+#include <engine_checks.hpp>
 #include <gtest/gtest.h>
 #include <test_data.hpp>
 
@@ -51,13 +52,11 @@ template <unsigned Width> constexpr std::size_t prefix_mismatches(std::size_t si
 
 // The hash of data, folded in pieces of chunk_size bytes.
 template <unsigned Width> constexpr auto chunked(std::span<std::byte const> data, std::size_t chunk_size, std::uint32_t seed) {
-  murmur3_engine<Width> const engine(seed);
-  auto state = engine.initial();
-  for(; data.size() > chunk_size; data = data.subspan(chunk_size)) {
-    state = engine.update(state, data.first(chunk_size));
-  }
-  return engine.finalize(engine.update(state, data));
+  return engine_checks::chunked(murmur3_engine<Width>(seed), data, chunk_size);
 }
+
+// Every tail length around a few blocks.
+constexpr std::size_t constant_limit = 70;
 
 using namespace std::literals;
 
@@ -71,9 +70,6 @@ static_assert(murmur3_compute<32>(std::span(message), murmur3_32_vectors[2].seed
 static_assert(murmur3_compute<128>(std::span(message).first(33), murmur3_128_vectors[2].seed) == murmur3_128_vectors[2].prefixes[33]);
 static_assert(chunked<128>(message, 7, murmur3_128_vectors[1].seed) == murmur3_128_vectors[1].prefixes[300]);
 static_assert(chunked<32>(message, 3, murmur3_32_vectors[1].seed) == murmur3_32_vectors[1].prefixes[300]);
-// Every tail length around a few blocks; longer prefixes exceed the constant-evaluation step limit of Clang.
-static_assert(prefix_mismatches<32>(70) == 0);
-static_assert(prefix_mismatches<128>(70) == 0);
 static_assert(murmur3_engine<32>{1234}.compute("Hello, world!"sv) == 0xFAF6CDB3U);
 static_assert(engine<murmur3_engine<32>> && engine<murmur3_dispatch_engine<128>> && !resumable_engine<murmur3_engine<128>>);
 
@@ -88,7 +84,7 @@ struct width_names {
 
 TYPED_TEST_SUITE(murmur3, widths, width_names);
 
-TYPED_TEST(murmur3, reference_prefixes) {
+TYPED_TEST(murmur3, reference_values) {
   constexpr unsigned width = TypeParam::value;
   for(auto const &set : vectors<width>()) {
     for(std::size_t size = 0; size < murmur3_test::prefix_count; ++size) {
@@ -100,7 +96,7 @@ TYPED_TEST(murmur3, reference_prefixes) {
   }
 }
 
-TYPED_TEST(murmur3, unaligned_starts) {
+TYPED_TEST(murmur3, every_size_and_offset) {
   constexpr unsigned width = TypeParam::value;
   auto const &set = vectors<width>()[2];
   for(std::size_t offset = 0; offset < 16; ++offset) {
@@ -130,7 +126,7 @@ TYPED_TEST(murmur3, split_anywhere) {
 }
 
 // Pieces of every size up to past two 32-byte spans, so that splits fall at every offset around the 4- and 16-byte block boundaries.
-TYPED_TEST(murmur3, chunks_across_blocks) {
+TYPED_TEST(murmur3, split_into_chunks) {
   constexpr unsigned width = TypeParam::value;
   for(auto const &set : vectors<width>()) {
     for(std::size_t chunk_size = 1; chunk_size <= 70; ++chunk_size) {
@@ -156,8 +152,9 @@ TYPED_TEST(murmur3, byte_ranges) {
   EXPECT_EQ(murmur3_compute<width>(std::list<std::byte>(message.begin(), message.end()), set.seed), set.prefixes[300]);
 }
 
-// Before the first block, the lanes and the buffer bytes past the message are unused and may hold anything.
-TYPED_TEST(murmur3, short_state_ignores_unused_fields) {
+// Before the first block, the lanes and the buffer bytes past the message are unused and may hold anything; width 32 mixes in the
+// length modulo 2^32.
+TYPED_TEST(murmur3, edge_values) {
   constexpr unsigned width = TypeParam::value;
   auto const &set = vectors<width>()[2];
   for(std::size_t size = 0; size < width / 8; ++size) {
@@ -167,14 +164,33 @@ TYPED_TEST(murmur3, short_state_ignores_unused_fields) {
     std::ranges::copy(std::span(message).first(size), state.buffer.begin());
     EXPECT_EQ(murmur3_engine<width>{set.seed}.finalize(state), set.prefixes[size]) << "size " << size;
   }
+  if constexpr(width == 32) {
+    murmur3_state<32> state{.lanes = {0x12345678U}, .length = (std::uint64_t{1} << 32) + 5, .buffer = {std::byte{0x42}}};
+    murmur3_state<32> wrapped = state;
+    wrapped.length = 5;
+    EXPECT_EQ(murmur3_engine<32>{}.finalize(state), murmur3_engine<32>{}.finalize(wrapped));
+  }
 }
 
-// Width 32 mixes in the length modulo 2^32.
-TEST(murmur3_x86_32, length_wraps) {
-  murmur3_state<32> state{.lanes = {0x12345678U}, .length = (std::uint64_t{1} << 32) + 5, .buffer = {std::byte{0x42}}};
-  murmur3_state<32> wrapped = state;
-  wrapped.length = 5;
-  EXPECT_EQ(murmur3_engine<32>{}.finalize(state), murmur3_engine<32>{}.finalize(wrapped));
+// Every prefix up to past a few blocks computed at compile time, for every seed; longer prefixes exceed the constant-evaluation step limit
+// of Clang.
+TYPED_TEST(murmur3, constant_evaluation) {
+  static constexpr unsigned width = TypeParam::value;
+  static_assert(prefix_mismatches<width>(constant_limit) == 0);
+  static constexpr auto prefixes = [] {
+    std::array<std::array<typename std::remove_cvref_t<decltype(vectors<width>()[0].prefixes)>::value_type, constant_limit + 1>, 3> result{};
+    for(std::size_t set = 0; set < result.size(); ++set) {
+      for(std::size_t size = 0; size <= constant_limit; ++size) {
+        result[set][size] = murmur3_compute<width>(std::span(message).first(size), vectors<width>()[set].seed);
+      }
+    }
+    return result;
+  }();
+  for(std::size_t set = 0; set < prefixes.size(); ++set) {
+    for(std::size_t size = 0; size <= constant_limit; ++size) {
+      ASSERT_EQ(prefixes[set][size], murmur3_compute<width>(std::span(message).first(size), vectors<width>()[set].seed)) << "size " << size;
+    }
+  }
 }
 
 TYPED_TEST(murmur3, long_message) {

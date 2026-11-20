@@ -17,6 +17,16 @@
 #include <type_traits>
 #include <utility>
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
+
+// A native 64 x 64-bit multiplication with a 128-bit result at run time: unsigned __int128, or MSVC's _umul128 (x64) and
+// __umulh (ARM64).
+#if defined(__SIZEOF_INT128__) || (defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64)))
+#define CHECKSUM_XXH3_NATIVE_MULTIPLY // NOLINT(cppcoreguidelines-macro-usage): tested by #if.
+#endif
+
 /**
  * @addtogroup checksum
  * @{
@@ -167,13 +177,13 @@ inline constexpr std::array<std::uint64_t, secret_size / 8> default_secret_words
 // The full product of two 64-bit values, from four 32-bit products.
 constexpr hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept;
 
-// multiply_portable(), or a native 128-bit multiplication at run time where the compiler has one.
+// multiply_portable(), or a native 128-bit multiplication at run time where the target has one.
 constexpr hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept;
 
 // The exclusive or of the two Integer words at secret.
 template <class Integer> constexpr Integer secret_xor(std::byte const *secret) noexcept;
 
-// The halves of the full product, combined by exclusive or; run_time_multiply_fold() at run time without a 128-bit type.
+// The halves of the full product, combined by exclusive or; run_time_multiply_fold() at run time without a native multiplication.
 constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) noexcept;
 
 // multiply_fold(), defined in src/xxh3/multiply_fold.cpp. Inlined, its four multiplications make the 17-128 byte path too long for the
@@ -275,14 +285,25 @@ constexpr hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noe
 }
 
 constexpr hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept {
-#ifdef __SIZEOF_INT128__
+#if defined(CHECKSUM_XXH3_NATIVE_MULTIPLY)
   if !consteval {
+#if defined(__SIZEOF_INT128__)
     __extension__ typedef unsigned __int128 wide_type; // NOLINT(modernize-use-using): __extension__ silences -Wpedantic only on a typedef.
     wide_type const product = static_cast<wide_type>(left) * right;
     return {.low = static_cast<std::uint64_t>(product), .high = static_cast<std::uint64_t>(product >> 64U)};
-  }
+#elif defined(_M_X64)
+    std::uint64_t high = 0;
+    std::uint64_t const low = _umul128(left, right, &high);
+    return {.low = low, .high = high};
+#else
+    return {.low = left * right, .high = __umulh(left, right)};
 #endif
+  } else {
+    return multiply_portable(left, right);
+  }
+#else
   return multiply_portable(left, right);
+#endif
 }
 
 template <class Integer> constexpr Integer secret_xor(std::byte const *secret) noexcept {
@@ -294,7 +315,7 @@ constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) n
     hash128 const product = multiply(left, right);
     return product.low ^ product.high;
   };
-#ifndef __SIZEOF_INT128__
+#if !defined(CHECKSUM_XXH3_NATIVE_MULTIPLY)
   if !consteval {
     return run_time_multiply_fold(left, right);
   } else {

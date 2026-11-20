@@ -5,28 +5,33 @@
 // length. Included only by internet_arch.hpp.
 
 #include <checksum/isa.hpp>
-#include <checksum_private/presets.hpp>
-
-#include <riscv_vector.h>
+#include <checksum_private/target.hpp>
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <span>
+
+#if CHECKSUM_PRESET_HAS(RISCV_V)
+
+#include <riscv_vector.h>
 
 namespace checksum::internet_detail {
 
-template <isa Isa> inline constexpr bool block_sum_available = isa_detail::includes(Isa, isa::riscv_v);
-
-// Not measured on hardware: one strip-mined pass costs a few instructions, so the kernel starts at 64 bytes.
-template <isa Isa> inline constexpr std::size_t block_sum_minimum_size = block_sum_available<Isa> ? 64 : std::numeric_limits<std::size_t>::max();
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_v))
+struct block_kernel<Isa> {
+  static constexpr bool available = true;
+  // Not measured on hardware: one strip-mined pass costs a few instructions, so the kernel starts at 64 bytes.
+  static constexpr std::size_t minimum_size = 64;
+  static block_total sum(std::span<std::byte const> data) noexcept;
+};
 
 // Each 64-bit lane takes one 32-bit word per iteration, and up to 2^13 lanes (VLEN 65536) are reduced together: passes of
 // 2^18 iterations keep the reduction below 2^63.
 inline constexpr std::size_t rvv_pass_iterations = std::size_t{1} << 18U;
 
-// All whole 32-bit words, widened and added into 64-bit lanes (vwaddu.wv), then reduced (vredsum). Not block_sum() itself:
-// GCC takes the target attribute from the first declaration, which internet_arch.hpp gives without it.
+// All whole 32-bit words, widened and added into 64-bit lanes (vwaddu.wv), then reduced (vredsum). Not block_kernel::sum()
+// itself: GCC takes the target attribute from the first declaration, which has none.
 template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] block_total vector_sum(std::span<std::byte const> data) noexcept;
 
 template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] block_total vector_sum(std::span<std::byte const> data) noexcept {
@@ -51,8 +56,14 @@ template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] block_total vector_s
   return {.sum = total, .size = message_size - data.size()};
 }
 
-template <isa Isa> block_total block_sum(std::span<std::byte const> data) noexcept { return vector_sum<Isa>(data); }
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_v))
+block_total block_kernel<Isa>::sum(std::span<std::byte const> data) noexcept {
+  return vector_sum<Isa>(data);
+}
 
 } // namespace checksum::internet_detail
+
+#endif
 
 #endif // CHECKSUM_PRIVATE_RISCV64_INTERNET_HPP

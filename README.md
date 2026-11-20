@@ -35,7 +35,8 @@ Out of scope: cryptographic hashes and message authentication (SHA, SipHash), an
 | Adler-32 (RFC 1950) | zlib, PNG | `checksum/adler32.hpp` | [adler32.md](doc/adler32.md) |
 | Fletcher-16, -32, -64 | Protocols that specify them | `checksum/fletcher.hpp` | [fletcher.md](doc/fletcher.md) |
 | fletcher4 | ZFS | `checksum/fletcher4.hpp` | [fletcher4.md](doc/fletcher4.md) |
-| XXH3-64, XXH3-128, XXH32, XXH64 | Hash tables, deduplication, cache keys | `checksum/xxh3.hpp`, `checksum/xxhash.hpp` | [xxhash.md](doc/xxhash.md) |
+| XXH3-64, XXH3-128 | Hash tables, deduplication, cache keys | `checksum/xxh3.hpp` | [xxh3.md](doc/xxh3.md) |
+| XXH32, XXH64 | Hash tables, cache keys, legacy formats | `checksum/xxhash.hpp` | [xxhash.md](doc/xxhash.md) |
 | MurmurHash3 x86_32, x64_128 | Compatibility with existing MurmurHash3 values | `checksum/murmur3.hpp` | [murmur3.md](doc/murmur3.md) |
 
 Measured speed and code size on x86-64, Cortex-A72, Cortex-M4 and Cortex-M33: [doc/performance.md](doc/performance.md).

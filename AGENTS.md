@@ -9,8 +9,8 @@ xxHash, MurmurHash3): `constexpr`, no allocation, CPU kernels selected by instru
 | Path | Contents |
 | --- | --- |
 | `src/include/checksum/` | Public headers, one per algorithm (+ `crc_catalog.hpp`), `isa.hpp` (presets, `isa_set`), `byte_range.hpp` |
-| `src/include_private/checksum_private/` | `<algorithm>_loops.hpp` (portable loops), `<algorithm>_arch.hpp` (selects the directory), `presets.hpp` and `target_begin/end.hpp` (target options) |
-| `src/include_private/checksum_private/{x86_64,arm,riscv64,generic}/` | Architecture kernels, chosen with `if constexpr` on the preset |
+| `src/include_private/checksum_private/` | `<algorithm>_loops.hpp` (portable loops), `<algorithm>_arch.hpp` (kernel templates, selects the directory), `target.hpp` (target shape), `presets.hpp` and `target_begin/end.hpp` (target options) |
+| `src/include_private/checksum_private/{x86_64,arm,riscv64}/` | Architecture kernels: specializations of the kernel templates for the presets that have them |
 | `src/<algorithm>/` | Run-time loops, one source per preset (`sum_loop_x86_avx2.cpp`, `lut_sliced_aarch64_crc.cpp`) |
 | `src/isa/detect.cpp` | `detect_isa()`, the only CPU query |
 | `src/CMakeLists.txt` | Every library source, `detect.cpp` included, listed by hand in `target_sources(checksum PRIVATE ...)` (no glob); a new source goes there, not in the top-level `CMakeLists.txt` |

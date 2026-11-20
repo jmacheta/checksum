@@ -5,7 +5,6 @@
 #ifdef CHECKSUM_TARGET_THUMB2_DSP
 #define CHECKSUM_PRESET thumb2_dsp
 #define CHECKSUM_PRESET_TARGET CHECKSUM_TARGET_THUMB2_DSP
-#define CHECKSUM_PRESET_ARM_DSP
 #define CHECKSUM_ADLER32_ENTRY
 #include <checksum_private/fletcher_loops.hpp>
 #endif

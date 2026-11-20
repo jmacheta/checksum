@@ -4,9 +4,8 @@
 // x86-64 kernels of the Fletcher checksums and Adler-32: SSE2 vectors for isa::generic, SSSE3 weighting from x86_pclmul,
 // AVX2 vectors from x86_avx2, and vpdpbusd from x86_avxvnni. Included only by fletcher_arch.hpp.
 
-#include <checksum_private/generic/fletcher.hpp>
-
-#if defined(__x86_64__) || defined(_M_X64)
+#include <checksum/isa.hpp>
+#include <checksum_private/target.hpp>
 
 #include <immintrin.h>
 
@@ -45,37 +44,43 @@ template <isa Isa, class Lane> std::uint64_t lane_total(x86_vector<Isa> value) n
 // of low holds value (j / n) * 2n + j % n, and lane j of high the value n places later.
 template <isa Isa, class Lane> std::uint64_t column_total(x86_vector<Isa> low, x86_vector<Isa> high, std::uint64_t values_per_block) noexcept;
 
-template <isa Isa> struct kernel<8, Isa> {
-  static constexpr bool available = Isa == isa::generic || isa_detail::line(Isa) == isa::x86_pclmul;
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+struct kernel<8, Isa> {
+  static constexpr bool available = true;
   static constexpr std::size_t block_size = x86_vector_size<Isa>;
   // A 32-bit lane of the previous sums gains at most 8 * 255 * j at block j.
   static constexpr std::size_t max_blocks = 1024;
   static_assert(std::uint64_t{8 * 255} * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
   // From 64 bytes the kernel beats the portable loops on a Core Ultra 7 155H with GCC and Clang, SSE2 and AVX2. The one
   // exception is Fletcher-16 with GCC and SSE2: 7 % slower at 64 bytes, faster from 96.
-  static constexpr std::size_t minimum_size = available ? 64 : std::numeric_limits<std::size_t>::max();
+  static constexpr std::size_t minimum_size = 64;
   static constexpr std::size_t alignment = 1;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
-template <isa Isa> struct kernel<16, Isa> {
-  static constexpr bool available = Isa == isa::generic || isa_detail::line(Isa) == isa::x86_pclmul;
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+struct kernel<16, Isa> {
+  static constexpr bool available = true;
   static constexpr std::size_t block_size = x86_vector_size<Isa>;
   // A 32-bit lane of the previous sums gains at most 2 * 65535 * j at block j.
   static constexpr std::size_t max_blocks = 128;
   static_assert(std::uint64_t{2 * 65'535} * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
   // Where the kernel overtakes the portable loop on a Core Ultra 7 155H: 96 bytes with Clang, 128-160 with GCC.
-  static constexpr std::size_t minimum_size = available ? 128 : std::numeric_limits<std::size_t>::max();
+  static constexpr std::size_t minimum_size = 128;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
-template <isa Isa> struct kernel<32, Isa> {
-  static constexpr bool available = isa_detail::includes(Isa, isa::x86_avx2);
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::x86_avx2))
+struct kernel<32, Isa> {
+  static constexpr bool available = true;
   static constexpr std::size_t block_size = x86_vector_size<Isa>;
   // The 64-bit lanes have room for far more; 65536 values per chunk keep the weighted sum of the chunk within 64 bits.
   static constexpr std::size_t max_blocks = 65'536 / (block_size / 4);
   // Where the kernel overtakes the portable loop on a Core Ultra 7 155H: 160 bytes with Clang, 384 with GCC.
-  static constexpr std::size_t minimum_size = available ? 384 : std::numeric_limits<std::size_t>::max();
+  static constexpr std::size_t minimum_size = 384;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
@@ -191,7 +196,9 @@ template <isa Isa, class Lane> std::uint64_t column_total(x86_vector<Isa> low, x
   return total;
 }
 
-template <isa Isa> chunk_sums kernel<8, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+chunk_sums kernel<8, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avxvnni)) {
     // vpdpbusd weights four blocks by 127, 126, ..., 0 with one instruction per block, and adding the byte sums once at the end
     // makes the weights 128 .. 1; so previous gains the sums only every four blocks. Four accumulators hide the latency of
@@ -258,7 +265,9 @@ template <isa Isa> chunk_sums kernel<8, Isa>::sum(std::byte const *data, std::si
 }
 
 // Column sums of the values, weighted at the end of the chunk; previous as for bytes.
-template <isa Isa> chunk_sums kernel<16, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+chunk_sums kernel<16, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
   constexpr std::uint64_t values_per_block = block_size / 2;
   x86_vector<Isa> sum{};
   x86_vector<Isa> previous{};
@@ -278,7 +287,9 @@ template <isa Isa> chunk_sums kernel<16, Isa>::sum(std::byte const *data, std::s
                       column_total<Isa, std::uint32_t>(low_columns, high_columns, values_per_block)};
 }
 
-template <isa Isa> chunk_sums kernel<32, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::x86_avx2))
+chunk_sums kernel<32, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
   constexpr std::uint64_t values_per_block = block_size / 4;
   x86_vector<Isa> sum{};
   x86_vector<Isa> previous{};
@@ -299,7 +310,5 @@ template <isa Isa> chunk_sums kernel<32, Isa>::sum(std::byte const *data, std::s
 }
 
 } // namespace checksum::fletcher_detail
-
-#endif
 
 #endif // CHECKSUM_PRIVATE_X86_64_FLETCHER_HPP

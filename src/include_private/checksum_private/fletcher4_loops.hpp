@@ -22,12 +22,6 @@ namespace checksum::fletcher4_detail {
 // Bytes of one word per lane.
 inline constexpr std::size_t group_size = lane_count * word_size;
 
-#if defined(__arm__) && !defined(__aarch64__)
-inline constexpr bool arm32_target = true;
-#else
-inline constexpr bool arm32_target = false;
-#endif
-
 } // namespace checksum::fletcher4_detail
 
 #include <checksum_private/target_begin.hpp>
@@ -36,15 +30,12 @@ inline constexpr bool arm32_target = false;
 
 namespace checksum::fletcher4_detail {
 
-// 32-bit Arm without NEON runs in order: there two words per iteration halve the loop overhead around the carry chains.
-template <isa Isa> inline constexpr bool word_pairs = arm32_target && !isa_detail::includes(Isa, isa::thumb2_neon);
-
 // Shortest input for the lanes. The portable ones overtake the word loop on a Cortex-A72 at 128 bytes with GCC but stay below
 // Clang's unrolled word loop; on 32-bit targets their 64-bit sums run out of registers, 3 times slower there.
 template <isa Isa>
 inline constexpr std::size_t lanes_minimum_size =
-    lane_kernel_available<Isa> ? lane_kernel_minimum_size<Isa>
-                               : (std::numeric_limits<std::size_t>::digits == 64 ? 256 : std::numeric_limits<std::size_t>::max());
+    lane_kernel<Isa>::available ? lane_kernel<Isa>::minimum_size
+                                : (std::numeric_limits<std::size_t>::digits == 64 ? 256 : std::numeric_limits<std::size_t>::max());
 
 // The little-endian word at data, from byte loads that compilers merge where unaligned loads are allowed: no memcpy call elsewhere.
 template <isa Isa> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load(std::byte const *data) noexcept;
@@ -59,7 +50,7 @@ template <isa Isa> [[maybe_unused]] inline std::uint64_t ramp(std::array<std::ui
 template <isa Isa>
 CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline fletcher4_state combine(fletcher4_state state, lane_sums const &lanes, std::uint64_t words) noexcept;
 
-// One word at a time (two with word_pairs), then the bytes of an unfinished word.
+// One word at a time (two on in-order targets), then the bytes of an unfinished word.
 template <isa Isa> CHECKSUM_ALWAYS_INLINE inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
 // The lanes of the CPU kernel, else the portable ones, then sum_words() over what they left.
@@ -130,7 +121,8 @@ CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline fletcher4_state combine(fletcher4
 template <isa Isa> CHECKSUM_ALWAYS_INLINE inline fletcher4_state sum_words(fletcher4_state state, std::span<std::byte const> data) noexcept {
   std::byte const *position = data.data();
   std::size_t words = data.size() / word_size;
-  if constexpr(word_pairs<Isa>) {
+  // In order, two words per iteration halve the loop overhead around the carry chains.
+  if constexpr(target_detail::in_order_target<Isa>) {
     for(std::size_t pairs = words / 2; pairs != 0; --pairs, position += 2 * word_size) {
       std::uint64_t const first = load<Isa>(position);
       std::uint64_t const second = load<Isa>(position + word_size);
@@ -157,8 +149,8 @@ template <isa Isa> CHECKSUM_ALWAYS_INLINE inline fletcher4_state sum_words(fletc
 template <isa Isa>
 CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline fletcher4_state sum_lanes_then_words(fletcher4_state state, std::span<std::byte const> data) noexcept {
   std::size_t const groups = data.size() / group_size;
-  if constexpr(lane_kernel_available<Isa>) {
-    state = combine<Isa>(state, lane_kernel<Isa>(data.data(), groups), groups * lane_count);
+  if constexpr(lane_kernel<Isa>::available) {
+    state = combine<Isa>(state, lane_kernel<Isa>::sum(data.data(), groups), groups * lane_count);
   } else {
     state = combine<Isa>(state, sum_lanes<Isa>(data.data(), groups), groups * lane_count);
   }

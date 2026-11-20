@@ -5,6 +5,7 @@
 // xxh3_arch.hpp.
 
 #include <checksum/isa.hpp>
+#include <checksum_private/target.hpp>
 #include <checksum_private/vector_array.hpp>
 
 #include <immintrin.h>
@@ -16,12 +17,12 @@
 
 namespace checksum::xxh3_detail {
 
-template <isa Isa> inline constexpr bool stripe_kernel_available = true;
-
-// Both kernels beat the portable loop from 256 bytes, the shortest size measured, with GCC and Clang on a Core Ultra 7 155H.
-template <isa Isa> inline constexpr std::size_t stripe_kernel_minimum_size = 0;
-
-template <isa Isa> struct stripe_kernel {
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+struct stripe_kernel<Isa> {
+  static constexpr bool available = true;
+  // Both kernels beat the portable loop from 256 bytes, the shortest size measured, with GCC and Clang on a Core Ultra 7 155H.
+  static constexpr std::size_t minimum_size = 0;
   using lanes =
       std::conditional_t<isa_detail::includes(Isa, isa::x86_avx2), isa_detail::vector_array<__m256i, 2>, isa_detail::vector_array<__m128i, 4>>;
   static lanes load(accumulator_array const &accumulators) noexcept;
@@ -32,7 +33,9 @@ template <isa Isa> struct stripe_kernel {
 
 // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector loads and stores, the intrinsics' interface.
 
-template <isa Isa> stripe_kernel<Isa>::lanes stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept {
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return {_mm256_loadu_si256(reinterpret_cast<__m256i const *>(accumulators.data())),
             _mm256_loadu_si256(reinterpret_cast<__m256i const *>(accumulators.data() + 4))};
@@ -45,7 +48,9 @@ template <isa Isa> stripe_kernel<Isa>::lanes stripe_kernel<Isa>::load(accumulato
   }
 }
 
-template <isa Isa> void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(accumulators.data()), values[0]);
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(accumulators.data() + 4), values[1]);
@@ -58,7 +63,9 @@ template <isa Isa> void stripe_kernel<Isa>::store(accumulator_array &accumulator
 }
 
 // Each lane adds the product of the 32-bit halves of data ^ secret, and the data of its neighbor.
-template <isa Isa> void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     for(std::size_t index = 0; index < values.size(); ++index) {
       __m256i const data = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(stripe) + index);
@@ -78,7 +85,9 @@ template <isa Isa> void stripe_kernel<Isa>::accumulate(lanes &values, std::byte 
 }
 
 // The 64-bit product with the 32-bit prime, from the products of both halves.
-template <isa Isa> void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     __m256i const prime = _mm256_set1_epi32(static_cast<int>(primes_32::prime_1));
     for(std::size_t index = 0; index < values.size(); ++index) {

@@ -1,6 +1,8 @@
-// crc_lut_sliced and crc_lut_braided of every preset must match crc_lut_byte for every catalog set, on the smallest register and
-// std::uint64_t, one-shot, split and through an accumulator; the first set of each code path runs every length, the others the lengths around each
-// threshold. The other table strategies run three common sets at every length 0..300, and every strategy is checked at compile time per preset.
+// CRC presets: every preset this build has must give the results of isa::generic, at run time and at compile time. crc_lut_sliced
+// and crc_lut_braided must match crc_lut_byte for every catalog set, on the smallest register and std::uint64_t, one-shot, split and
+// through an accumulator; the first set of each code path runs every length, the others the lengths around each threshold. The other
+// table strategies run three common sets at every length 0..300.
+
 #include <checksum/crc.hpp>
 #include <checksum/crc_catalog.hpp>
 #include <checksum/isa.hpp>
@@ -8,8 +10,10 @@
 #include "crc_catalog_checks.hpp"
 #include "crc_test_support.hpp"
 
+#include <engine_checks.hpp>
 #include <gtest/gtest.h>
 #include <isa_test_support.hpp>
+#include <test_data.hpp>
 
 #include <algorithm>
 #include <array>
@@ -202,30 +206,74 @@ template <class... FirstTypes, class... SecondTypes> struct concat_types<testing
 using folding_pairs =
     concat_types<strategy_preset_pairs<crc_lut_sliced, all_presets>::type, strategy_preset_pairs<crc_lut_braided, all_presets>::type>::type;
 
-template <class Strategy> constexpr std::string_view strategy_name() {
-  if constexpr(std::is_same_v<Strategy, crc_lut_sliced>) {
-    return "sliced";
-  } else {
-    return "braided";
-  }
-}
-
 struct pair_name {
   template <class Pair> static std::string GetName(int /*index*/) {
-    return std::string(strategy_name<typename Pair::first_type>()) + '_' + std::string(isa_test::name(Pair::second_type::value));
+    return std::string(crc_test::strategy_name<typename Pair::first_type>()) + '_' + std::string(isa_test::name(Pair::second_type::value));
   }
 };
 
-template <class Pair> struct crc_acceleration_typed : ::testing::Test {
+// Calls check(engine, generic) for CRC-32C on crc_lut_sliced and CRC-64/XZ on crc_lut_braided of Preset against isa::generic.
+template <isa Preset, class Check> void for_each_folding_engine(Check check) {
+  check(crc_engine_for<checksum::crc32c, crc_lut_sliced, Preset>, crc_engine_for<checksum::crc32c, crc_lut_sliced>);
+  check(crc_engine_for<checksum::crc64_xz, crc_lut_braided, Preset>, crc_engine_for<checksum::crc64_xz, crc_lut_braided>);
+}
+
+template <class Preset> struct crc_presets : isa_test::preset_test<Preset> {};
+
+TYPED_TEST_SUITE(crc_presets, isa_test::presets, isa_test::preset_name);
+
+// Constant evaluation runs the portable code of every strategy for every preset.
+TYPED_TEST(crc_presets, constant_evaluation) {
+  constexpr isa preset = TypeParam::value;
+  check_constant<preset>();
+  auto const buffer = random_bytes(1003, 4);
+  EXPECT_EQ((crc_compute<checksum::crc32c, crc_lut_sliced, preset>(at(buffer, 3, 1000))), (crc_compute<checksum::crc32c>(at(buffer, 3, 1000))));
+}
+
+// Up to 640 bytes, two steps of the widest loop with every tail; crc_folding_presets covers longer messages.
+TYPED_TEST(crc_presets, match_generic_for_every_size) {
+  auto const buffer = random_bytes(640 + 8, 1);
+  for_each_folding_engine<TypeParam::value>(
+      [&](auto const &engine, auto const &generic) { engine_checks::check_every_size(engine, generic, buffer, 640); });
+}
+
+TYPED_TEST(crc_presets, match_generic_for_large_sizes) {
+  auto const buffer = random_bytes(1'000'008, 2);
+  // CRC-32C alone: the catalog sets of crc_folding_presets run up to 4 KiB.
+  engine_checks::check_large_sizes(crc_engine_for<checksum::crc32c, crc_lut_sliced, TypeParam::value>,
+                                   crc_engine_for<checksum::crc32c, crc_lut_sliced>, buffer);
+}
+
+TYPED_TEST(crc_presets, match_generic_through_updates_and_splits) {
+  auto const buffer = random_bytes(3000, 3);
+  for_each_folding_engine<TypeParam::value>(
+      [&](auto const &engine, auto const &generic) { engine_checks::check_updates_and_splits(engine, generic, buffer); });
+}
+
+TYPED_TEST(crc_presets, match_byte_table_for_common_parameters) {
+  constexpr isa preset = TypeParam::value;
+  auto const buffer = random_bytes(common_length + offsets.back(), 0x5EED);
+  std::span<std::byte const> const data(buffer);
+
+  SCOPED_TRACE("crc32_iso_hdlc");
+  check_common_all<checksum::crc32_iso_hdlc, preset>(data);
+
+  SCOPED_TRACE("crc16_xmodem");
+  check_common_all<checksum::crc16_xmodem, preset>(data);
+
+  SCOPED_TRACE("crc64_xz");
+  check_common_all<checksum::crc64_xz, preset>(data);
+}
+
+template <class Pair> struct crc_folding_presets : ::testing::Test {
   void SetUp() override { isa_test::skip_unless_cpu_runs(Pair::second_type::value); }
 };
 
-TYPED_TEST_SUITE(crc_acceleration_typed, folding_pairs, pair_name);
+TYPED_TEST_SUITE(crc_folding_presets, folding_pairs, pair_name);
 
-TYPED_TEST(crc_acceleration_typed, MatchesByteTableForEveryCatalogSet) {
+TYPED_TEST(crc_folding_presets, match_byte_table_for_every_catalog_set) {
   using Strategy = typename TypeParam::first_type;
   constexpr isa preset = TypeParam::second_type::value;
-  check_constant<preset>();
 
   auto const message = random_bytes(longest + offsets.back(), 0x5EED);
   auto const all = every_length();
@@ -240,27 +288,6 @@ TYPED_TEST(crc_acceleration_typed, MatchesByteTableForEveryCatalogSet) {
     }
     check_set<Strategy, preset>(set.parameters, message, first ? all : thresholds);
   }
-}
-
-template <class Preset> struct crc_table_strategies_typed : isa_test::preset_test<Preset> {};
-
-TYPED_TEST_SUITE(crc_table_strategies_typed, all_presets, isa_test::preset_name);
-
-TYPED_TEST(crc_table_strategies_typed, MatchesByteTableForCommonParameters) {
-  constexpr isa preset = TypeParam::value;
-  check_constant<preset>();
-
-  auto const buffer = random_bytes(common_length + offsets.back(), 0x5EED);
-  std::span<std::byte const> const data(buffer);
-
-  SCOPED_TRACE("crc32_iso_hdlc");
-  check_common_all<checksum::crc32_iso_hdlc, preset>(data);
-
-  SCOPED_TRACE("crc16_xmodem");
-  check_common_all<checksum::crc16_xmodem, preset>(data);
-
-  SCOPED_TRACE("crc64_xz");
-  check_common_all<checksum::crc64_xz, preset>(data);
 }
 
 } // namespace

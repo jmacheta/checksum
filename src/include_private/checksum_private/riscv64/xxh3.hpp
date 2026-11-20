@@ -2,33 +2,27 @@
 #define CHECKSUM_PRIVATE_RISCV64_XXH3_HPP
 
 // RISC-V vector kernel of the XXH3 stripe loop (V extension, little-endian RV64), for the riscv_v preset and vector lengths from
-// 128 bits. The riscv_v source defines CHECKSUM_PRESET_RISCV_V. Included only by xxh3_arch.hpp.
+// 128 bits. Included only by xxh3_arch.hpp.
 
 #include <checksum/isa.hpp>
-#include <checksum_private/presets.hpp>
+#include <checksum_private/target.hpp>
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
-namespace checksum::xxh3_detail {
-
-template <isa Isa> inline constexpr bool stripe_kernel_available = isa_detail::includes(Isa, isa::riscv_v);
-
-// Not measured on hardware: one stripe takes about ten vector instructions instead of about fifty scalar ones, from the first stripe.
-template <isa Isa>
-inline constexpr std::size_t stripe_kernel_minimum_size = stripe_kernel_available<Isa> ? 0 : std::numeric_limits<std::size_t>::max();
-
-} // namespace checksum::xxh3_detail
-
-#if defined(__riscv) && defined(CHECKSUM_PRESET_RISCV_V)
+#if CHECKSUM_PRESET_HAS(RISCV_V)
 
 #include <riscv_vector.h>
 
 namespace checksum::xxh3_detail {
 
 // The eight accumulators in one register group: four registers hold eight 64-bit lanes at the smallest vector length, 128 bits.
-template <isa Isa> struct stripe_kernel {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_v))
+struct stripe_kernel<Isa> {
+  static constexpr bool available = true;
+  // Not measured on hardware: one stripe takes about ten vector instructions instead of about fifty scalar ones, from the first stripe.
+  static constexpr std::size_t minimum_size = 0;
   using lanes = vuint64m4_t;
   [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] static lanes load(accumulator_array const &accumulators) noexcept;
   [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] static void store(accumulator_array &accumulators, lanes const &values) noexcept;
@@ -50,16 +44,22 @@ template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] vuint64m4_t load_str
   return __riscv_vreinterpret_v_u8m4_u64m4(__riscv_vle8_v_u8m4(reinterpret_cast<std::uint8_t const *>(data), stripe_size));
 }
 
-template <isa Isa> stripe_kernel<Isa>::lanes stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_v))
+auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
   return __riscv_vle64_v_u64m4(lanes_of(accumulators), rvv_lanes);
 }
 
-template <isa Isa> void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_v))
+void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
   __riscv_vse64_v_u64m4(lanes_of(accumulators), values, rvv_lanes);
 }
 
 // Each lane adds the product of the 32-bit halves of data ^ secret (vmacc), and the data of its neighbor (vrgather).
-template <isa Isa> void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_v))
+void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
   vuint64m4_t const data = load_stripe<Isa>(stripe);
   vuint64m4_t const key = __riscv_vxor_vv_u64m4(data, load_stripe<Isa>(secret), rvv_lanes);
   vuint64m4_t const neighbors = __riscv_vxor_vx_u64m4(__riscv_vid_v_u64m4(rvv_lanes), 1, rvv_lanes);
@@ -67,7 +67,9 @@ template <isa Isa> void stripe_kernel<Isa>::accumulate(lanes &values, std::byte 
   values = __riscv_vadd_vv_u64m4(values, __riscv_vrgather_vv_u64m4(data, neighbors, rvv_lanes), rvv_lanes);
 }
 
-template <isa Isa> void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_v))
+void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
   vuint64m4_t const mixed = __riscv_vxor_vv_u64m4(values, __riscv_vsrl_vx_u64m4(values, scramble_shift, rvv_lanes), rvv_lanes);
   values = __riscv_vmul_vx_u64m4(__riscv_vxor_vv_u64m4(mixed, load_stripe<Isa>(secret), rvv_lanes), primes_32::prime_1, rvv_lanes);
 }

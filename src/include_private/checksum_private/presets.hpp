@@ -43,7 +43,7 @@
 #define CHECKSUM_TARGET_THUMB2_CRC "arch=armv8-a+crc,fpu=neon-fp-armv8,thumb"
 #endif
 #endif
-#elif defined(__GNUC__) && defined(__riscv) && __riscv_xlen == 64
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__riscv) && __riscv_xlen == 64
 #define CHECKSUM_TARGET_RISCV_ZBC "arch=+zbc"
 #define CHECKSUM_TARGET_RISCV_V "arch=+v"
 #elif defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64) && !defined(_M_ARM64EC)
@@ -56,5 +56,17 @@
 #define CHECKSUM_TARGET_AARCH64_CRC ""
 #define CHECKSUM_TARGET_AARCH64_PMULL ""
 #endif
+
+// CHECKSUM_PRESET_HAS(NEON), (DSP) or (RISCV_V): 1 if the preset that CHECKSUM_PRESET names compiles that kernel section,
+// whose intrinsic types need the extension; 0 elsewhere. AArch64 always has NEON and tests CHECKSUM_ARM64 instead.
+// NOLINTBEGIN(cppcoreguidelines-macro-usage): tested by #if.
+#define CHECKSUM_PRESET_HAS(feature) CHECKSUM_PRESET_HAS_EXPANDED(feature, CHECKSUM_PRESET)
+#define CHECKSUM_PRESET_HAS_EXPANDED(feature, preset) CHECKSUM_PRESET_HAS_NAME(feature, preset)
+#define CHECKSUM_PRESET_HAS_NAME(feature, preset) CHECKSUM_PRESET_HAS_##feature##_##preset
+#define CHECKSUM_PRESET_HAS_DSP_thumb2_dsp 1
+#define CHECKSUM_PRESET_HAS_NEON_thumb2_neon 1
+#define CHECKSUM_PRESET_HAS_NEON_thumb2_crc 1
+#define CHECKSUM_PRESET_HAS_RISCV_V_riscv_v 1
+// NOLINTEND(cppcoreguidelines-macro-usage)
 
 #endif // CHECKSUM_PRIVATE_PRESETS_HPP
