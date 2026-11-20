@@ -190,6 +190,14 @@ inline constexpr std::size_t braided_table_size = (slice_count + word_size) * sl
 
 template <class Register, std::size_t Size> struct lookup_table;
 
+// Whether strategy_update() of Strategy runs a different loop for some preset.
+template <class Strategy, class Register> consteval bool takes_preset() noexcept;
+
+// The presets a dispatch engine of Strategy chooses from: generic, those with target options and riscv_zbc, the one without them
+// with a kernel; generic alone for a strategy whose loop is the same for every preset.
+template <class Strategy, class Register>
+inline constexpr isa_set own_loops = takes_preset<Strategy, Register>() ? isa_detail::built_with_target_options() | isa::riscv_zbc : isa_set{};
+
 // The built-in strategies differ only in the size of their table.
 template <std::size_t Size> struct lookup_strategy {
   template <crc_register Register> using table_type = lookup_table<Register, Size>;
@@ -271,9 +279,6 @@ public:
   [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept;
 
 private:
-  // Of the presets without target options (isa_detail::runs_own_loop()), only riscv_zbc and later ones have a CRC kernel.
-  static constexpr isa kernel_preset = isa::riscv_zbc;
-
   constexpr crc_dispatch_engine(crc_engine<Register, Strategy> const &static_engine, isa preset) noexcept;
 
   crc_engine<Register, Strategy> engine; // the table and parameters, shared by every preset
@@ -403,9 +408,6 @@ constexpr Register update_tail(register_form<Register> const &form, Register sta
 template <class Strategy, isa Isa, class Register>
 constexpr Register strategy_update(typename Strategy::template table_type<Register> const &table, Register state,
                                    std::span<std::byte const> data) noexcept;
-
-// Whether strategy_update() of Strategy runs a different loop for some preset.
-template <class Strategy, class Register> consteval bool takes_preset() noexcept;
 
 // Run-time loops, one per built-in strategy, defined and explicitly instantiated for every register type and bit order in
 // src/crc/lut_*.cpp; those of crc_lut_sliced and crc_lut_braided once per preset. They take and return the internal register.
@@ -848,11 +850,7 @@ constexpr std::optional<crc_dispatch_engine<Register, Strategy>> crc_dispatch_en
   if(!engine) {
     return std::nullopt;
   }
-  if constexpr(!crc_detail::takes_preset<Strategy, Register>()) {
-    return crc_dispatch_engine(*engine, isa::generic);
-  } else {
-    return crc_dispatch_engine(*engine, isa_detail::select(cpu, kernel_preset));
-  }
+  return crc_dispatch_engine(*engine, isa_detail::select(cpu, crc_detail::own_loops<Strategy, Register>));
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy> constexpr isa crc_dispatch_engine<Register, Strategy>::preset() const noexcept {
@@ -868,8 +866,8 @@ template <crc_register Register, crc_strategy_for<Register> Strategy>
 constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
 crc_dispatch_engine<Register, Strategy>::update(state_type state, std::span<std::byte const> data) const noexcept {
   state = engine.checked_state(state);
-  return isa_detail::dispatch<kernel_preset>(chosen,
-                                             [&]<isa Isa>() { return crc_detail::strategy_update<Strategy, Isa>(engine.table, state, data); });
+  return isa_detail::dispatch<crc_detail::own_loops<Strategy, Register>>(
+      chosen, [&]<isa Isa>() { return crc_detail::strategy_update<Strategy, Isa>(engine.table, state, data); });
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy>
@@ -877,7 +875,7 @@ template <byte_range Range>
 constexpr typename crc_dispatch_engine<Register, Strategy>::state_type crc_dispatch_engine<Register, Strategy>::update(state_type state,
                                                                                                                        Range &&data) const noexcept {
   state = engine.checked_state(state);
-  return isa_detail::dispatch<kernel_preset>(chosen, [&]<isa Isa>() {
+  return isa_detail::dispatch<crc_detail::own_loops<Strategy, Register>>(chosen, [&]<isa Isa>() {
     detail::for_each_chunk(std::forward<Range>(data),
                            [&](std::span<std::byte const> chunk) { state = crc_detail::strategy_update<Strategy, Isa>(engine.table, state, chunk); });
     return state;

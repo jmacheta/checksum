@@ -85,7 +85,7 @@ void check_engines(isa_set cpu) {
   murmur3_dispatch_engine<32> const murmur3_32(2, cpu);
   murmur3_dispatch_engine<128> const murmur3_128(2, cpu);
   isa const preset = internet.preset();
-  check(preset == isa_detail::select(cpu, isa::riscv_v) && cpu.contains(preset), "preset", preset, 0);
+  check(preset == isa_detail::select(cpu, internet_detail::own_loops) && cpu.contains(preset), "preset", preset, 0);
   for(std::size_t const size : {0UZ, 1UZ, 3UZ, 15UZ, 16UZ, 63UZ, 64UZ, 255UZ, 1500UZ, 4097UZ}) {
     for(std::size_t const offset : {0UZ, 1UZ}) {
       auto const data = std::span<std::byte const>(buffer).subspan(offset, size);
@@ -118,7 +118,8 @@ int main() {
   }
   isa_set const detected = detect_isa();
   check(detected == expected_set, "detect_isa", isa::CHECKSUM_EXPECTED_ISA, 0);
-  check(internet_dispatch_engine{}.preset() == isa_detail::select(detected, isa::riscv_v), "default engine", internet_dispatch_engine{}.preset(), 0);
+  check(internet_dispatch_engine{}.preset() == isa_detail::select(detected, internet_detail::own_loops), "default engine",
+        internet_dispatch_engine{}.preset(), 0);
   check_engines(detected);
   for(isa const preset : isa_detail::built_presets) {
     if(detected.contains(preset)) {

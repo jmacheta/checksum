@@ -89,18 +89,6 @@ target_sources(
           internet/sum_loop_x86_vpclmul.cpp
           isa/detect.cpp
           murmur3/block_loop.cpp
-          murmur3/block_loop_aarch64_crc.cpp
-          murmur3/block_loop_aarch64_pmull.cpp
-          murmur3/block_loop_riscv_v.cpp
-          murmur3/block_loop_riscv_zbc.cpp
-          murmur3/block_loop_thumb2.cpp
-          murmur3/block_loop_thumb2_crc.cpp
-          murmur3/block_loop_thumb2_dsp.cpp
-          murmur3/block_loop_thumb2_neon.cpp
-          murmur3/block_loop_x86_avx2.cpp
-          murmur3/block_loop_x86_avxvnni.cpp
-          murmur3/block_loop_x86_pclmul.cpp
-          murmur3/block_loop_x86_vpclmul.cpp
           xxh3/multiply_fold.cpp
           xxh3/stripe_loop.cpp
           xxh3/stripe_loop_aarch64_crc.cpp
@@ -116,18 +104,6 @@ target_sources(
           xxh3/stripe_loop_x86_pclmul.cpp
           xxh3/stripe_loop_x86_vpclmul.cpp
           xxhash/stripe_loop.cpp
-          xxhash/stripe_loop_aarch64_crc.cpp
-          xxhash/stripe_loop_aarch64_pmull.cpp
-          xxhash/stripe_loop_riscv_v.cpp
-          xxhash/stripe_loop_riscv_zbc.cpp
-          xxhash/stripe_loop_thumb2.cpp
-          xxhash/stripe_loop_thumb2_crc.cpp
-          xxhash/stripe_loop_thumb2_dsp.cpp
-          xxhash/stripe_loop_thumb2_neon.cpp
-          xxhash/stripe_loop_x86_avx2.cpp
-          xxhash/stripe_loop_x86_avxvnni.cpp
-          xxhash/stripe_loop_x86_pclmul.cpp
-          xxhash/stripe_loop_x86_vpclmul.cpp
   PUBLIC FILE_SET
          HEADERS
          BASE_DIRS

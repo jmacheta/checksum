@@ -175,8 +175,8 @@ template <isa Isa> std::uint16_t sum_loop(std::span<std::byte const> data) noexc
 
 template std::uint16_t sum_loop<isa::CHECKSUM_PRESET>(std::span<std::byte const> data) noexcept;
 
-// Dispatch engines run this preset only where its loop differs from generic's: it has target options or a kernel.
-static_assert((internet_dispatch_engine(isa::CHECKSUM_PRESET).preset() == isa::CHECKSUM_PRESET) ==
+// The dispatch engines choose this preset exactly where its loop differs from generic's: it has target options or a kernel.
+static_assert(own_loops.contains(isa::CHECKSUM_PRESET) ==
               (!isa_detail::without_target_options(isa::CHECKSUM_PRESET) || block_kernel<isa::CHECKSUM_PRESET>::available));
 
 } // namespace checksum::internet_detail

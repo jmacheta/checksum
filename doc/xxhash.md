@@ -25,7 +25,7 @@ if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the
   std::uint64_t value = xxh64.finalize(xxh64.update(xxh64.update(xxh64.initial(), header), payload));
 }
 
-// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
+// Run-time dispatch: the same interface as every algorithm; xxHash runs isa::generic on every CPU.
 static checksum::xxhash_dispatch_engine<64> const xxh64(1234);
 checksum::isa chosen = xxh64.preset();
 checksum::accumulator running{xxh64};
@@ -57,7 +57,7 @@ several ways.
 | `xxhash_engine<Width, Isa>` | The engine: `xxhash_engine<Width, Isa>{seed}`, seed 0 by default. `value_type`, the hash and the seed, is `std::uint32_t` for XXH32 and `std::uint64_t` for XXH64. |
 | `xxhash_state<Width>` | Four lanes, the byte count (`length`) and an unfinished stripe (`buffer`, 16 or 32 bytes). The default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
 | `xxhash_compute<Width, Isa>(data, seed = 0)` | `xxhash_engine<Width, Isa>{seed}.compute(data)`. |
-| `xxhash_dispatch_engine<Width>` | The same members as `xxhash_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
+| `xxhash_dispatch_engine<Width>` | The same members as `xxhash_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, is always `generic` (section 5.1). |
 | `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
 ## 4. Behavior
@@ -71,19 +71,17 @@ several ways.
 ## 5. CPU acceleration
 
 XXH32 and XXH64 have no kernel on any target: each lane is a serial multiply-rotate chain, and the scalar loop already
-runs the four lanes side by side. Their preset compiles the portable loop for its instruction set; with MSVC (no
-target options) and on RISC-V (no target pragma), each preset's copy is the same code as `isa::generic`. Presets are
-explained in [Instruction-set presets](../README.md#instruction-set-presets).
+runs the four lanes side by side. Every preset runs the one loop of `isa::generic`: copies compiled per preset were
+the same code or no faster, and Clang's AVX2 copy of XXH32 was a third slower from 1500 bytes. Presets are explained
+in [Instruction-set presets](../README.md#instruction-set-presets).
 
 ### 5.1 Choosing the preset at run time
 
-The dispatch engine of section 1 asks the CPU once, when it is made, and from then on runs the best variant this build
-has for it. `preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
-`checksum::xxhash_dispatch_engine<64>(0, checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
-this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
-the variant. Detection does not run in constant expressions: there, call `xxhash_compute<32>` / `xxhash_compute<64>` or
-give the engine an explicit preset. Details and the list of engines: [Instruction-set
-presets](../README.md#instruction-set-presets).
+The dispatch engine of section 1 has the members of every dispatch engine, so code that dispatches all its algorithms
+treats xxHash alike, but it always runs the `isa::generic` loop and `preset()` is `generic`, on every architecture and
+compiler; the `cpu` argument changes nothing and a call costs nothing on top of the static engine. Detection does not
+run in constant expressions: there, call `xxhash_compute<32>` / `xxhash_compute<64>` or give the engine an explicit
+set. Details and the list of engines: [Instruction-set presets](../README.md#instruction-set-presets).
 
 ## 6. Performance guidelines
 

@@ -90,8 +90,8 @@ template <template <unsigned, isa> class Engine, unsigned Width, isa Old, isa Is
 
 /// The members of every dispatch engine but CRC's: each runs the static engine Engine rebound to preset(), made with the seed of
 /// the dispatch engine if it has one. The preset is chosen once, when the dispatch engine is made, among those that run a loop of
-/// their own (isa_detail::runs_own_loop() with KernelPreset).
-template <class Engine, isa KernelPreset, class Seed = no_seed> class dispatch_engine {
+/// their own: OwnLoops, a constant of the algorithm (isa_detail::select()).
+template <class Engine, isa_set const &OwnLoops, class Seed = no_seed> class dispatch_engine {
 public:
   using state_type = Engine::state_type; ///< As the static engine's.
   using value_type = Engine::value_type; ///< As the static engine's.
@@ -170,13 +170,13 @@ template <engine Engine> constexpr void accumulator<Engine>::reset() noexcept { 
 
 namespace checksum::detail {
 
-template <class Engine, isa KernelPreset, class Seed>
-constexpr dispatch_engine<Engine, KernelPreset, Seed>::dispatch_engine(isa_set cpu, Seed seed) noexcept
-    : hash_seed(seed), chosen(isa_detail::select(cpu, KernelPreset)) {}
+template <class Engine, isa_set const &OwnLoops, class Seed>
+constexpr dispatch_engine<Engine, OwnLoops, Seed>::dispatch_engine(isa_set cpu, Seed seed) noexcept
+    : hash_seed(seed), chosen(isa_detail::select(cpu, OwnLoops)) {}
 
-template <class Engine, isa KernelPreset, class Seed>
+template <class Engine, isa_set const &OwnLoops, class Seed>
 template <isa Isa>
-constexpr rebind_preset<Engine, Isa>::type dispatch_engine<Engine, KernelPreset, Seed>::engine() const noexcept {
+constexpr rebind_preset<Engine, Isa>::type dispatch_engine<Engine, OwnLoops, Seed>::engine() const noexcept {
   using preset_engine = rebind_preset<Engine, Isa>::type;
   if constexpr(std::same_as<Seed, no_seed>) {
     return preset_engine();
@@ -185,52 +185,51 @@ constexpr rebind_preset<Engine, Isa>::type dispatch_engine<Engine, KernelPreset,
   }
 }
 
-template <class Engine, isa KernelPreset, class Seed> constexpr isa dispatch_engine<Engine, KernelPreset, Seed>::preset() const noexcept {
+template <class Engine, isa_set const &OwnLoops, class Seed> constexpr isa dispatch_engine<Engine, OwnLoops, Seed>::preset() const noexcept {
   return chosen;
 }
 
-template <class Engine, isa KernelPreset, class Seed>
-constexpr dispatch_engine<Engine, KernelPreset, Seed>::state_type dispatch_engine<Engine, KernelPreset, Seed>::initial() const noexcept {
+template <class Engine, isa_set const &OwnLoops, class Seed>
+constexpr dispatch_engine<Engine, OwnLoops, Seed>::state_type dispatch_engine<Engine, OwnLoops, Seed>::initial() const noexcept {
   return engine<isa::generic>().initial();
 }
 
-template <class Engine, isa KernelPreset, class Seed>
-constexpr dispatch_engine<Engine, KernelPreset, Seed>::state_type
-dispatch_engine<Engine, KernelPreset, Seed>::update(state_type state, std::span<std::byte const> data) const noexcept {
-  return isa_detail::dispatch<KernelPreset>(chosen, [&]<isa Isa>() { return engine<Isa>().update(state, data); });
+template <class Engine, isa_set const &OwnLoops, class Seed>
+constexpr dispatch_engine<Engine, OwnLoops, Seed>::state_type
+dispatch_engine<Engine, OwnLoops, Seed>::update(state_type state, std::span<std::byte const> data) const noexcept {
+  return isa_detail::dispatch<OwnLoops>(chosen, [&]<isa Isa>() { return engine<Isa>().update(state, data); });
 }
 
-template <class Engine, isa KernelPreset, class Seed>
+template <class Engine, isa_set const &OwnLoops, class Seed>
 template <byte_range Range>
-constexpr dispatch_engine<Engine, KernelPreset, Seed>::state_type dispatch_engine<Engine, KernelPreset, Seed>::update(state_type state,
-                                                                                                                      Range &&data) const noexcept {
-  return isa_detail::dispatch<KernelPreset>(chosen, [&]<isa Isa>() { return engine<Isa>().update(state, std::forward<Range>(data)); });
+constexpr dispatch_engine<Engine, OwnLoops, Seed>::state_type dispatch_engine<Engine, OwnLoops, Seed>::update(state_type state,
+                                                                                                              Range &&data) const noexcept {
+  return isa_detail::dispatch<OwnLoops>(chosen, [&]<isa Isa>() { return engine<Isa>().update(state, std::forward<Range>(data)); });
 }
 
-template <class Engine, isa KernelPreset, class Seed>
-constexpr dispatch_engine<Engine, KernelPreset, Seed>::value_type
-dispatch_engine<Engine, KernelPreset, Seed>::finalize(state_type const &state) const noexcept {
-  return isa_detail::dispatch<KernelPreset>(chosen, [&]<isa Isa>() { return engine<Isa>().finalize(state); });
+template <class Engine, isa_set const &OwnLoops, class Seed>
+constexpr dispatch_engine<Engine, OwnLoops, Seed>::value_type
+dispatch_engine<Engine, OwnLoops, Seed>::finalize(state_type const &state) const noexcept {
+  return isa_detail::dispatch<OwnLoops>(chosen, [&]<isa Isa>() { return engine<Isa>().finalize(state); });
 }
 
-template <class Engine, isa KernelPreset, class Seed>
-constexpr dispatch_engine<Engine, KernelPreset, Seed>::state_type
-dispatch_engine<Engine, KernelPreset, Seed>::resume(value_type checksum) const noexcept
+template <class Engine, isa_set const &OwnLoops, class Seed>
+constexpr dispatch_engine<Engine, OwnLoops, Seed>::state_type dispatch_engine<Engine, OwnLoops, Seed>::resume(value_type checksum) const noexcept
   requires requires(Engine const &candidate, value_type value) { candidate.resume(value); }
 {
   return engine<isa::generic>().resume(checksum);
 }
 
-template <class Engine, isa KernelPreset, class Seed>
-constexpr dispatch_engine<Engine, KernelPreset, Seed>::value_type
-dispatch_engine<Engine, KernelPreset, Seed>::compute(std::span<std::byte const> data) const noexcept {
-  return isa_detail::dispatch<KernelPreset>(chosen, [&]<isa Isa>() { return engine<Isa>().compute(data); });
+template <class Engine, isa_set const &OwnLoops, class Seed>
+constexpr dispatch_engine<Engine, OwnLoops, Seed>::value_type
+dispatch_engine<Engine, OwnLoops, Seed>::compute(std::span<std::byte const> data) const noexcept {
+  return isa_detail::dispatch<OwnLoops>(chosen, [&]<isa Isa>() { return engine<Isa>().compute(data); });
 }
 
-template <class Engine, isa KernelPreset, class Seed>
+template <class Engine, isa_set const &OwnLoops, class Seed>
 template <byte_range Range>
-constexpr dispatch_engine<Engine, KernelPreset, Seed>::value_type dispatch_engine<Engine, KernelPreset, Seed>::compute(Range &&data) const noexcept {
-  return isa_detail::dispatch<KernelPreset>(chosen, [&]<isa Isa>() { return engine<Isa>().compute(std::forward<Range>(data)); });
+constexpr dispatch_engine<Engine, OwnLoops, Seed>::value_type dispatch_engine<Engine, OwnLoops, Seed>::compute(Range &&data) const noexcept {
+  return isa_detail::dispatch<OwnLoops>(chosen, [&]<isa Isa>() { return engine<Isa>().compute(std::forward<Range>(data)); });
 }
 
 } // namespace checksum::detail

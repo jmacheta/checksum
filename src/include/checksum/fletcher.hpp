@@ -79,10 +79,21 @@ public:
 template <unsigned Width, isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr fletcher_engine<Width, Isa>::value_type fletcher_compute(Range &&data) noexcept;
 
+} // namespace checksum
+
+namespace checksum::fletcher_detail {
+
+// The presets a dispatch engine chooses from: generic and those with target options.
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options();
+
+} // namespace checksum::fletcher_detail
+
+namespace checksum {
+
 /// A fletcher_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
 template <unsigned Width>
   requires(Width == 16 || Width == 32 || Width == 64)
-class fletcher_dispatch_engine : public detail::dispatch_engine<fletcher_engine<Width>, isa::generic> {
+class fletcher_dispatch_engine : public detail::dispatch_engine<fletcher_engine<Width>, fletcher_detail::own_loops> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit fletcher_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
@@ -242,7 +253,7 @@ template <unsigned Width, isa Isa, byte_range Range> constexpr fletcher_engine<W
 template <unsigned Width>
   requires(Width == 16 || Width == 32 || Width == 64)
 constexpr fletcher_dispatch_engine<Width>::fletcher_dispatch_engine(isa_set cpu) noexcept
-    : detail::dispatch_engine<fletcher_engine<Width>, isa::generic>(cpu) {}
+    : detail::dispatch_engine<fletcher_engine<Width>, fletcher_detail::own_loops>(cpu) {}
 
 } // namespace checksum
 

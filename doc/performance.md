@@ -396,7 +396,67 @@ inline short paths of the header add to each caller.
 
 ## xxHash
 
-User guides: [xxh3.md](xxh3.md), [xxhash.md](xxhash.md).
+XXH32 and XXH64. User guide: [xxhash.md](xxhash.md).
+
+### x86-64
+
+GCC `-O2 -march=native`, MB/s at 20 B / 1 MiB: XXH32 6 831 / 8 743, XXH64 8 186 / 18 364. Both match xxHash v0.8.4
+from 64 B and are faster at 20 B.
+
+Per-preset copies of the loop (removed; every preset now runs generic's), Core i7-13700K, `-O2` without `-march`, best
+of 5, XXH32 MB/s, generic / `x86_avx2` copy:
+
+| Compiler | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| Clang 23 | 5 749 / 6 205 | 10 295 / 11 458 | 10 732 / 11 366 | 10 812 / 7 359 | 10 781 / 6 899 | 10 855 / 6 609 |
+| GCC 16 | 8 007 / 8 025 | 10 219 / 10 326 | 10 687 / 10 802 | 10 840 / 10 891 | 10 833 / 10 803 | 10 867 / 10 870 |
+
+XXH64 was within 1.4 % with both compilers. On the Cortex-A72 the AArch64 and AArch32 copies were the same code as
+generic's, except `thumb2_crc` in a `-mfpu=vfpv3-d16` build: 0.6-6 % slower up to 1500 B.
+
+### Cortex-A72
+
+GCC 14.3, `-O2`, MB/s; AArch32 with `-march=armv8-a+crc -mfpu=neon-fp-armv8`:
+
+| Hash, mode | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| XXH32, AArch64 | 775 | 1 730 | 2 521 | 2 787 | 2 914 | 2 635 |
+| XXH64, AArch64 | 812 | 915 | 1 535 | 1 868 | 1 948 | 1 889 |
+| XXH32, AArch32 | 633 | 1 460 | 2 352 | 2 767 | 2 904 | 2 580 |
+| XXH64, AArch32 | 286 | 367 | 596 | 698 | 731 | 723 |
+
+Against xxHash v0.8.4: both match from 256 B.
+
+### Cortex-M4
+
+STM32L4A6 at 80 MHz, MB/s:
+
+| Hash | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| XXH32 | 9.9 | 23.6 | 32.3 | 36.8 | 39.6 | 48.4 | 50.3 |
+| XXH64 | 8.4 | 9.3 | 13.4 | 15.8 | 17.3 | 21.6 | 23.6 |
+
+Against xxHash v0.8.4 at 4 KiB: XXH64 1.15×, XXH32 0.88×.
+
+### Cortex-M33
+
+MB/s, and cycles per byte at 4 KiB:
+
+| Hash | 20 B | 64 B | 256 B | 1500 B | 4 KiB | cycles/B |
+| --- | --- | --- | --- | --- | --- | --- |
+| XXH32 | 21.7 | 51.2 | 81.9 | 97.2 | 100.8 | 1.27 |
+| XXH64 | 15.8 | 16.9 | 30.2 | 38.1 | 40.1 | 3.19 |
+
+From an odd address both are 7-16 % slower at 4 KiB.
+
+### Code size
+
+Cortex-M4, GCC 14.3: the out-of-line loops take 2 672 B of code at `-O2` and 1 720 B at `-Os`; the inline short paths
+of the header add to each caller.
+
+## XXH3
+
+User guide: [xxh3.md](xxh3.md).
 
 ### x86-64
 
@@ -408,9 +468,8 @@ XXH3-64, GCC 16, MB/s. Up to 240 B every build runs the same straight-line code.
 | SSE2 | 12 946 | 26 749 | 16 291 | 21 057 | 22 002 | 21 992 |
 | AVX2 | 14 463 | 28 828 | 28 533 | 43 777 | 48 504 | 48 994 |
 
-Clang 21 at 1 MiB: portable 20 107, SSE2 32 658, AVX2 46 907. With `-march=native`, MB/s at 20 B / 1 MiB: XXH32
-6 831 / 8 743, XXH64 8 186 / 18 364, XXH3-128 7 827 / 50 172. All four match xxHash v0.8.4 from 64 B (XXH3 0.92× at
-256 B) and are faster at 20 B.
+Clang 21 at 1 MiB: portable 20 107, SSE2 32 658, AVX2 46 907. With `-march=native`, XXH3-128 at 20 B / 1 MiB:
+7 827 / 50 172. Both widths match xxHash v0.8.4 from 64 B (0.92× at 256 B) and are faster at 20 B.
 
 ### Cortex-A72
 
@@ -418,33 +477,27 @@ GCC 14.3, `-O2`, MB/s; AArch32 with `-march=armv8-a+crc -mfpu=neon-fp-armv8`:
 
 | Hash, build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| XXH32, AArch64 | 775 | 1 730 | 2 521 | 2 787 | 2 914 | 2 635 |
-| XXH64, AArch64 | 812 | 915 | 1 535 | 1 868 | 1 948 | 1 889 |
 | XXH3-64, AArch64 portable | 911 | 1 884 | 2 238 | 3 446 | 3 771 | 3 394 |
 | XXH3-64, AArch64 NEON | 910 | 1 885 | 2 643 | 4 280 | 4 704 | 4 113 |
 | XXH3-128, AArch64 portable | 875 | 1 866 | 1 864 | 3 275 | 3 699 | 3 415 |
 | XXH3-128, AArch64 NEON | 874 | 1 866 | 2 229 | 4 055 | 4 598 | 4 109 |
-| XXH32, AArch32 | 633 | 1 460 | 2 352 | 2 767 | 2 904 | 2 580 |
-| XXH64, AArch32 | 286 | 367 | 596 | 698 | 731 | 723 |
 | XXH3-64, AArch32 portable | 522 | 1 057 | 921 | 1 235 | 1 341 | 1 308 |
 | XXH3-64, AArch32 NEON | 522 | 1 057 | 1 544 | 2 494 | 2 807 | 2 652 |
 | XXH3-128, AArch32 portable | 442 | 881 | 794 | 1 192 | 1 321 | 1 307 |
 | XXH3-128, AArch32 NEON | 441 | 881 | 1 224 | 2 332 | 2 728 | 2 655 |
 
-Against xxHash v0.8.4: XXH3 1.0-1.15× from 1500 B, 0.95-1.05× at 256 B; XXH32 and XXH64 match from 256 B.
+Against xxHash v0.8.4: 1.0-1.15× from 1500 B, 0.95-1.05× at 256 B.
 
 ### Cortex-M4
 
-Portable code for every hash. STM32L4A6 at 80 MHz, MB/s:
+Portable code. STM32L4A6 at 80 MHz, MB/s:
 
 | Hash | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| XXH32 | 9.9 | 23.6 | 32.3 | 36.8 | 39.6 | 48.4 | 50.3 |
-| XXH64 | 8.4 | 9.3 | 13.4 | 15.8 | 17.3 | 21.6 | 23.6 |
 | XXH3-64 | 10.0 | 19.5 | 22.1 | 19.5 | 13.8 | 23.6 | 26.7 |
 | XXH3-128 | 8.5 | 16.7 | 19.2 | 11.2 | 10.7 | 21.7 | 25.7 |
 
-Against xxHash v0.8.4 at 4 KiB: XXH64 1.15×, XXH3 0.95-0.96×, XXH32 0.88×.
+Against xxHash v0.8.4 at 4 KiB: 0.95-0.96×.
 
 ### Cortex-M33
 
@@ -452,17 +505,15 @@ MB/s, and cycles per byte at 4 KiB:
 
 | Hash | 20 B | 64 B | 256 B | 1500 B | 4 KiB | cycles/B |
 | --- | --- | --- | --- | --- | --- | --- |
-| XXH32 | 21.7 | 51.2 | 81.9 | 97.2 | 100.8 | 1.27 |
-| XXH64 | 15.8 | 16.9 | 30.2 | 38.1 | 40.1 | 3.19 |
 | XXH3-64 | 18.6 | 34.3 | 30.3 | 44.4 | 48.5 | 2.64 |
 | XXH3-128 | 10.9 | 23.9 | 22.8 | 39.8 | 46.4 | 2.76 |
 
-From an odd address every hash is 7-16 % slower at 4 KiB.
+From an odd address both are 7-16 % slower at 4 KiB.
 
 ### Code size
 
-Cortex-M4, GCC 14.3: the out-of-line loops take 3 648 B of code at `-O2` (XXH32/XXH64 2 672, XXH3 976) and 2 296 B at
-`-Os` (1 720, 576); the inline short paths of the header add to each caller.
+Cortex-M4, GCC 14.3: the out-of-line loops take 976 B of code at `-O2` and 576 B at `-Os`; the inline short paths of
+the header add to each caller.
 
 ## MurmurHash3
 
@@ -485,6 +536,17 @@ GCC 14.3, `-O2`. MB/s:
 | x64_128, AArch32 | 278 | 408 | 536 | 595 | 604 | 599 |
 
 Against SMHasher, x86_32: 0.95-1.0× on AArch64; 0.71× at 20 B to 0.97× from 1500 B in AArch32.
+
+Per-preset copies of the loop (removed; every preset now runs generic's, four x86_32 blocks per iteration on 32-bit
+Arm) were the same code except one block per iteration for `thumb2_neon` and `thumb2_crc`. x86_32 in AArch32, MB/s,
+four / one block per iteration, best of 5 (with identical code, the presets differ by up to 2 %):
+
+| Build, preset | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| `-mfpu=vfpv3-d16`, `thumb2_neon` | 538 / 483 | 853 / 795 | 1 036 / 1 009 | 1 124 / 1 140 | 1 143 / 1 128 | 1 126 / 1 111 |
+| `-mfpu=vfpv3-d16`, `thumb2_crc` | 538 / 574 | 853 / 873 | 1 036 / 1 037 | 1 124 / 1 141 | 1 143 / 1 156 | 1 126 / 1 111 |
+| `-march=armv8-a+crc`, `thumb2_neon` | 529 / 551 | 872 / 874 | 1 056 / 1 010 | 1 117 / 1 116 | 1 143 / 1 148 | 1 123 / 1 107 |
+| `-march=armv8-a+crc`, `thumb2_crc` | 529 / 558 | 872 / 863 | 1 056 / 1 037 | 1 117 / 1 141 | 1 143 / 1 156 | 1 123 / 1 107 |
 
 ### Cortex-M4
 

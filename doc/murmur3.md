@@ -24,7 +24,7 @@ if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the
   checksum::hash128 value = murmur3.finalize(murmur3.update(murmur3.update(murmur3.initial(), header), payload));
 }
 
-// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
+// Run-time dispatch: the same interface as every algorithm; MurmurHash3 runs isa::generic on every CPU.
 static checksum::murmur3_dispatch_engine<128> const murmur3(1234);
 checksum::isa chosen = murmur3.preset();
 checksum::accumulator running{murmur3};
@@ -48,7 +48,7 @@ MurmurHash3_x86_128 is not provided.
 | `murmur3_engine<Width, Isa>` | The engine, `murmur3_engine<Width, Isa>{seed}` with a `std::uint32_t` seed, 0 by default. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the hash, `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. There is no `resume`: the hash does not determine the state. |
 | `murmur3_state<Width>` | The lanes, the byte count (`length`) and an unfinished block (`buffer`). A plain value; the default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
 | `murmur3_compute<Width, Isa>(data, seed = 0)` | `murmur3_engine<Width, Isa>{seed}.compute(data)`. |
-| `murmur3_dispatch_engine<Width>` | The same members as `murmur3_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
+| `murmur3_dispatch_engine<Width>` | The same members as `murmur3_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, is always `generic` (section 5.1). |
 | `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
 `value_type` is `std::uint32_t` for Width 32 and `hash128` (shared with XXH3-128) for Width 128, with h1 in `low` and
@@ -69,21 +69,19 @@ preconditions.
 
 ## 5. CPU acceleration
 
-MurmurHash3 has no kernel on any target: every block updates the lanes from their previous values, one serial chain. The
-preset compiles the portable block loop for its instruction set ([Instruction-set
-presets](../README.md#instruction-set-presets)); with MSVC (no target options) and on RISC-V (no target pragma), each
-preset's copy is the same code as `isa::generic`. On 32-bit Arm with any preset but `thumb2_neon` and `thumb2_crc`,
-x86_32 takes four blocks per iteration so in-order cores overlap the multiplications. Details:
+MurmurHash3 has no kernel on any target: every block updates the lanes from their previous values, one serial chain.
+Every preset ([Instruction-set presets](../README.md#instruction-set-presets)) runs the one block loop of
+`isa::generic`: copies compiled per preset were the same code or no faster. On 32-bit Arm x86_32 takes four blocks per
+iteration so in-order cores overlap the multiplications. Details:
 [design/acceleration.md](design/acceleration.md#murmurhash3).
 
 ### 5.1 Choosing the preset at run time
 
-The dispatch engine of section 1 asks the CPU once, when it is made, and from then on runs the best variant this build
-has for it. `preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
-`checksum::murmur3_dispatch_engine<32>(42, checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time
-where this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on
-top of the variant. Detection does not run in constant expressions: there, call `murmur3_compute<32>` or give the engine
-an explicit preset. Details and the list of engines: [Instruction-set presets](../README.md#instruction-set-presets).
+The dispatch engine of section 1 has the members of every dispatch engine, so code that dispatches all its algorithms
+treats MurmurHash3 alike, but it always runs the `isa::generic` loop and `preset()` is `generic`, on every architecture
+and compiler; the `cpu` argument changes nothing and a call costs nothing on top of the static engine. Detection does
+not run in constant expressions: there, call `murmur3_compute<32>` or give the engine an explicit set. Details and the
+list of engines: [Instruction-set presets](../README.md#instruction-set-presets).
 
 ## 6. Performance guidelines
 

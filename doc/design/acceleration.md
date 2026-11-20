@@ -24,10 +24,11 @@ in [performance.md](../performance.md) only.
   `thumb2_crc` adds `"crc"` to it. GCC adds NEON and ARMv8-A CRC to any A-profile hard-float build.
 - **Run-time choice on top.** `detect_isa()` (`src/isa/detect.cpp`, the only source with CPU queries) returns an
   `isa_set`, the default argument of every dispatch engine. An engine turns the set into one built preset with
-  `isa_detail::select()` and calls the templates through `isa_detail::dispatch()`. It picks only presets that run a loop of
-  their own (`isa_detail::runs_own_loop()`): on RISC-V, whose presets compile without target options, those from the
-  algorithm's `KernelPreset` on (`riscv_zbc` for CRC, `riscv_v` for Internet and XXH3, none for the others). A
-  `static_assert` at the end of each loops header checks this against the kernels. `detect_isa()` is deliberately not
+  `isa_detail::select()` and calls the templates through `isa_detail::dispatch()`. It picks only presets in the
+  algorithm's own-loop set, an `isa_set` constant (`<algorithm>_detail::own_loops`, for CRC per strategy): generic, the
+  presets of the build with target options (`isa_detail::built_with_target_options()`), and those without them (RISC-V)
+  that the algorithm has a kernel for (`riscv_zbc` for CRC, `riscv_v` for Internet and XXH3). A `static_assert` at the
+  end of each loops header checks the set against the kernels. `detect_isa()` is deliberately not
   `constexpr`: a constant-evaluable detection would silently make `static` engines generic.
 - **Detection never guesses.** A built preset is reported if `isa_detail::compiler_guarantees()`
   (`checksum_private/compiled_isa.hpp`) finds its extensions in the build's predefined macros (`__ARM_FEATURE_CRC32`,
@@ -36,6 +37,11 @@ in [performance.md](../performance.md) only.
   `sysctlbyname` on Apple AArch64. Elsewhere (bare metal, other BSDs) only the macros count, so a Cortex-A9 build
   with the `thumb2_crc` sources never runs them. Kernel headers without a Zbc key (before Linux 6.8) report no
   `riscv_zbc` unless the flags have Zbc. The FreeBSD and Apple queries are untested in CI.
+- **Generic-only loops.** A loop that no preset changes is built once, in one source compiled for `generic`, and its
+  functions take no preset: `crc_lut_none`, `crc_lut_nibble` and `crc_lut_byte` (`src/crc/lut_*.cpp`), XXH32 and XXH64
+  (`src/xxhash/stripe_loop.cpp`), MurmurHash3 (`src/murmur3/block_loop.cpp`). Every static engine runs it, and its
+  own-loop set is `isa_set{}`, generic alone, so `preset()` is `generic` on every compiler. A
+  loop without a kernel gets per-preset copies only if they measurably beat it on hardware.
 - **One kernel shape.** `<algorithm>_arch.hpp` defines each kernel as a class template on the preset whose primary
   template means "no kernel": `available = false`, `minimum_size` the maximum. An architecture header specializes it
   for the presets that have the kernel, with a `requires` clause on the preset (`target_detail::any_preset<Isa>` for
@@ -85,7 +91,7 @@ in [performance.md](../performance.md) only.
    conditions as that list.
 4. Add one source per loop, `src/<algorithm>/<loop>_<preset>.cpp` (copy a sibling: it defines `CHECKSUM_PRESET` and
    `CHECKSUM_PRESET_TARGET` and includes the loops header), for adler32, crc (`lut_sliced`, `lut_braided`), fletcher,
-   fletcher4, internet, murmur3, xxh3 and xxhash, and list them in `src/CMakeLists.txt`.
+   fletcher4, internet and xxh3, and list them in `src/CMakeLists.txt`. The generic-only loops need nothing.
 5. Specialize the kernels for it in the architecture headers (`requires(isa_detail::includes(Isa, isa::<preset>))`). If
    they need intrinsic types the build may lack, add `CHECKSUM_PRESET_HAS_<FEATURE>_<preset>` to `presets.hpp`.
 6. Add the CPU check in `src/isa/detect.cpp`: the `checked` array and `runs()`. A `static_assert` fails for a built
@@ -93,8 +99,8 @@ in [performance.md](../performance.md) only.
 7. Add its name to `tests/include/isa_cpu.hpp`; `ut_isa.cpp` fails without it. Preset tests and benchmarks pick it up
    from `built_presets`.
 8. If the preset compiles without target options (as `riscv_zbc` and `riscv_v`), add it to
-   `isa_detail::without_target_options()`, and give the dispatch engine of each algorithm with a kernel for it that preset
-   as `KernelPreset`; the `static_assert` at the end of each loops header fails otherwise.
+   `isa_detail::without_target_options()`, and add it to the own-loop set of each algorithm with a kernel for it; the
+   `static_assert` at the end of each loops header fails otherwise.
 9. Update the preset tables of the user guides and the ladder in the README.
 
 ## CRC
@@ -210,21 +216,25 @@ Design notes:
 No kernel on any target: each block updates the lanes through a rotation, a multiplication and an addition of their
 previous values, and in x64_128 the second lane takes the first lane of the same block, one serial chain.
 
-- The block loop is compiled once per width and preset in `src/murmur3/` and takes the lanes by reference.
-- On 32-bit Arm with any preset but `thumb2_neon` and `thumb2_crc` (Cortex-M, small in-order A-profile cores), x86_32
-  takes four blocks per iteration, so the multiplications of later blocks run while the lane chain completes.
-  Out-of-order targets keep one block; two x64_128 blocks spill on Cortex-M.
+- The block loop is a generic-only loop (`src/murmur3/block_loop.cpp`) and takes the lanes by reference.
+- On 32-bit Arm (Cortex-M, in-order A-profile cores) x86_32 takes four blocks per iteration, so the multiplications of
+  later blocks run while the lane chain completes. Other targets keep one block; two x64_128 blocks spill on Cortex-M.
+- Rejected: per-preset copies. They compiled to the same code except one block per iteration for `thumb2_neon` and
+  `thumb2_crc`, no faster on Cortex-A72 ([performance.md](../performance.md#murmurhash3)).
 
 ## XXH32 and XXH64
 
 No kernel on any target: each of the four lanes is a serial multiply-rotate chain and the scalar loop already runs
 the four side by side. A NEON XXH32 was slower than scalar; SSE2, AVX2 and NEON have no 64-bit lane multiply for XXH64.
 
-- The stripe loop is compiled once per width and preset in `src/xxhash/` and not inlined, so the lanes may alias the
+- The stripe loop is a generic-only loop (`src/xxhash/stripe_loop.cpp`) and not inlined, so the lanes may alias the
   data and compilers do not pack them into one vector. The lanes converge in spelled-out code.
-- The one-shot hash keeps the lanes in local variables in one out-of-line function per width and preset: XXH32
+- The one-shot hash keeps the lanes in local variables in one out-of-line function per width: XXH32
   everywhere, XXH64 only on 64-bit targets (its lanes spill on Cortex-M). An empty `asm` on the lanes after the loop
   keeps GCC from merging the last multiplication into the convergence.
+- Rejected: per-preset copies. Clang 23 vectorized the XXH32 one-shot lanes for `x86_avx2` (`vpmulld`), a third
+  slower on long inputs; GCC's AVX2 copy and `thumb2_crc` in a `-mfpu=vfpv3-d16` build were no faster, and every other
+  copy was the same code ([performance.md](../performance.md#xxhash)).
 
 ## XXH3
 

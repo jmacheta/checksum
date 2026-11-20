@@ -93,8 +93,8 @@ void stripe_loop(accumulator_array &accumulators, std::span<std::byte const> dat
 template void stripe_loop<isa::CHECKSUM_PRESET>(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe,
                                                 secret_array const &secret, std::byte const *last_stripe) noexcept;
 
-// Dispatch engines run this preset only where its loop differs from generic's: it has target options or a kernel.
-static_assert((xxh3_dispatch_engine<64>(0, isa::CHECKSUM_PRESET).preset() == isa::CHECKSUM_PRESET) ==
+// The dispatch engines choose this preset exactly where its loop differs from generic's: it has target options or a kernel.
+static_assert(own_loops.contains(isa::CHECKSUM_PRESET) ==
               (!isa_detail::without_target_options(isa::CHECKSUM_PRESET) || stripe_kernel<isa::CHECKSUM_PRESET>::available));
 
 } // namespace checksum::xxh3_detail

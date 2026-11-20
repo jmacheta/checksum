@@ -161,6 +161,9 @@ std::uint32_t const value = crc->compute(data);
   architecture. A preset converts to the set of its line up to it; sets combine with `|`. On RISC-V, where both lines
   are built without target options, an engine picks only a preset with a kernel: `riscv_zbc` for CRC, `riscv_v` for the
   Internet checksum and XXH3, `generic` for the others.
+- xxHash, MurmurHash3 and the CRC strategies `crc_lut_none`, `crc_lut_nibble` and `crc_lut_byte` have one loop, built
+  for `isa::generic`, which every preset runs: their dispatch engines choose `generic` on every architecture and
+  compiler.
 - **constexpr:** `detect_isa()` runs only at run time, so a default-constructed engine cannot be `constexpr`. Give an
   explicit set: `constexpr checksum::internet_dispatch_engine engine(checksum::isa_set{})` (generic) or a preset. This
   is deliberate: a constant-evaluable detection would silently make every `static` engine generic.
@@ -176,8 +179,8 @@ Platform differences, by design:
   GCC and Clang emit unaligned accesses for ARMv7-A, in this library and elsewhere (newlib's `memcpy` too), so
   `-mno-unaligned-access` is not enough: map memory as Normal before running C++ code, as `tests/bare_metal/startup.S`
   does.
-- **MSVC** compiles the presets without target options. Where an algorithm has no kernel for a preset (xxHash and
-  MurmurHash3 on every preset, the Internet checksum below `x86_avx2`, for example), a dispatch engine still chooses and
+- **MSVC** compiles the presets without target options. Where an algorithm has no kernel for a preset (the Internet
+  checksum below `x86_avx2`, for example), a dispatch engine still chooses and
   reports that preset, which runs the same portable code as `isa::generic`. On RISC-V, the other build without target
   options, engines choose only presets with a kernel (above).
 

@@ -68,8 +68,19 @@ public:
 /// adler32_engine<Isa>{}.compute(data).
 template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr adler32_engine<Isa>::value_type adler32_compute(Range &&data) noexcept;
 
+} // namespace checksum
+
+namespace checksum::adler32_detail {
+
+// The presets a dispatch engine chooses from: generic and those with target options.
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options();
+
+} // namespace checksum::adler32_detail
+
+namespace checksum {
+
 /// An adler32_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
-class adler32_dispatch_engine : public detail::dispatch_engine<adler32_engine<>, isa::generic> {
+class adler32_dispatch_engine : public detail::dispatch_engine<adler32_engine<>, adler32_detail::own_loops> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit adler32_dispatch_engine(isa_set cpu = detect_isa()) noexcept;

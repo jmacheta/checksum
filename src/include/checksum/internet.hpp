@@ -70,8 +70,19 @@ public:
 /// internet_engine<Isa>{}.compute(data).
 template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr internet_engine<Isa>::value_type internet_compute(Range &&data) noexcept;
 
+} // namespace checksum
+
+namespace checksum::internet_detail {
+
+// The presets a dispatch engine chooses from: generic, those with target options, and riscv_v, the one without them with a kernel.
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options() | isa::riscv_v;
+
+} // namespace checksum::internet_detail
+
+namespace checksum {
+
 /// An internet_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
-class internet_dispatch_engine : public detail::dispatch_engine<internet_engine<>, isa::riscv_v> {
+class internet_dispatch_engine : public detail::dispatch_engine<internet_engine<>, internet_detail::own_loops> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit internet_dispatch_engine(isa_set cpu = detect_isa()) noexcept;

@@ -81,8 +81,19 @@ public:
 template <isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr fletcher4_engine<Isa>::value_type fletcher4_compute(Range &&data) noexcept;
 
+} // namespace checksum
+
+namespace checksum::fletcher4_detail {
+
+// The presets a dispatch engine chooses from: generic and those with target options.
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options();
+
+} // namespace checksum::fletcher4_detail
+
+namespace checksum {
+
 /// A fletcher4_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
-class fletcher4_dispatch_engine : public detail::dispatch_engine<fletcher4_engine<>, isa::generic> {
+class fletcher4_dispatch_engine : public detail::dispatch_engine<fletcher4_engine<>, fletcher4_detail::own_loops> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit fletcher4_dispatch_engine(isa_set cpu = detect_isa()) noexcept;

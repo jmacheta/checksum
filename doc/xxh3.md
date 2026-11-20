@@ -108,7 +108,7 @@ presets](../README.md#instruction-set-presets).
 
 ## 6. Performance guidelines
 
-Measured figures: [performance.md](performance.md#xxhash).
+Measured figures: [performance.md](performance.md#xxh3).
 
 - **Pick the hash for the CPU.** On 64-bit CPUs XXH3 is the fastest: about 48 000 MB/s with `isa::x86_avx2`, twice the
   SSE2 kernel of `isa::generic`. On 32-bit cores (Cortex-M, AArch32) XXH32 is about twice the others from 256 bytes on

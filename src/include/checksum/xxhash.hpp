@@ -42,7 +42,7 @@ struct xxhash_state {
   }
 };
 
-/// XXH32 (Width 32) or XXH64 (Width 64) with a seed and the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp).
+/// XXH32 (Width 32) or XXH64 (Width 64) with a seed. Every instruction-set preset Isa (checksum/isa.hpp) runs the loop of isa::generic.
 template <unsigned Width, isa Isa = isa::generic>
   requires(Width == 32 || Width == 64) && (isa_available(Isa))
 class xxhash_engine {
@@ -53,7 +53,7 @@ public:
   /// The engine of the hash with seed.
   constexpr explicit xxhash_engine(value_type seed = 0) noexcept;
 
-  /// The preset whose loop the engine runs: Isa.
+  /// Isa, whose loop is generic's.
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -83,12 +83,24 @@ template <unsigned Width, isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr xxhash_engine<Width, Isa>::value_type xxhash_compute(Range &&data,
                                                                              typename xxhash_engine<Width, Isa>::value_type seed = 0) noexcept;
 
-/// An xxhash_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
+} // namespace checksum
+
+namespace checksum::xxhash_detail {
+
+// The presets a dispatch engine chooses from: generic alone, whose loop every preset runs.
+inline constexpr isa_set own_loops = isa_set{};
+
+} // namespace checksum::xxhash_detail
+
+namespace checksum {
+
+/// An xxhash_engine with the dispatch engines' interface. No preset has a loop of its own, so it always chooses generic.
 template <unsigned Width>
   requires(Width == 32 || Width == 64)
-class xxhash_dispatch_engine : public detail::dispatch_engine<xxhash_engine<Width>, isa::generic, typename xxhash_engine<Width>::value_type> {
+class xxhash_dispatch_engine
+    : public detail::dispatch_engine<xxhash_engine<Width>, xxhash_detail::own_loops, typename xxhash_engine<Width>::value_type> {
 public:
-  /// The engine of the hash with seed and the best preset of this build in cpu: by default the presets the running CPU executes.
+  /// The engine of the hash with seed; cpu does not change the loop.
   constexpr explicit xxhash_dispatch_engine(typename xxhash_engine<Width>::value_type seed = 0, isa_set cpu = detect_isa()) noexcept;
 };
 
@@ -149,13 +161,12 @@ template <unsigned Width> constexpr word<Width> converge(lane_array<Width> const
 // packing them into one vector register: slower than scalar code for XXH32.
 template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
-// fold_stripes(), then converge() if wanted, else 0; defined in src/xxhash/ for every preset. Returning the merged value spares the caller
-// reloading the lanes right after their stores.
-template <isa Isa, unsigned Width> word<Width> stripe_loop(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
+// fold_stripes(), then converge() if wanted, else 0; defined once in src/xxhash/stripe_loop.cpp, the loop of every preset. Returning the
+// merged value spares the caller reloading the lanes right after their stores.
+template <unsigned Width> word<Width> stripe_loop(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
 
 // fold_stripes() and converge() if wanted, during constant evaluation, else stripe_loop().
-template <isa Isa, unsigned Width>
-constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
+template <unsigned Width> constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
 
 // The final mix of a hash.
 template <unsigned Width> constexpr word<Width> avalanche(word<Width> hash) noexcept;
@@ -164,9 +175,9 @@ template <unsigned Width> constexpr word<Width> avalanche(word<Width> hash) noex
 template <unsigned Width>
 constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint64_t length, std::span<std::byte const> tail) noexcept;
 
-// The hash of data of at least one stripe, defined in src/xxhash/ for every preset. Its lanes are locals, which GCC and Clang keep in
+// The hash of data of at least one stripe, defined with stripe_loop(). Its lanes are locals, which GCC and Clang keep in
 // scalar registers: on Cortex-M4 an XXH32 stripe takes 24.5 cycles, against 28.6 through stripe_loop().
-template <isa Isa, unsigned Width> word<Width> run_time_hash(std::span<std::byte const> data, word<Width> seed) noexcept;
+template <unsigned Width> word<Width> run_time_hash(std::span<std::byte const> data, word<Width> seed) noexcept;
 
 } // namespace checksum::xxhash_detail
 
@@ -211,13 +222,13 @@ template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, 
   }
 }
 
-template <isa Isa, unsigned Width>
+template <unsigned Width>
 constexpr word<Width> fold_and_converge(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept {
   if consteval {
     fold_stripes<Width>(lanes, data);
     return converged ? converge<Width>(lanes) : 0;
   } else {
-    return stripe_loop<Isa, Width>(lanes, data, converged);
+    return stripe_loop<Width>(lanes, data, converged);
   }
 }
 
@@ -301,7 +312,7 @@ constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::update(xxhash_state<Wid
   }
   std::size_t const whole = data.size() - (data.size() % stripe_size);
   if(whole != 0) {
-    xxhash_detail::fold_and_converge<Isa, Width>(state.lanes, data.first(whole), false);
+    xxhash_detail::fold_and_converge<Width>(state.lanes, data.first(whole), false);
   }
   std::ranges::copy(data.subspan(whole), state.buffer.begin());
   return state;
@@ -332,14 +343,14 @@ constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::compu
   if constexpr(sizeof(std::size_t) >= sizeof(xxhash_detail::word<Width>)) {
     if !consteval {
       if(whole != 0) {
-        return xxhash_detail::run_time_hash<Isa, Width>(data, hash_seed);
+        return xxhash_detail::run_time_hash<Width>(data, hash_seed);
       }
     }
   }
   xxhash_detail::word<Width> converged = 0;
   if(whole != 0) {
     xxhash_detail::lane_array<Width> lanes = xxhash_detail::initial_lanes<Width>(hash_seed);
-    converged = xxhash_detail::fold_and_converge<Isa, Width>(lanes, data.first(whole), true);
+    converged = xxhash_detail::fold_and_converge<Width>(lanes, data.first(whole), true);
   }
   return xxhash_detail::finish<Width>(converged, hash_seed, data.size(), data.subspan(whole));
 }
@@ -368,7 +379,7 @@ constexpr xxhash_engine<Width, Isa>::value_type xxhash_compute(Range &&data, typ
 template <unsigned Width>
   requires(Width == 32 || Width == 64)
 constexpr xxhash_dispatch_engine<Width>::xxhash_dispatch_engine(typename xxhash_engine<Width>::value_type seed, isa_set cpu) noexcept
-    : detail::dispatch_engine<xxhash_engine<Width>, isa::generic, typename xxhash_engine<Width>::value_type>(cpu, seed) {}
+    : detail::dispatch_engine<xxhash_engine<Width>, xxhash_detail::own_loops, typename xxhash_engine<Width>::value_type>(cpu, seed) {}
 
 } // namespace checksum
 
