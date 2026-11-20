@@ -130,9 +130,8 @@ supported yet: AVX-512, Arm Helium (MVE) and SVE2.
   an `if constexpr` branch outside a template. Portable code names its preset through a constant:
   `constexpr auto avx2 = isa_available(isa::x86_avx2) ? isa::x86_avx2 : isa::generic;`. On
   32-bit Arm the presets need a Thumb-2 build; `thumb2_dsp` also needs the DSP extension, and `thumb2_neon` and
-  `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-point ABI. Clang also needs a build in Thumb
-  state (`-mthumb`) and, for `thumb2_neon` and `thumb2_crc`, the build's own NEON (`-mfpu=neon` or later). A Cortex-M0
-  build has only `isa::generic`. Each guide lists which preset enables which kernel.
+  `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-point ABI (Clang needs more, see Platform
+  differences below). A Cortex-M0 build has only `isa::generic`. Each guide lists which preset enables which kernel.
 
 To choose at run time, make a dispatch engine. It detects the CPU when it is made and runs the best preset of this build
 from then on; each call costs one or two cycles to switch to the chosen loop.
@@ -166,6 +165,21 @@ std::uint32_t const value = crc->compute(data);
   explicit set: `constexpr checksum::internet_dispatch_engine engine(checksum::isa_set{})` (generic) or a preset. This
   is deliberate: a constant-evaluable detection would silently make every `static` engine generic.
 - Programs that make no dispatch engine link none of this: `detect_isa()` is a source of its own.
+
+Platform differences, by design:
+
+- **Clang on 32-bit Arm** builds the `thumb2` presets only in a Thumb-2 build (`-mthumb`), and `thumb2_neon` and
+  `thumb2_crc` only with the build's own NEON (`-mfpu=neon` or later); GCC adds both itself.
+- **Arm builds without DSP** (`-mcpu=cortex-m33+nodsp`, `cortex-m55+nodsp`) build and detect `thumb2`, not
+  `thumb2_dsp`, also on a core that has DSP.
+- **Bare-metal Cortex-A with the MMU off:** all data memory is then Strongly-ordered, where unaligned accesses fault.
+  GCC and Clang emit unaligned accesses for ARMv7-A, in this library and elsewhere (newlib's `memcpy` too), so
+  `-mno-unaligned-access` is not enough: map memory as Normal before running C++ code, as `tests/bare_metal/startup.S`
+  does.
+- **MSVC** compiles the presets without target options. Where an algorithm has no kernel for a preset (xxHash and
+  MurmurHash3 on every preset, the Internet checksum below `x86_avx2`, for example), a dispatch engine still chooses and
+  reports that preset, which runs the same portable code as `isa::generic`. On RISC-V, the other build without target
+  options, engines choose only presets with a kernel (above).
 
 ## Migrating from 1.x
 

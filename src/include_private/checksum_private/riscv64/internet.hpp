@@ -39,7 +39,9 @@ template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] block_total vector_s
   auto const *position = reinterpret_cast<std::uint8_t const *>(data.data());
   std::size_t words = data.size() / 4;
   data = data.subspan(words * 4);
-  std::size_t const lanes = __riscv_vsetvlmax_e64m8();
+  // e64m8 holds as many lanes as e32m4 (VLEN / 8). Clang 20 and older define the e64 vsetvl macros only when the whole
+  // translation unit has 64-bit elements (-march with V), not in a target("arch=+v") function.
+  std::size_t const lanes = __riscv_vsetvlmax_e32m4();
   std::uint64_t total = 0;
   while(words != 0) {
     vuint64m8_t sum = __riscv_vmv_v_x_u64m8(0, lanes);

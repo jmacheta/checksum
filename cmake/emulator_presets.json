@@ -79,6 +79,24 @@
             }
         },
         {
+            "name": "cross-riscv64-clang-base",
+            "hidden": true,
+            "inherits": "cross-common",
+            "description": "Clang for riscv64-linux-gnu with the C library and libstdc++ of the GCC cross toolchain (Ubuntu's g++-<n>-riscv64-linux-gnu), linked by lld",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_PROCESSOR": "riscv64",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_C_COMPILER_TARGET": "riscv64-linux-gnu",
+                "CMAKE_CXX_COMPILER_TARGET": "riscv64-linux-gnu",
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-riscv64;-cpu;max"
+            },
+            "environment": {
+                "CHECKSUM_GCC_WARNINGS": "",
+                "LDFLAGS": "-static -fuse-ld=lld -Wl,--gc-sections"
+            }
+        },
+        {
             "name": "cross-aarch64",
             "displayName": "AArch64 Linux in QEMU",
             "description": "AArch64 cross build with -march=armv8-a: generic and every AArch64 preset (aarch64_crc, aarch64_pmull) compiled in; tests run in QEMU with -cpu max",
@@ -155,6 +173,16 @@
                 "CHECKSUM_EXTRA_CFLAGS": "-march=rv64gc",
                 "CHECKSUM_EXTRA_CXXFLAGS": "-march=rv64gc"
             }
+        },
+        {
+            "name": "cross-riscv64-clang",
+            "displayName": "RISC-V 64 Linux in QEMU (Clang)",
+            "description": "cross-riscv64 with Clang (rv64gc): generic and the riscv_zbc and riscv_v presets compiled in; tests run in QEMU user mode with -cpu max",
+            "inherits": "cross-riscv64-clang-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=rv64gc",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=rv64gc"
+            }
         }
     ],
     "buildPresets": [
@@ -198,6 +226,12 @@
             "name": "cross-riscv64-debug",
             "displayName": "all [Debug]",
             "configurePreset": "cross-riscv64",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-riscv64-clang-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-riscv64-clang",
             "configuration": "Debug"
         }
     ],
@@ -267,6 +301,13 @@
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-riscv64",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-riscv64-clang-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-riscv64-clang",
             "configuration": "Debug"
         }
     ],
@@ -401,6 +442,25 @@
                 {
                     "type": "test",
                     "name": "cross-riscv64-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-riscv64-clang",
+            "displayName": "RISC-V 64 Linux in QEMU (Clang)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-riscv64-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-riscv64-clang-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-riscv64-clang-debug"
                 }
             ]
         }

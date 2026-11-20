@@ -172,6 +172,7 @@ words:
 - Nehalem
 - Neoverse
 - newlib
+- nodsp
 - noexcept
 - nographic
 - noinline

@@ -34,6 +34,8 @@
   `-O2 -march=native`, which affects only the portable loops); run the executables in `build/<preset>/` by hand.
 - Cross builds have no toolchain files: system, processor, compilers, QEMU emulator and flags are set in the presets.
   Emulator settings are never CMake options.
+- The Clang cross presets (`cross-arm-clang`, `cross-arm-crc32-clang`, `cross-riscv64-clang`) set the target triplet
+  and use the C library and libstdc++ of the GCC cross toolchain (Ubuntu's `g++-<n>-<triplet>`), linked by lld.
 - Examples are built, not registered as tests.
 - `msvc_wine_presets.json` has `windows-msvc-wine`: real MSVC x64 run through Wine, tests too. Set it up once, outside
   the repo, with [msvc-wine](https://github.com/mstorsjo/msvc-wine): `vsdownload.py --accept-license --dest

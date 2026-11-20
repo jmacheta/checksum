@@ -81,7 +81,7 @@ finishing run the rows below that apply; the full matrix only for shared code.
 | Preconditions, exceptions, RTTI | also `native-gcc-no-exceptions`; the unit tests include one executable built with `NDEBUG` |
 | x86-64-only code (`x86_64/` headers, x86 preset sources) | the native presets only; presets the CPU lacks are skipped |
 | Arm or RISC-V code (`arm/`, `riscv64/` headers, their preset sources) | also the cross presets of that architecture in `cmake/emulator_presets.json` (QEMU user mode, `-cpu max`) |
-| Shared code: `*_loops.hpp`, `*_arch.hpp`, the table loops, `target.hpp`, `presets.hpp`, `isa.hpp`, `detect.cpp` | also every cross preset: `cross-aarch64`, `cross-aarch64be`, `cross-arm`, `cross-arm-crc32`, `cross-riscv64` |
+| Shared code: `*_loops.hpp`, `*_arch.hpp`, the table loops, `target.hpp`, `presets.hpp`, `isa.hpp`, `detect.cpp` | also every cross preset: `cross-aarch64`, `cross-aarch64be`, `cross-arm`, `cross-arm-crc32`, `cross-arm-clang`, `cross-arm-crc32-clang`, `cross-riscv64`, `cross-riscv64-clang` |
 | `detect.cpp`, `compiled_isa.hpp`, the 32-bit Arm presets | also the `bare-cortex-*` workflows (`qemu-system-arm`) and the CPU checks below |
 | Code that differs under MSVC (intrinsics, `#if _MSC_VER`, GCC-only constructs) | also `cmake --workflow --preset windows-msvc-wine` (MSVC x64 in Wine; setup in `build_and_tooling.md`); also `cmake --workflow --preset windows-clang-cl-wine` for code that differs by `_MSC_VER`, `__clang__` or `__GNUC__`; MSVC ARM64 is build-only locally (`windows-msvc-arm64-wine`) and runs its tests in CI |
 | `x86_vpclmul` or `x86_avxvnni` kernels | a CPU with them, or Intel SDE (`sde64 -adl -- checksum_ut`, below); QEMU has neither |
@@ -116,7 +116,7 @@ Software License, which allows use and redistribution). The full suite takes und
 CHECKSUM_EXPECTED_ISA=x86_avxvnni CHECKSUM_REQUIRED_ISA=x86_avxvnni sde64 -adl -- build/native-gcc/tests/unit_tests/Debug/checksum_ut
 ```
 
-The `cross-riscv64` jobs run the RVV, detection and dispatch tests again at `-cpu max,vlen=256` and `vlen=512`.
+The `cross-riscv64` and `cross-riscv64-clang` jobs run the RVV, detection and dispatch tests again at `-cpu max,vlen=256` and `vlen=512`.
 
 `detect_isa.matches_the_cpu` (`ut_isa.cpp`, Linux) requires exactly the built presets that the CPU runs: those that
 `CHECKSUM_EXPECTED_ISA` names (comma-separated preset names, each with the earlier rungs of its line), or else the
