@@ -25,13 +25,13 @@ constexpr bool compiler_guarantees(isa preset) noexcept {
 #if defined(__SSE4_2__) && defined(__PCLMUL__)
   case isa::x86_pclmul:
     return true;
-#if defined(__AVX2__)
+#ifdef __AVX2__
   case isa::x86_avx2:
     return true;
-#if defined(__VPCLMULQDQ__)
+#ifdef __VPCLMULQDQ__
   case isa::x86_vpclmul:
     return true;
-#if defined(__AVXVNNI__)
+#ifdef __AVXVNNI__
   case isa::x86_avxvnni:
     return true;
 #endif
@@ -49,13 +49,13 @@ constexpr bool compiler_guarantees(isa preset) noexcept {
 #if defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2
   case isa::thumb2:
     return true;
-#if defined(__ARM_FEATURE_DSP)
+#ifdef __ARM_FEATURE_DSP
   case isa::thumb2_dsp:
     return true;
-#if defined(__ARM_NEON)
+#ifdef __ARM_NEON
   case isa::thumb2_neon:
     return true;
-#if defined(__ARM_FEATURE_CRC32)
+#ifdef __ARM_FEATURE_CRC32
   case isa::thumb2_crc:
     return true;
 #endif

@@ -129,7 +129,7 @@ template <> struct algorithm_constants<32> {
   static constexpr std::uint32_t lane_multiplier = 5;
   static constexpr std::uint32_t lane_addend = 0xE6546B64U;
   static constexpr std::array<std::uint32_t, 2> avalanche_multipliers{0x85EBCA6BU, 0xC2B2AE35U};
-  static constexpr std::array<int, 3> avalanche_shifts{16, 13, 16};
+  static constexpr std::array<unsigned, 3> avalanche_shifts{16, 13, 16};
 };
 
 template <> struct algorithm_constants<128> {
@@ -140,7 +140,7 @@ template <> struct algorithm_constants<128> {
   static constexpr std::uint64_t lane_multiplier = 5;
   static constexpr std::array<std::uint64_t, 2> lane_addends{0x52DCE729U, 0x38495AB5U};
   static constexpr std::array<std::uint64_t, 2> avalanche_multipliers{0xFF51AFD7ED558CCDU, 0xC4CEB9FE1A85EC53U};
-  static constexpr std::array<int, 3> avalanche_shifts{33, 33, 33};
+  static constexpr std::array<unsigned, 3> avalanche_shifts{33, 33, 33};
 };
 
 using detail::load;

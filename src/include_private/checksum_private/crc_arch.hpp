@@ -30,7 +30,7 @@
 #endif
 
 namespace checksum::crc_detail {
-// NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/crc/*.cpp.
+// NOLINTNEXTLINE(misc-anonymous-namespace-in-header,cert-dcl59-cpp): a private header, included only by src/crc/*.cpp.
 namespace {
 
 inline constexpr std::size_t folding_block_size = 16;

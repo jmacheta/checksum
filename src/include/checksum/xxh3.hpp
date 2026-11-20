@@ -291,7 +291,7 @@ constexpr hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept {
   if consteval {
     return multiply_portable(left, right);
   } else {
-#if defined(__SIZEOF_INT128__)
+#ifdef __SIZEOF_INT128__
     __extension__ typedef unsigned __int128 wide_type; // NOLINT(modernize-use-using): __extension__ silences -Wpedantic only on a typedef.
     wide_type const product = static_cast<wide_type>(left) * right;
     return {.low = static_cast<std::uint64_t>(product), .high = static_cast<std::uint64_t>(product >> 64U)};
@@ -458,7 +458,7 @@ template <unsigned Width> constexpr value<Width> hash_medium(std::span<std::byte
   // Innermost chunks first, without a loop.
   if(length > 32) {
     if(length > 64) {
-      if(length > 96) {
+      if(length > 96) { // NOLINT(readability-magic-numbers): three 32-byte rounds
         round(3);
       }
       round(2);
@@ -503,6 +503,7 @@ template <unsigned Width> constexpr value<Width> hash_midsize(std::span<std::byt
 }
 
 template <std::size_t Lane>
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the stripe and the secret are both bytes.
 constexpr void accumulate_lane(accumulator_array &accumulators, std::byte const *stripe, std::byte const *secret) noexcept {
   auto const word = load<std::uint64_t>(stripe + (8 * Lane));
   std::uint64_t const key = word ^ load<std::uint64_t>(secret + (8 * Lane));

@@ -1,9 +1,9 @@
 // The Internet checksum loop compiled for isa::riscv_v.
 
-#include <checksum_private/presets.hpp>
+#include <checksum_private/presets.hpp> // IWYU pragma: keep
 
 #ifdef CHECKSUM_TARGET_RISCV_V
 #define CHECKSUM_PRESET riscv_v
 #define CHECKSUM_PRESET_TARGET CHECKSUM_TARGET_RISCV_V
-#include <checksum_private/internet_loops.hpp>
+#include <checksum_private/internet_loops.hpp> // IWYU pragma: keep
 #endif

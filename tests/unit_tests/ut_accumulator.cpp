@@ -73,6 +73,7 @@ struct adler32_case {
 };
 
 template <unsigned Width> struct fletcher_case {
+  // NOLINTNEXTLINE(readability-avoid-nested-conditional-operator): one name of three.
   static constexpr char const *name = Width == 16 ? "fletcher16" : Width == 32 ? "fletcher32" : "fletcher64";
   static auto make() { return fletcher_engine<Width>{}; }
   static auto make_dispatch() { return fletcher_dispatch_engine<Width>{}; }

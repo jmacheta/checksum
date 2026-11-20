@@ -1,5 +1,6 @@
 // XXH32 and XXH64: reference values, splits, alignments, ranges and edge seeds.
 
+#include <checksum/engine.hpp>
 #include <checksum/xxhash.hpp>
 #include <xxhash_reference_vectors.hpp>
 
@@ -9,7 +10,6 @@
 
 #include <algorithm>
 #include <array>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -212,9 +212,9 @@ TYPED_TEST(xxhash, edge_values) {
                                                      {300, 0x0CB5B0CAU, 0x536EB91EDFE26C25U}}};
   for(auto const &hashes : expected) {
     auto const data = std::span(message).first(hashes.size);
-    auto const expected = width == 32 ? hashes.xxh32 : hashes.xxh64;
-    EXPECT_EQ(xxhash_compute<width>(data, seed), expected) << "size " << hashes.size;
-    EXPECT_EQ(chunked<width>(data, 7, seed), expected) << "size " << hashes.size;
+    auto const hash = width == 32 ? hashes.xxh32 : hashes.xxh64;
+    EXPECT_EQ(xxhash_compute<width>(data, seed), hash) << "size " << hashes.size;
+    EXPECT_EQ(chunked<width>(data, 7, seed), hash) << "size " << hashes.size;
   }
 }
 

@@ -38,7 +38,9 @@ private:
   std::uint32_t crc = 0;
 };
 
-inline stm32_crc_registers crc_peripheral;
+namespace {
+stm32_crc_registers crc_peripheral;
+} // namespace
 
 // A strategy provides table_type, make_table and update. The state passes in and out of each update, so one unit
 // serves any number of engines, one computation at a time; not constexpr, so engines come from crc_engine::create.
@@ -61,6 +63,8 @@ struct stm32_crc_unit {
 
 static_assert(crc_strategy_for<stm32_crc_unit, std::uint32_t>);
 
+namespace {
+
 // Reverses the low size bits of value; size is 1..32.
 constexpr std::uint32_t reverse_bits(std::uint32_t value, unsigned size) noexcept {
   std::uint32_t result = 0;
@@ -69,6 +73,8 @@ constexpr std::uint32_t reverse_bits(std::uint32_t value, unsigned size) noexcep
   }
   return result;
 }
+
+} // namespace
 
 void stm32_crc_registers::configure(std::uint32_t polynomial, unsigned size, bool reverse, std::uint32_t initial) noexcept {
   pol = polynomial;

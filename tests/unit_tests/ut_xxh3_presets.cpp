@@ -16,23 +16,23 @@ namespace {
 using namespace checksum;
 using namespace std::literals;
 
-constexpr std::uint64_t seed = 0x9E3779B97F4A7C15U;
+constexpr std::uint64_t xxh3_seed = 0x9E3779B97F4A7C15U;
 
-// Calls check(xxh3_engine<Width, Preset>(seed), xxh3_engine<Width>(seed)) for every width.
+// Calls check(xxh3_engine<Width, Preset>(xxh3_seed), xxh3_engine<Width>(xxh3_seed)) for every width.
 template <isa Preset, class Check> void for_each_width(Check check) {
-  check(xxh3_engine<64, Preset>(seed), xxh3_engine<64>(seed));
-  check(xxh3_engine<128, Preset>(seed), xxh3_engine<128>(seed));
+  check(xxh3_engine<64, Preset>(xxh3_seed), xxh3_engine<64>(xxh3_seed));
+  check(xxh3_engine<128, Preset>(xxh3_seed), xxh3_engine<128>(xxh3_seed));
 }
 
 template <unsigned Width, isa Preset> void check_constant() {
   static_assert((xxh3_compute<Width, Preset>("abc"sv)) == (xxh3_compute<Width>("abc"sv)));
-  static_assert((xxh3_compute<Width, Preset>("123456789"sv, seed)) == (xxh3_compute<Width>("123456789"sv, seed)));
-  constexpr xxh3_engine<Width, Preset> engine(seed);
-  constexpr xxh3_engine<Width> generic(seed);
+  static_assert((xxh3_compute<Width, Preset>("123456789"sv, xxh3_seed)) == (xxh3_compute<Width>("123456789"sv, xxh3_seed)));
+  constexpr xxh3_engine<Width, Preset> engine(xxh3_seed);
+  constexpr xxh3_engine<Width> generic(xxh3_seed);
   static_assert(engine.finalize(engine.update(engine.update(engine.initial(), "1234"sv), "56789"sv)) == generic.compute("123456789"sv));
   EXPECT_EQ((xxh3_compute<Width, Preset>("abc"sv)), (xxh3_compute<Width>("abc"sv)));
   auto const buffer = random_bytes(1003, 4);
-  EXPECT_EQ((xxh3_compute<Width, Preset>(at(buffer, 3, 1000), seed)), (xxh3_compute<Width>(at(buffer, 3, 1000), seed)));
+  EXPECT_EQ((xxh3_compute<Width, Preset>(at(buffer, 3, 1000), xxh3_seed)), (xxh3_compute<Width>(at(buffer, 3, 1000), xxh3_seed)));
 }
 
 template <class Preset> using xxh3_presets = isa_test::preset_test<Preset>;

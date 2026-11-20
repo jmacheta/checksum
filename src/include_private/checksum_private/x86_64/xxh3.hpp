@@ -65,6 +65,7 @@ void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &val
 // Each lane adds the product of the 32-bit halves of data ^ secret, and the data of its neighbor.
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the stripe and the secret are both bytes.
 void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     for(std::size_t index = 0; index < values.size(); ++index) {

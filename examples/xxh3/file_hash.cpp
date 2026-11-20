@@ -24,7 +24,7 @@ int main(int argument_count, char **arguments) {
   // The state is a 328-byte value passed in and out of each update: large chunks keep that copy negligible.
   constexpr checksum::xxh3_engine<64> xxh3;
   auto state = xxh3.initial();
-  std::array<char, 64 * 1024> buffer{};
+  std::array<char, std::size_t{64} * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
     state = xxh3.update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
   }

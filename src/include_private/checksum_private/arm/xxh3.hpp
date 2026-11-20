@@ -23,7 +23,7 @@ namespace checksum::xxh3_detail {
 
 using target_detail::neon_target;
 
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
 // On a Cortex-A72 four lanes in NEON and four scalar ones beat six and two, all eight in NEON, and the portable loop.
 inline constexpr std::size_t vector_count = 2;
 #else
@@ -38,7 +38,7 @@ struct stripe_kernel<Isa> {
   static constexpr std::size_t minimum_size = 0;
   struct lanes {
     isa_detail::vector_array<uint64x2_t, vector_count> vectors;
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
     std::array<std::uint64_t, 8 - (2 * vector_count)> scalars;
 #endif
   };
@@ -62,7 +62,7 @@ CHECKSUM_ALWAYS_INLINE inline void accumulate_vector_pair(typename stripe_kernel
 template <isa Isa, std::size_t Index>
 CHECKSUM_ALWAYS_INLINE inline void scramble_vector(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept;
 
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
 // Mixes scalar lane Index of one stripe into the scalars, as accumulate_lane() does.
 template <isa Isa, std::size_t Index>
 CHECKSUM_ALWAYS_INLINE inline void accumulate_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
@@ -87,7 +87,7 @@ CHECKSUM_ALWAYS_INLINE inline void accumulate_vector_pair(typename stripe_kernel
   uint64x2_t const second_key = veorq_u64(second, load_vector<Isa>(secret + (16 * Index) + 16));
   uint32x4x2_t const halves = vuzpq_u32(vreinterpretq_u32_u64(first_key), vreinterpretq_u32_u64(second_key));
   uint64x2_t const first_sum = vmlal_u32(vextq_u64(first, first, 1), vget_low_u32(halves.val[0]), vget_low_u32(halves.val[1]));
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
   uint64x2_t const second_sum = vmlal_high_u32(vextq_u64(second, second, 1), halves.val[0], halves.val[1]);
 #else
   uint64x2_t const second_sum = vmlal_u32(vextq_u64(second, second, 1), vget_high_u32(halves.val[0]), vget_high_u32(halves.val[1]));
@@ -106,7 +106,7 @@ CHECKSUM_ALWAYS_INLINE inline void scramble_vector(typename stripe_kernel<Isa>::
   vector = vmlal_u32(vreinterpretq_u64_u32(high), vmovn_u64(key), prime);
 }
 
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
 template <isa Isa, std::size_t Index>
 CHECKSUM_ALWAYS_INLINE inline void accumulate_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *stripe,
                                                      std::byte const *secret) noexcept {
@@ -132,7 +132,7 @@ auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept ->
   for(std::size_t index = 0; index < vector_count; ++index) {
     values.vectors[index] = vld1q_u64(accumulators.data() + (2 * index));
   }
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
   for(std::size_t index = 0; index < values.scalars.size(); ++index) {
     values.scalars[index] = accumulators[(2 * vector_count) + index];
   }
@@ -146,7 +146,7 @@ void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &val
   for(std::size_t index = 0; index < vector_count; ++index) {
     vst1q_u64(accumulators.data() + (2 * index), values.vectors[index]);
   }
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
   for(std::size_t index = 0; index < values.scalars.size(); ++index) {
     accumulators[(2 * vector_count) + index] = values.scalars[index];
   }
@@ -160,7 +160,7 @@ void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std:
   [&]<std::size_t... Pair> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Pair...>) {
     (accumulate_vector_pair<Isa, 2 * Pair>(values, stripe, secret), ...);
   }(std::make_index_sequence<vector_count / 2>{});
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
   [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (accumulate_scalar<Isa, Index>(values, stripe, secret), ...);
   }(std::make_index_sequence<std::tuple_size_v<decltype(values.scalars)>>{});
@@ -173,7 +173,7 @@ void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexce
   [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (scramble_vector<Isa, Index>(values, secret), ...);
   }(std::make_index_sequence<vector_count>{});
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
   [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (scramble_scalar<Isa, Index>(values, secret), ...);
   }(std::make_index_sequence<std::tuple_size_v<decltype(values.scalars)>>{});

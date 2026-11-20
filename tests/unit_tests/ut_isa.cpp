@@ -37,7 +37,7 @@ static_assert(!includes(isa::aarch64_pmull, isa::x86_pclmul) && !includes(isa::t
 static_assert(isa_available(isa::x86_pclmul) && isa_available(isa::x86_avxvnni) && !isa_available(isa::aarch64_crc) && !isa_available(isa::thumb2));
 #elif defined(__aarch64__) || defined(_M_ARM64)
 static_assert(isa_available(isa::aarch64_crc) && isa_available(isa::aarch64_pmull) && !isa_available(isa::x86_avx2) && !isa_available(isa::thumb2));
-#elif defined(__riscv)
+#elifdef __riscv
 static_assert(isa_available(isa::riscv_zbc) && isa_available(isa::riscv_v) && !isa_available(isa::x86_avx2));
 #endif
 
@@ -58,7 +58,7 @@ static_assert(built_presets_well_formed());
 
 // A preset appended to the enumeration and to built_presets of isa.hpp must also get a name in isa_cpu.hpp.
 TEST(isa_test_support, every_built_preset_has_name) {
-  for(isa preset : checksum::isa_detail::built_presets) {
+  for(isa const preset : checksum::isa_detail::built_presets) {
     EXPECT_FALSE(isa_test::name(preset).empty()) << static_cast<int>(preset);
   }
 }
@@ -94,7 +94,7 @@ TEST(detect_isa, contains_only_built_presets_and_their_lower_rungs) {
   }
 }
 
-#if defined(__linux__)
+#ifdef __linux__
 // The value of the first line of /proc/cpuinfo named key, with a space before and after every word; none if there is none.
 std::optional<std::string> cpuinfo_words(std::string_view key) {
   std::ifstream file("/proc/cpuinfo");
@@ -122,7 +122,7 @@ std::optional<isa_set> cpuinfo_presets() {
     }
     return result;
   };
-#if defined(__x86_64__)
+#ifdef __x86_64__
   std::optional<std::string> const flags = cpuinfo_words("flags");
   if(!flags) {
     return std::nullopt;
@@ -132,20 +132,20 @@ std::optional<isa_set> cpuinfo_presets() {
                  {isa::x86_avx2, has("avx2")},
                  {isa::x86_vpclmul, has("vpclmulqdq")},
                  {isa::x86_avxvnni, has("avx_vnni")}});
-#elif defined(__aarch64__)
+#elifdef __aarch64__
   std::optional<std::string> const features = cpuinfo_words("Features");
   if(!features) {
     return std::nullopt;
   }
   return ladder({{isa::aarch64_crc, features->contains(" crc32 ")}, {isa::aarch64_pmull, features->contains(" pmull ")}});
-#elif defined(__arm__)
+#elifdef __arm__
   // Linux builds of the thumb2 presets are ARMv7-A or later, which have Thumb-2 and the DSP extension.
   std::optional<std::string> const features = cpuinfo_words("Features");
   if(!features) {
     return std::nullopt;
   }
   return ladder({{isa::thumb2_dsp, true}, {isa::thumb2_neon, features->contains(" neon ")}, {isa::thumb2_crc, features->contains(" crc32 ")}});
-#elif defined(__riscv)
+#elifdef __riscv
   // "rv64imafdcv_zicbom_zbc": single-letter extensions, then the others after underscores.
   std::optional<std::string> isa_string = cpuinfo_words("isa");
   if(!isa_string || !isa_string->starts_with(" rv64")) {

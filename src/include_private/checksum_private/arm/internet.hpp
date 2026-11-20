@@ -83,7 +83,7 @@ template <isa Isa> block_total neon_sum(std::span<std::byte const> data) noexcep
 
 #endif
 
-#if defined(__arm__)
+#ifdef __arm__
 
 template <isa Isa> block_total ldm_sum(std::span<std::byte const> data) noexcept {
   std::size_t const message_size = data.size();

@@ -2,4 +2,4 @@
 
 #define CHECKSUM_PRESET generic
 #define CHECKSUM_FLETCHER_ENTRY
-#include <checksum_private/fletcher_loops.hpp>
+#include <checksum_private/fletcher_loops.hpp> // IWYU pragma: keep

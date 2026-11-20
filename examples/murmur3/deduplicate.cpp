@@ -1,5 +1,6 @@
 // Finds duplicate records by their MurmurHash3_x64_128 hash, folding each record from its fields with the streaming API.
 
+#include <checksum/hash128.hpp>
 #include <checksum/murmur3.hpp>
 
 #include <array>
@@ -36,8 +37,9 @@ struct hash128_hasher {
 
 int main() {
   constexpr std::array records{
-      record{"sensor-1", "21.5 C"}, record{"sensor-2", "19.0 C"}, record{"sensor-1", "21.5 C"},
-      record{"sensor-1", "21.6 C"}, record{"sensor-2", "19.0 C"},
+      record{.name = "sensor-1", .payload = "21.5 C"}, record{.name = "sensor-2", .payload = "19.0 C"},
+      record{.name = "sensor-1", .payload = "21.5 C"}, record{.name = "sensor-1", .payload = "21.6 C"},
+      record{.name = "sensor-2", .payload = "19.0 C"},
   };
   std::unordered_set<checksum::hash128, hash128_hasher> seen;
   std::size_t duplicates = 0;

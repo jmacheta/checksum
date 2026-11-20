@@ -87,7 +87,7 @@ template <isa Isa> struct pmull_kernel {
 template <std::uint32_t Polynomial, class Value>
 CHECKSUM_ALWAYS_INLINE inline std::uint32_t crc32_step(std::uint32_t remainder, Value value) noexcept {
   constexpr bool castagnoli = Polynomial == crc32c_reflected_polynomial;
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
   if constexpr(sizeof(Value) == 8) {
     return castagnoli ? __crc32cd(remainder, value) : __crc32d(remainder, value);
   } else if constexpr(sizeof(Value) == 4) {

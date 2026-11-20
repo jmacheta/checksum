@@ -12,8 +12,10 @@ constexpr checksum::isa preset = checksum::isa_available(checksum::isa::x86_pclm
 
 static_assert(!checksum::isa_available(preset));
 
+namespace {
 #ifdef CHECKSUM_EXPECT_COMPILE_ERROR
-auto text_checksum() { return make_engine<preset>().compute("123456789"sv); }
+[[maybe_unused]] auto text_checksum() { return make_engine<preset>().compute("123456789"sv); }
 #else
-auto text_checksum() { return make_engine<checksum::isa::generic>().compute("123456789"sv); }
+[[maybe_unused]] auto text_checksum() { return make_engine<checksum::isa::generic>().compute("123456789"sv); }
 #endif
+} // namespace

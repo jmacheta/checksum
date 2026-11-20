@@ -1,5 +1,6 @@
 // ZFS fletcher4: OpenZFS reference values, an independent model, splits, ranges, resume and edge values.
 
+#include <checksum/engine.hpp>
 #include <checksum/fletcher4.hpp>
 
 #include <fletcher4_reference_vectors.hpp>
@@ -8,7 +9,6 @@
 #include <gtest/gtest.h>
 #include <test_data.hpp>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -35,10 +35,12 @@ static_assert(fletcher4_compute(std::span(constant_message).first(200)) == fletc
 
 // Independent model: whole words read byte by byte with zero padding, written out as in the definition.
 fletcher4_value reference(std::span<std::byte const> data) {
+  // NOLINTBEGIN(readability-identifier-length): the names of the definition.
   std::uint64_t a = 0;
   std::uint64_t b = 0;
   std::uint64_t c = 0;
   std::uint64_t d = 0;
+  // NOLINTEND(readability-identifier-length)
   for(std::size_t start = 0; start < data.size(); start += 4) {
     std::uint64_t word = 0;
     for(std::size_t index = 0; index < 4 && start + index < data.size(); ++index) {

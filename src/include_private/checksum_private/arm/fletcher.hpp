@@ -39,7 +39,7 @@ struct block_kernel<8, Isa> {
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
 };
 
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
 // AArch32 has half the NEON registers: there the group loop spilled and ran 10-27 % slower than block_kernel<8>.
 template <isa Isa>
   requires(neon_target<Isa>)
@@ -118,7 +118,7 @@ chunk_sums block_kernel<8, Isa>::sum(std::byte const *data, std::size_t blocks) 
   return {.sum = lane_total_32<Isa>(sum), .weighted = (block_size * lane_total_32<Isa>(previous)) + lane_total_32<Isa>(weighted)};
 }
 
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
 // As block_kernel<8> per 64 bytes, with pairwise additions of the 4 blocks into sum and 64 columns weighted 64 .. 1. The last
 // blocks that fill no group add to the columns of the last 16 bytes, weights 16 .. 1, and count their previous per block.
 template <isa Isa>
@@ -245,7 +245,7 @@ chunk_sums block_kernel<32, Isa>::sum(std::byte const *data, std::size_t blocks)
 namespace checksum::fletcher_detail {
 
 // The argument type of __uxtb16: uint8x4_t in ACLE and GCC, int8x4_t in Clang.
-#if defined(__clang__)
+#ifdef __clang__
 using uxtb16_argument = int8x4_t;
 #else
 using uxtb16_argument = uint8x4_t;

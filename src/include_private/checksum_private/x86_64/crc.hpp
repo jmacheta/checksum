@@ -17,7 +17,7 @@
 #include <span>
 
 namespace checksum::crc_detail {
-// NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/crc/*.cpp.
+// NOLINTNEXTLINE(misc-anonymous-namespace-in-header,cert-dcl59-cpp): a private header, included only by src/crc/*.cpp.
 namespace {
 
 template <isa Isa>
@@ -153,7 +153,8 @@ CHECKSUM_ALWAYS_INLINE inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::loa
   if constexpr(Reflected) {
     return block;
   } else {
-    return _mm_shuffle_epi8(block, _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0));
+    vector const reverse = _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+    return _mm_shuffle_epi8(block, reverse);
   }
 }
 
@@ -182,6 +183,7 @@ CHECKSUM_ALWAYS_INLINE inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::fol
 
 template <isa Isa>
 template <bool Reflected>
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the running accumulator and a folding constant.
 CHECKSUM_ALWAYS_INLINE inline pclmul_kernel<Isa>::vector pclmul_kernel<Isa>::partial(vector accumulator, vector by_one,
                                                                                      std::span<std::byte const> last, std::size_t size) noexcept {
   vector const reverse = _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
@@ -275,7 +277,7 @@ pclmul_kernel<Isa>::fold_wide_blocks(folding_constants const &constants, std::ui
   consumed = eight;
   // Branches that 256 bytes do not take are marked unlikely, so that path runs without taken jumps.
   if(data.size() - consumed >= eight) [[unlikely]] {
-    do {
+    do { // NOLINT(cppcoreguidelines-avoid-do-while): only the first test is marked unlikely
       unrolled<8>([&](auto index) {
         accumulators[index] = fold_two(accumulators[index], by_sixteen, load_two<Reflected>(data.subspan(consumed + (index * half))));
       });
@@ -286,7 +288,7 @@ pclmul_kernel<Isa>::fold_wide_blocks(folding_constants const &constants, std::ui
   isa_detail::vector_array<__m256i, 4> pairs{};
   unrolled<4>([&](auto index) { pairs[index] = fold_two(accumulators[index], by_eight, accumulators[index + 4]); });
   if(data.size() - consumed >= four) [[unlikely]] {
-    do {
+    do { // NOLINT(cppcoreguidelines-avoid-do-while): only the first test is marked unlikely
       unrolled<4>([&](auto index) { pairs[index] = fold_two(pairs[index], by_eight, load_two<Reflected>(data.subspan(consumed + (index * half)))); });
       consumed += four;
     } while(data.size() - consumed >= four);

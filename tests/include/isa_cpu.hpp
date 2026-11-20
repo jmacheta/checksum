@@ -26,7 +26,7 @@ inline constexpr checksum::isa built_preset =
     checksum::isa_detail::built_presets.empty() ? checksum::isa::generic : checksum::isa_detail::built_presets[Index];
 
 // Calls function.template operator()<Preset>() for every preset of isa_detail::built_presets, so that a new preset is covered once it is built.
-template <class Function> void for_each_built_preset(Function &&function) {
+template <class Function> void for_each_built_preset(Function const &function) {
   [&]<std::size_t... Index>(std::index_sequence<Index...>) {
     (function.template operator()<built_preset<Index>>(), ...);
   }(std::make_index_sequence<built_count>{});

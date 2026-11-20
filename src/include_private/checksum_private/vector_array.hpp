@@ -9,7 +9,7 @@
 namespace checksum::isa_detail {
 
 template <class Vector, std::size_t Size> struct vector_array {
-  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays): std::array is what this replaces.
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,hicpp-avoid-c-arrays): std::array is what this replaces.
   Vector elements[Size];
 
   constexpr Vector &operator[](std::size_t index) noexcept;

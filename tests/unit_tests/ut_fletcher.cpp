@@ -1,5 +1,6 @@
 // Fletcher checksums: published examples, an independent model, splits, ranges, resume and edge values.
 
+#include <checksum/engine.hpp>
 #include <checksum/fletcher.hpp>
 
 #include <engine_checks.hpp>
@@ -7,7 +8,6 @@
 #include <test_data.hpp>
 
 #include <array>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -99,7 +99,7 @@ TYPED_TEST(fletcher, every_size_and_offset) {
 // The largest blocks over several deferred reductions; the tail sizes leave an unfinished block.
 TYPED_TEST(fletcher, long_all_ones) {
   constexpr unsigned width = TypeParam::value;
-  for(std::size_t const size : {(std::size_t{600} << 10), (std::size_t{600} << 10) + 1, (std::size_t{600} << 10) + 3}) {
+  for(std::size_t const size : {(std::size_t{600} << 10U), (std::size_t{600} << 10U) + 1, (std::size_t{600} << 10U) + 3}) {
     std::vector<std::byte> const data(size, std::byte{0xFF});
     ASSERT_EQ(fletcher_compute<width>(data), reference<width>(data)) << "size " << size;
   }
@@ -133,7 +133,7 @@ TYPED_TEST(fletcher, chunk_boundaries) {
 // One deferred reduction of 23'726'745 blocks on 64-bit targets, from the largest sums. A block of all ones is 0 modulo M, while an
 // overflow would add 2^64, which is 1 modulo M.
 TEST(fletcher, longest_deferred_reduction) {
-  std::vector<std::byte> const data(std::size_t{48} << 20, std::byte{0xFF});
+  std::vector<std::byte> const data(std::size_t{48} << 20U, std::byte{0xFF});
   fletcher_state<32> const largest{.sum1 = 0xFFFF, .sum2 = 0xFFFF};
   constexpr fletcher_engine<32> fletcher;
   EXPECT_EQ(fletcher.finalize(fletcher.update(largest, data)), 0U);

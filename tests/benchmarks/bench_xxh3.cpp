@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
   register_width<64>();
   register_width<128>();
   sizes(benchmark::RegisterBenchmark("xxh3_64_seeded", xxh3_64_seeded));
-  benchmark::RegisterBenchmark("xxh3_64_streaming<64>", xxh3_64_streaming<64>)->Arg(std::int64_t{1} << 20);
-  benchmark::RegisterBenchmark("xxh3_64_streaming<4096>", xxh3_64_streaming<4096>)->Arg(std::int64_t{1} << 20);
+  benchmark::RegisterBenchmark("xxh3_64_streaming<64>", xxh3_64_streaming<64>)->Arg(std::int64_t{1024} * 1024);
+  benchmark::RegisterBenchmark("xxh3_64_streaming<4096>", xxh3_64_streaming<4096>)->Arg(std::int64_t{1024} * 1024);
   return isa_bench::run(argc, argv);
 }

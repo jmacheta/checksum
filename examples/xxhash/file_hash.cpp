@@ -24,7 +24,7 @@ int main(int argument_count, char **arguments) {
   // The state is a plain value: each update returns it with one more chunk folded in.
   constexpr checksum::xxhash_engine<64> xxh64;
   auto state = xxh64.initial();
-  std::array<char, 64 * 1024> buffer{};
+  std::array<char, std::size_t{64} * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
     state = xxh64.update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
   }

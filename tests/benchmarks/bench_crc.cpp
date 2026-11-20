@@ -57,6 +57,7 @@ template <class Strategy, isa Isa = isa::generic, bool Dispatch = false> void re
 
 // zlib's crc32 computes CRC-32/ISO-HDLC.
 std::uint32_t zlib_crc32(std::span<std::byte const> data) {
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,misc-include-cleaner): zlib takes Bytef from zconf.h, through zlib.h.
   return static_cast<std::uint32_t>(crc32_z(0, reinterpret_cast<Bytef const *>(data.data()), data.size()));
 }
 
@@ -83,7 +84,7 @@ std::uint16_t inline_xmodem(std::span<std::byte const> data) {
 } // namespace
 
 int main(int argc, char **argv) {
-  std::vector<std::byte> const data = random_bytes(std::size_t{1} << 20);
+  std::vector<std::byte> const data = random_bytes(std::size_t{1} << 20U);
   if(zlib_crc32(data) != crc_engine_for<crc32_iso_hdlc, crc_lut_braided>.compute(data) ||
      inline_iso_hdlc(data) != crc_engine_for<crc32_iso_hdlc, crc_lut_byte>.compute(data) ||
      inline_xmodem(data) != crc_engine_for<crc16_xmodem, crc_lut_byte>.compute(data)) {

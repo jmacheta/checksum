@@ -1,5 +1,7 @@
 // XXH3-64 and XXH3-128: reference values, edge seeds, splits, alignments, ranges and the portable multiplication.
 
+#include <checksum/engine.hpp>
+#include <checksum/hash128.hpp>
 #include <checksum/xxh3.hpp>
 #include <xxh3_reference_vectors.hpp>
 #include <xxhash_reference_vectors.hpp>
@@ -11,7 +13,6 @@
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>

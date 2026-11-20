@@ -25,7 +25,7 @@ namespace isa_bench {
 template <class Hash> void measure(benchmark::State &state, Hash hash, std::size_t offset = 0) {
   std::vector<std::byte> const data = random_bytes(static_cast<std::size_t>(state.range(0)) + offset);
   auto message = std::span<std::byte const>(data).subspan(offset);
-  for(auto _ : state) {
+  for(auto _ : state) { // NOLINT(readability-identifier-length): the idiom of Google Benchmark
     benchmark::DoNotOptimize(message);
     benchmark::DoNotOptimize(hash(message));
   }
@@ -62,7 +62,7 @@ void register_presets(std::string const &name, Make make, Dispatch dispatch, Arg
 // large buffer. extra adds sizes that matter to one algorithm, e.g. its kernel thresholds; unaligned adds a second argument,
 // the offset of measure(), 0 and 1.
 inline void sizes(benchmark::Benchmark *benchmark, std::initializer_list<std::int64_t> extra = {}, bool unaligned = false) {
-  std::vector<std::int64_t> all{20, 64, 256, 1500, 4096, std::int64_t{1} << 20};
+  std::vector<std::int64_t> all{20, 64, 256, 1500, 4096, std::int64_t{1024} * 1024};
   all.insert(all.end(), extra);
   std::ranges::sort(all);
   if(unaligned) {

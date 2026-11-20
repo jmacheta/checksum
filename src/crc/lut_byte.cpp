@@ -3,11 +3,11 @@
 #include <checksum/crc.hpp>
 
 #include <cstddef>
-#include <cstdint>
+#include <cstdint> // IWYU pragma: keep
 #include <span>
 
 #define CHECKSUM_PRESET generic
-#include <checksum_private/crc_table_loops.hpp>
+#include <checksum_private/crc_table_loops.hpp> // IWYU pragma: keep
 
 namespace checksum::crc_detail {
 

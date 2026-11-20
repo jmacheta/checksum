@@ -31,7 +31,7 @@ inline constexpr unsigned byte_mask = 0xFFU;
 
 // Internal linkage lets compilers inline these loops fully into each source's kernel; with external linkage they keep
 // an out-of-line copy.
-// NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/crc/*.cpp.
+// NOLINTNEXTLINE(misc-anonymous-namespace-in-header,cert-dcl59-cpp): a private header, included only by src/crc/*.cpp.
 namespace {
 
 // Top byte of table[index], leading part of the next index of a non-reflected CRC. Read from the object representation:
@@ -62,7 +62,7 @@ Register loop_byte_fast(Register const *table, Register remainder, std::span<std
     promoted_register<Register> value = remainder;
     promoted_register<Register> lead = Reflected ? value & byte_mask : value >> top;
     promoted_register<Register> rest = 0;
-    promoted_register<Register> next = std::to_integer<unsigned>(data[0]);
+    promoted_register<Register> next = std::to_integer<unsigned>(data[0]); // NOLINT(hicpp-use-auto,modernize-use-auto): wider than unsigned
     auto const step = [&] {
       promoted_register<Register> const index = lead ^ next;
       rest = Reflected ? (value ^ rest) >> byte_bits : static_cast<Register>((value ^ rest) << byte_bits);
@@ -172,6 +172,7 @@ std::uint32_t run_crc32_instructions(folding_constants const &folding, std::uint
 // CRC32 instructions where they handle the parameter set, else folding from its minimum_size bytes, else
 // loop_sliced(). table: the crc_lut_sliced table or the first 8 slices of the crc_lut_braided one.
 template <isa Isa, bool Reflected, class Register>
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the polynomial and the remainder are both register values.
 Register run_sliced(Register const *table, folding_constants const &folding, Register polynomial, Register remainder,
                     std::span<std::byte const> data) noexcept {
   if constexpr(Reflected && std::same_as<Register, std::uint32_t>) {
@@ -264,7 +265,7 @@ static_assert(own_loops<crc_lut_sliced, std::uint32_t>.contains(isa::CHECKSUM_PR
 
 } // namespace checksum::crc_detail
 
-#if defined(CHECKSUM_CRC_SLICED_ENTRY)
+#ifdef CHECKSUM_CRC_SLICED_ENTRY
 namespace checksum::crc_detail {
 
 // GCC fixes a function's target at its first declaration, which for update_loop() is in crc.hpp: it only forwards to
@@ -294,7 +295,7 @@ template std::uint64_t update_loop<isa::CHECKSUM_PRESET, false>(lookup_table<std
 } // namespace checksum::crc_detail
 #endif
 
-#if defined(CHECKSUM_CRC_BRAIDED_ENTRY)
+#ifdef CHECKSUM_CRC_BRAIDED_ENTRY
 namespace checksum::crc_detail {
 
 // Forwards to run_braided(), first declared inside the target region, as update_loop() of crc_lut_sliced does.

@@ -16,12 +16,12 @@ namespace {
 using namespace checksum;
 using namespace std::literals;
 
-constexpr std::uint32_t seed = 0x9747B28CU;
+constexpr std::uint32_t murmur3_seed = 0x9747B28CU;
 
-// Calls check(murmur3_engine<Width, Preset>(seed), murmur3_engine<Width>(seed)) for every width.
+// Calls check(murmur3_engine<Width, Preset>(murmur3_seed), murmur3_engine<Width>(murmur3_seed)) for every width.
 template <isa Preset, class Check> void for_each_width(Check check) {
-  check(murmur3_engine<32, Preset>(seed), murmur3_engine<32>(seed));
-  check(murmur3_engine<128, Preset>(seed), murmur3_engine<128>(seed));
+  check(murmur3_engine<32, Preset>(murmur3_seed), murmur3_engine<32>(murmur3_seed));
+  check(murmur3_engine<128, Preset>(murmur3_seed), murmur3_engine<128>(murmur3_seed));
 }
 
 template <class Preset> using murmur3_presets = isa_test::preset_test<Preset>;
@@ -30,13 +30,13 @@ TYPED_TEST_SUITE(murmur3_presets, isa_test::presets, isa_test::preset_name);
 // Constant evaluation runs the portable code for every preset.
 TYPED_TEST(murmur3_presets, constant_evaluation) {
   constexpr isa preset = TypeParam::value;
-  static_assert(murmur3_compute<32, preset>("123456789"sv, seed) == murmur3_compute<32>("123456789"sv, seed));
-  static_assert(murmur3_compute<128, preset>("123456789"sv, seed) == murmur3_compute<128>("123456789"sv, seed));
-  static_assert(engine_checks::split_check_text(murmur3_engine<32, preset>(seed)) == murmur3_compute<32>("123456789"sv, seed));
-  static_assert(engine_checks::split_check_text(murmur3_engine<128, preset>(seed)) == murmur3_compute<128>("123456789"sv, seed));
+  static_assert(murmur3_compute<32, preset>("123456789"sv, murmur3_seed) == murmur3_compute<32>("123456789"sv, murmur3_seed));
+  static_assert(murmur3_compute<128, preset>("123456789"sv, murmur3_seed) == murmur3_compute<128>("123456789"sv, murmur3_seed));
+  static_assert(engine_checks::split_check_text(murmur3_engine<32, preset>(murmur3_seed)) == murmur3_compute<32>("123456789"sv, murmur3_seed));
+  static_assert(engine_checks::split_check_text(murmur3_engine<128, preset>(murmur3_seed)) == murmur3_compute<128>("123456789"sv, murmur3_seed));
   auto const buffer = random_bytes(1003, 4);
-  EXPECT_EQ((murmur3_compute<32, preset>(at(buffer, 3, 1000), seed)), murmur3_compute<32>(at(buffer, 3, 1000), seed));
-  EXPECT_EQ((murmur3_compute<128, preset>(at(buffer, 3, 1000), seed)), murmur3_compute<128>(at(buffer, 3, 1000), seed));
+  EXPECT_EQ((murmur3_compute<32, preset>(at(buffer, 3, 1000), murmur3_seed)), murmur3_compute<32>(at(buffer, 3, 1000), murmur3_seed));
+  EXPECT_EQ((murmur3_compute<128, preset>(at(buffer, 3, 1000), murmur3_seed)), murmur3_compute<128>(at(buffer, 3, 1000), murmur3_seed));
 }
 
 // Up to 1024 bytes: past the 16- and 32-byte blocks many times over.

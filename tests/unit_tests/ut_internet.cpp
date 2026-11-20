@@ -1,5 +1,6 @@
 // Internet checksum: published examples, an independent model, splits, ranges, resume and edge values.
 
+#include <checksum/engine.hpp>
 #include <checksum/internet.hpp>
 
 #include <engine_checks.hpp>
@@ -91,7 +92,7 @@ TEST(internet, field_update) {
 
 TEST(internet, odd_length) {
   EXPECT_EQ(internet_compute(bytes<1>({0x01})), 0xFEFF);
-  EXPECT_EQ(internet_compute(bytes<3>({0x12, 0x34, 0x56})), static_cast<std::uint16_t>(~(0x1234 + 0x5600)));
+  EXPECT_EQ(internet_compute(bytes<3>({0x12, 0x34, 0x56})), static_cast<std::uint16_t>(~(0x1234U + 0x5600U)));
   EXPECT_TRUE(internet_engine{}.update({}, bytes<3>({0x12, 0x34, 0x56})).odd);
 }
 
@@ -108,17 +109,17 @@ TEST(internet, every_size_and_offset) {
 
 TEST(internet, every_size_with_carries) {
   // High bytes force carries out of every word the loop adds.
-  std::vector<std::byte> data = random_bytes(1 << 16, 2);
+  std::vector<std::byte> data = random_bytes(1U << 16U, 2);
   for(std::size_t index = 0; index < data.size(); index += 3) {
     data[index] = std::byte{0xFF};
   }
   EXPECT_EQ(internet_compute(data), reference(data));
   // Every start address modulo 4, and more than one pass of the vector kernels.
-  std::vector<std::byte> const ones((5 << 20) + 4, std::byte{0xFF});
+  std::vector<std::byte> const ones((5U << 20U) + 4, std::byte{0xFF});
   for(std::size_t offset = 0; offset < 4; ++offset) {
-    EXPECT_EQ(internet_compute(std::span(ones).subspan(offset, (1 << 20) + 1)), 0x00FF) << "offset " << offset;
+    EXPECT_EQ(internet_compute(std::span(ones).subspan(offset, (1U << 20U) + 1)), 0x00FF) << "offset " << offset;
   }
-  EXPECT_EQ(internet_compute(std::span(ones).first((5 << 20) + 1)), 0x00FF);
+  EXPECT_EQ(internet_compute(std::span(ones).first((5U << 20U) + 1)), 0x00FF);
   // Every length of the portable loop and its masked tail, where every word carries out.
   for(std::size_t offset = 0; offset < 2; ++offset) {
     for(std::size_t size = 0; size <= 600; ++size) {

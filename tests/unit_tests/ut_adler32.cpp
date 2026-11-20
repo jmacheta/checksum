@@ -1,6 +1,7 @@
 // Adler-32 checksum: published examples, an independent model, splits, ranges, resume and edge values.
 
 #include <checksum/adler32.hpp>
+#include <checksum/engine.hpp>
 
 #include <engine_checks.hpp>
 #include <gtest/gtest.h>
@@ -66,7 +67,7 @@ TEST(adler32, every_size_and_offset) {
 // The largest bytes from the largest canonical sums, over many deferred reductions of 5'552 bytes on 32-bit targets.
 TEST(adler32, long_all_ones) {
   adler32_state const largest{.sum1 = 65520, .sum2 = 65520};
-  for(std::size_t const size : {(std::size_t{600} << 10), (std::size_t{600} << 10) + 1, (std::size_t{600} << 10) + 7, std::size_t{5552 * 120}}) {
+  for(std::size_t const size : {(std::size_t{600} << 10U), (std::size_t{600} << 10U) + 1, (std::size_t{600} << 10U) + 7, std::size_t{5552} * 120}) {
     std::vector<std::byte> const data(size, std::byte{0xFF});
     ASSERT_EQ(adler32_compute(data), reference(data)) << "size " << size;
     ASSERT_EQ(adler32_engine{}.finalize(adler32_engine{}.update(largest, data)), reference(data, 65520, 65520)) << "size " << size;

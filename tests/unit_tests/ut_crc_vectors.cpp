@@ -1,6 +1,7 @@
 // Every reference vector through every built-in strategy, on the smallest register and on std::uint64_t. Engines are
 // created at run time, so the test instantiates once per strategy and register type, not once per vector.
 #include <checksum/crc.hpp>
+#include <checksum/engine.hpp>
 
 #include "crc_reference_vectors.hpp"
 #include "crc_test_support.hpp"

@@ -6,12 +6,12 @@
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
+#include <cstddef> // IWYU pragma: keep
 
 // MSVC and clang-cl query CPUID through <intrin.h>: __builtin_cpu_supports needs compiler-rt, which clang-cl does not link.
-#if defined(_MSC_VER)
+#ifdef _MSC_VER
 #include <intrin.h>
-#elif defined(__x86_64__)
+#elifdef __x86_64__
 #include <cpuid.h>
 #endif
 #if defined(_MSC_VER) && defined(_M_ARM64)
@@ -43,21 +43,16 @@ namespace {
 constexpr std::array checked{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni};
 #elif defined(__aarch64__) || defined(_M_ARM64)
 constexpr std::array checked{isa::aarch64_crc, isa::aarch64_pmull};
-#elif defined(__arm__)
+#elifdef __arm__
 constexpr std::array checked{isa::thumb2, isa::thumb2_dsp, isa::thumb2_neon, isa::thumb2_crc};
-#elif defined(__riscv)
+#elifdef __riscv
 constexpr std::array checked{isa::riscv_zbc, isa::riscv_v};
 #else
 constexpr std::array<isa, 0> checked{};
 #endif
 
 consteval bool every_built_preset_checked() {
-  for(isa preset : isa_detail::built_presets) {
-    if(std::ranges::find(checked, preset) == checked.end()) {
-      return false;
-    }
-  }
-  return true;
+  return std::ranges::all_of(isa_detail::built_presets, [](isa preset) { return std::ranges::find(checked, preset) != checked.end(); });
 }
 
 static_assert(every_built_preset_checked(), "detect_isa() has no CPU check for a preset this build has");
@@ -73,7 +68,7 @@ bool apple_feature(char const *name) noexcept {
 
 // Whether the CPU or the operating system reports that preset runs; false where neither can be asked.
 bool runs(isa preset) noexcept {
-#if defined(_M_X64)
+#ifdef _M_X64
   // CPUID leaf 1, leaf 7 and leaf 7 subleaf 1 as EAX, EBX, ECX, EDX; AVX also needs the OS to save the YMM registers.
   std::array<int, 4> leaf1{};
   std::array<int, 4> leaf7{};
@@ -87,7 +82,7 @@ bool runs(isa preset) noexcept {
   bool const avx2 = pclmul && ymm_saved && bit(leaf7[1], 5);
   bool const vpclmul = avx2 && bit(leaf7[2], 10);
   bool const avxvnni = vpclmul && bit(leaf7_1[0], 4);
-#elif defined(__x86_64__)
+#elifdef __x86_64__
   bool const pclmul = __builtin_cpu_supports("sse4.2") && __builtin_cpu_supports("pclmul");
   bool const avx2 = pclmul && __builtin_cpu_supports("avx2");
   bool const vpclmul = avx2 && __builtin_cpu_supports("vpclmulqdq");
@@ -112,11 +107,11 @@ bool runs(isa preset) noexcept {
     return false;
   }
 #elif defined(__aarch64__) || defined(_M_ARM64)
-#if defined(__linux__)
+#ifdef __linux__
   unsigned long const hwcap = getauxval(AT_HWCAP);
   bool const crc = (hwcap & HWCAP_CRC32) != 0;
   bool const pmull = crc && (hwcap & HWCAP_PMULL) != 0;
-#elif defined(_M_ARM64)
+#elifdef _M_ARM64
   bool const crc = IsProcessorFeaturePresent(PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE) != 0;
   bool const pmull = crc && IsProcessorFeaturePresent(PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE) != 0;
 #elif defined(__FreeBSD__) && defined(HWCAP_CRC32) && defined(HWCAP_PMULL)
@@ -124,7 +119,7 @@ bool runs(isa preset) noexcept {
   bool const known = elf_aux_info(AT_HWCAP, &hwcap, sizeof(hwcap)) == 0;
   bool const crc = known && (hwcap & HWCAP_CRC32) != 0;
   bool const pmull = crc && (hwcap & HWCAP_PMULL) != 0;
-#elif defined(__APPLE__)
+#elifdef __APPLE__
   bool const crc = apple_feature("hw.optional.armv8_crc32");
   bool const pmull = crc && apple_feature("hw.optional.arm.FEAT_PMULL");
 #else
@@ -132,9 +127,9 @@ bool runs(isa preset) noexcept {
   bool const pmull = false;
 #endif
   return preset == isa::aarch64_pmull ? pmull : crc;
-#elif defined(__arm__)
+#elifdef __arm__
   // thumb2 and thumb2_dsp exist only where the build's own flags have them: compiler_guarantees() reports them.
-#if defined(__linux__)
+#ifdef __linux__
   constexpr unsigned long hwcap2_crc32 = 1UL << 4U; // HWCAP2_CRC32 of the kernel's asm/hwcap.h
   bool const neon = (getauxval(AT_HWCAP) & HWCAP_ARM_NEON) != 0;
   bool const crc = neon && (getauxval(AT_HWCAP2) & hwcap2_crc32) != 0;
@@ -148,13 +143,13 @@ bool runs(isa preset) noexcept {
   bool const crc = false;
 #endif
   return preset == isa::thumb2_crc ? crc : preset == isa::thumb2_neon && neon;
-#elif defined(__riscv)
-#if defined(__linux__)
+#elifdef __riscv
+#ifdef __linux__
   if(preset == isa::riscv_v) {
     return (getauxval(AT_HWCAP) & (1UL << ('V' - 'A'))) != 0;
   }
   // Kernel headers before 6.8 have no Zbc key.
-#if defined(RISCV_HWPROBE_EXT_ZBC)
+#ifdef RISCV_HWPROBE_EXT_ZBC
   riscv_hwprobe probe{.key = RISCV_HWPROBE_KEY_IMA_EXT_0, .value = 0};
   return preset == isa::riscv_zbc && syscall(__NR_riscv_hwprobe, &probe, 1, 0, nullptr, 0) == 0 && (probe.value & RISCV_HWPROBE_EXT_ZBC) != 0;
 #else

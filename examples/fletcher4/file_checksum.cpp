@@ -22,7 +22,7 @@ int main(int argument_count, char **arguments) {
 
   constexpr checksum::fletcher4_engine fletcher4;
   auto state = fletcher4.initial();
-  std::array<char, 64 * 1024> buffer{};
+  std::array<char, std::size_t{64} * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
     state = fletcher4.update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
   }

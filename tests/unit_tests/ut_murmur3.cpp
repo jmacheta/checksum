@@ -1,5 +1,7 @@
 // MurmurHash3_x86_32 and MurmurHash3_x64_128: reference values, splits, alignments, ranges and edge values.
 
+#include <checksum/engine.hpp>
+#include <checksum/hash128.hpp>
 #include <checksum/murmur3.hpp>
 #include <murmur3_reference_vectors.hpp>
 
@@ -9,7 +11,6 @@
 
 #include <algorithm>
 #include <array>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -165,7 +166,7 @@ TYPED_TEST(murmur3, edge_values) {
     EXPECT_EQ(murmur3_engine<width>{set.seed}.finalize(state), set.prefixes[size]) << "size " << size;
   }
   if constexpr(width == 32) {
-    murmur3_state<32> state{.lanes = {0x12345678U}, .length = (std::uint64_t{1} << 32) + 5, .buffer = {std::byte{0x42}}};
+    murmur3_state<32> const state{.lanes = {0x12345678U}, .length = (std::uint64_t{1} << 32U) + 5, .buffer = {std::byte{0x42}}};
     murmur3_state<32> wrapped = state;
     wrapped.length = 5;
     EXPECT_EQ(murmur3_engine<32>{}.finalize(state), murmur3_engine<32>{}.finalize(wrapped));

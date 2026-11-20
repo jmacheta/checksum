@@ -5,6 +5,7 @@
 
 #include <checksum/crc.hpp>
 #include <checksum/crc_catalog.hpp>
+#include <checksum/engine.hpp>
 #include <checksum/isa.hpp>
 
 #include "crc_catalog_checks.hpp"
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -80,7 +82,7 @@ struct code_path {
 
 code_path code_path_of(crc_parameters const &parameters) {
   unsigned const width = parameters.polynomial.width();
-  unsigned const register_bits = width <= 8 ? 8 : width <= 16 ? 16 : width <= 32 ? 32 : 64;
+  unsigned const register_bits = std::bit_ceil(std::max(width, 8U));
   return {.register_bits = register_bits,
           .reflected = parameters.reflect_input,
           .polynomial = register_bits == 32 && parameters.reflect_input ? parameters.polynomial.normal_form() : 0};
@@ -272,7 +274,7 @@ template <class Pair> struct crc_folding_presets : ::testing::Test {
 TYPED_TEST_SUITE(crc_folding_presets, folding_pairs, pair_name);
 
 TYPED_TEST(crc_folding_presets, match_byte_table_for_every_catalog_set) {
-  using Strategy = typename TypeParam::first_type;
+  using strategy = typename TypeParam::first_type;
   constexpr isa preset = TypeParam::second_type::value;
 
   auto const message = random_bytes(longest + offsets.back(), 0x5EED);
@@ -286,7 +288,7 @@ TYPED_TEST(crc_folding_presets, match_byte_table_for_every_catalog_set) {
     if(first) {
       tested.push_back(path);
     }
-    check_set<Strategy, preset>(set.parameters, message, first ? all : thresholds);
+    check_set<strategy, preset>(set.parameters, message, first ? all : thresholds);
   }
 }
 

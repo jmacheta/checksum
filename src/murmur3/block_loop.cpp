@@ -1,6 +1,6 @@
 // The run-time loops of MurmurHash3, built only for isa::generic: no preset changes them, so every preset runs these.
 
-#include <checksum/isa.hpp>
+#include <checksum/byte_range.hpp>
 #include <checksum/murmur3.hpp>
 #include <checksum_private/target.hpp>
 
@@ -12,10 +12,12 @@
 namespace checksum::murmur3_detail {
 
 // fold_blocks<32>() four blocks per iteration: the scrambles do not depend on the lane, so they run while earlier blocks update the lane.
+// NOLINTNEXTLINE(misc-use-internal-linkage): with internal linkage Clang warns that x86-64 does not use it.
 CHECKSUM_ALWAYS_INLINE inline lane_array<32> fold_blocks_by_four(lane_array<32> lanes, std::span<std::byte const> data) noexcept;
 
 // fold_blocks_by_four() on 32-bit Arm, whose in-order cores (Cortex-M, Cortex-R, small A-profile) gain from blocks taken four at a
 // time; out-of-order cores already overlap the blocks (on Cortex-A72 one or four blocks run as fast). Else fold_blocks<32>().
+// NOLINTNEXTLINE(misc-use-internal-linkage): the same linkage as fold_blocks_by_four().
 CHECKSUM_ALWAYS_INLINE inline lane_array<32> fold_blocks_32(lane_array<32> lanes, std::span<std::byte const> data) noexcept;
 
 lane_array<32> fold_blocks_by_four(lane_array<32> lanes, std::span<std::byte const> data) noexcept {

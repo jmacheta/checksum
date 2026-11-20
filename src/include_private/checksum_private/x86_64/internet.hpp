@@ -56,8 +56,10 @@ block_total block_kernel<Isa>::sum(std::span<std::byte const> data) noexcept {
     __m256i sum3 = sum0;
     std::byte const *position = data.data();
     for(std::size_t block = 0; block < blocks; ++block, position += vector_block_size) {
+      // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector loads, the intrinsic's interface.
       __m256i const first = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(position));
       __m256i const second = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(position + 32));
+      // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
       sum0 = _mm256_add_epi64(sum0, _mm256_and_si256(first, low_halves));
       sum1 = _mm256_add_epi64(sum1, _mm256_srli_epi64(first, 32));
       sum2 = _mm256_add_epi64(sum2, _mm256_and_si256(second, low_halves));

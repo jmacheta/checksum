@@ -10,7 +10,7 @@
 #include <cstddef>
 #include <span>
 
-#if !defined(NDEBUG)
+#ifndef NDEBUG
 #error "ut_crc_unchecked.cpp must be compiled with NDEBUG"
 #endif
 

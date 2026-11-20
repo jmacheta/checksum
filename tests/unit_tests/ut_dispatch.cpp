@@ -4,6 +4,7 @@
 #include <checksum/adler32.hpp>
 #include <checksum/crc.hpp>
 #include <checksum/crc_catalog.hpp>
+#include <checksum/engine.hpp>
 #include <checksum/fletcher.hpp>
 #include <checksum/fletcher4.hpp>
 #include <checksum/internet.hpp>
@@ -16,12 +17,14 @@
 #include <isa_test_support.hpp>
 #include <test_data.hpp>
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
 #include <span>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -91,7 +94,7 @@ static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_none>::create(crc32_iso
 static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_nibble>::create(crc32_iso_hdlc, isa::aarch64_pmull)->preset() == isa::generic);
 static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_byte>::create(crc32_iso_hdlc, isa::riscv_zbc)->preset() == isa::generic);
 
-constexpr std::size_t sizes[] = {0, 1, 3, 63, 64, 255, 1500, 4097, 70'000};
+constexpr std::array<std::size_t, 9> sizes{0, 1, 3, 63, 64, 255, 1500, 4097, 70'000};
 
 template <crc_parameters Parameters, class Strategy> void check_crc(isa_set cpu, std::vector<std::byte> const &buffer) {
   auto const &reference = crc_engine_for<Parameters, crc_lut_byte>;

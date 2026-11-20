@@ -1,5 +1,6 @@
 // Out-of-line 64-bit multiplication fold for targets without a native 128-bit multiplication (32-bit targets).
 
+#include <checksum/hash128.hpp>
 #include <checksum/xxh3.hpp>
 
 #include <cstdint>

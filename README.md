@@ -100,6 +100,10 @@ target_link_libraries(my_app PRIVATE checksum::checksum)
 `cmake --install` puts the library, headers and a CMake package in the prefix, for `find_package(checksum CONFIG)` and
 `checksum::checksum`; `-DCHECKSUM_INSTALL=OFF` turns the install rules off (they are on by default, also as a subproject).
 
+The headers are meant to be included as system (MSVC: external) headers, so that your warning flags do not apply to them:
+CMake does that for the installed package's imported target, and for a subproject with `FetchContent_Declare(... SYSTEM)`
+or `add_subdirectory(checksum SYSTEM)`.
+
 Compile with `-ffunction-sections -fdata-sections` and link with `-Wl,--gc-sections`, so the binary keeps only the
 algorithms you use.
 

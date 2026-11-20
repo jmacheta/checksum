@@ -3,7 +3,7 @@
 
 #include <checksum/isa.hpp>
 
-#include <string_view>
+#include <string_view> // IWYU pragma: keep
 
 using namespace std::literals;
 

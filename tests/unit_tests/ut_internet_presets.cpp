@@ -10,7 +10,6 @@
 #include <test_data.hpp>
 
 #include <cstddef>
-#include <cstdint>
 #include <string_view>
 #include <vector>
 
@@ -48,14 +47,14 @@ TYPED_TEST(internet_presets, match_generic_through_updates_and_splits) {
 // All-ones bytes make every word the kernels add carry out.
 TYPED_TEST(internet_presets, match_generic_for_all_ones) {
   constexpr isa preset = TypeParam::value;
-  std::vector<std::byte> const ones((1 << 20) + 8, std::byte{0xFF});
+  std::vector<std::byte> const ones((1U << 20U) + 8, std::byte{0xFF});
   engine_checks::check_all_ones(internet_engine<preset>{}, internet_engine{}, ones, internet_state{.sum = 0xFFFF, .odd = true});
   for(std::size_t offset = 0; offset < 4; ++offset) {
     for(std::size_t size = 0; size <= 600; ++size) {
       ASSERT_EQ(internet_compute<preset>(at(ones, offset, size)), internet_compute(at(ones, offset, size)))
           << "offset " << offset << ", size " << size;
     }
-    EXPECT_EQ(internet_compute<preset>(at(ones, offset, (1 << 20) + 1)), 0x00FF) << "offset " << offset;
+    EXPECT_EQ(internet_compute<preset>(at(ones, offset, (1U << 20U) + 1)), 0x00FF) << "offset " << offset;
   }
 }
 

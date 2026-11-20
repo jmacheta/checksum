@@ -2,7 +2,9 @@
 
 #include "crc_test_support.hpp"
 
+#include <checksum/byte_range.hpp>
 #include <checksum/crc.hpp>
+#include <checksum/engine.hpp>
 
 #include <engine_checks.hpp>
 #include <gtest/gtest.h>
@@ -11,7 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <concepts>
-#include <csignal>
+#include <csignal> // IWYU pragma: keep
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -40,6 +42,7 @@ static_assert(byte_range<std::array<std::byte, 4> const &>);
 static_assert(byte_range<std::vector<unsigned char> &>);
 static_assert(byte_range<std::list<char> &>);
 static_assert(byte_range<std::span<char>>);
+// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays): arrays are the case under test.
 static_assert(byte_range<std::byte (&)[4]>);
 static_assert(byte_range<unsigned char const (&)[4]>);
 static_assert(byte_range<signed char (&)[4]>);
@@ -51,6 +54,7 @@ static_assert(!byte_range<std::vector<int> &>);
 static_assert(!byte_range<std::vector<std::uint16_t> &>);
 static_assert(!byte_range<std::span<std::byte volatile>>);
 static_assert(!byte_range<unsigned char volatile (&)[4]>);
+// NOLINTEND(cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays)
 static_assert(!byte_range<std::span<char const volatile>>);
 
 // Every local model on every strategy at compile time.
@@ -361,7 +365,7 @@ TEST(crc, run_time_parameters) {
 }
 
 // Violated preconditions fail an assert unless NDEBUG is defined.
-#if !defined(NDEBUG)
+#ifndef NDEBUG
 // The abort of the assert exits without a core dump: a crash reporter that collects it takes about a second.
 void exit_on_abort() {
   (void)std::signal(SIGABRT, [](int /*signal*/) { std::_Exit(EXIT_FAILURE); });

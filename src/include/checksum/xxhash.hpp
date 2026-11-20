@@ -131,7 +131,7 @@ template <> struct algorithm_constants<32> {
   static constexpr int round_rotation = 13;
   static constexpr int word_rotation = 17;
   static constexpr int byte_rotation = 11;
-  static constexpr std::array<int, 3> avalanche_shifts{15, 13, 16};
+  static constexpr std::array<unsigned, 3> avalanche_shifts{15, 13, 16};
 };
 
 template <> struct algorithm_constants<64> {
@@ -144,7 +144,7 @@ template <> struct algorithm_constants<64> {
   static constexpr int word_rotation = 27;
   static constexpr int half_word_rotation = 23;
   static constexpr int byte_rotation = 11;
-  static constexpr std::array<int, 3> avalanche_shifts{33, 29, 32};
+  static constexpr std::array<unsigned, 3> avalanche_shifts{33, 29, 32};
 };
 
 using detail::load;
@@ -199,16 +199,17 @@ template <unsigned Width> constexpr lane_array<Width> initial_lanes(word<Width> 
 
 template <unsigned Width> constexpr word<Width> converge(lane_array<Width> const &lanes) noexcept {
   using constants = algorithm_constants<Width>;
-  word<Width> hash = std::rotl(lanes[0], convergence_rotations[0]) + std::rotl(lanes[1], convergence_rotations[1]) +
-                     std::rotl(lanes[2], convergence_rotations[2]) + std::rotl(lanes[3], convergence_rotations[3]);
+  word<Width> const hash = std::rotl(lanes[0], convergence_rotations[0]) + std::rotl(lanes[1], convergence_rotations[1]) +
+                           std::rotl(lanes[2], convergence_rotations[2]) + std::rotl(lanes[3], convergence_rotations[3]);
   if constexpr(Width == 64) {
     // Spelled out: GCC keeps the lanes of a loop here in memory.
     auto const merge = [](word<Width> value, word<Width> lane) {
       return ((value ^ round<Width>(0, lane)) * constants::prime_1) + constants::prime_4;
     };
-    hash = merge(merge(merge(merge(hash, lanes[0]), lanes[1]), lanes[2]), lanes[3]);
+    return merge(merge(merge(merge(hash, lanes[0]), lanes[1]), lanes[2]), lanes[3]);
+  } else {
+    return hash;
   }
-  return hash;
 }
 
 template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {

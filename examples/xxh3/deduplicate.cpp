@@ -1,9 +1,9 @@
 // Finds the distinct 4 KiB blocks of a buffer by their XXH3-128 hash, as a deduplicating store does.
 
+#include <checksum/hash128.hpp>
 #include <checksum/xxh3.hpp>
 
 #include <cstddef>
-#include <cstdint>
 #include <iostream>
 #include <span>
 #include <string_view>

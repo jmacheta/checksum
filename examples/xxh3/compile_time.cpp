@@ -34,6 +34,7 @@ static_assert(std::ranges::adjacent_find(assets, {}, &asset::id) == assets.end()
 
 // The path of an ID, or an empty view for an unknown ID.
 std::string_view find_path(std::uint64_t id) {
+  // NOLINTNEXTLINE(readability-qualified-auto): an iterator, a pointer only in some standard libraries.
   auto const found = std::ranges::lower_bound(assets, id, {}, &asset::id);
   return found != assets.end() && found->id == id ? found->path : std::string_view{};
 }

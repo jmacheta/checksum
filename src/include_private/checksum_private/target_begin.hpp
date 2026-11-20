@@ -6,23 +6,24 @@
 
 static_assert(checksum::isa_available(checksum::isa::CHECKSUM_PRESET), "presets.hpp builds a preset that isa_available() rejects");
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage): _Pragma with an expanded macro argument.
 #define CHECKSUM_PRAGMA(text) CHECKSUM_PRAGMA_TEXT(text)
 #define CHECKSUM_PRAGMA_TEXT(text) _Pragma(#text)
 
 // GCC 15 has no target pragma on RISC-V: there the kernels carry their target attribute themselves. MSVC needs none.
 #if defined(CHECKSUM_PRESET_TARGET) && (defined(__GNUC__) || defined(__clang__)) && !defined(__riscv)
-#if defined(__clang__)
+#ifdef __clang__
 // The intrinsics carry their own target attributes, which Clang 18 lets the pushed one override for some but not others,
 // then refuses to inline one into another: include them before the push.
-#if defined(__aarch64__)
+#ifdef __aarch64__
 #include <arm_acle.h>
 #include <arm_neon.h>
-#elif defined(__arm__)
+#elifdef __arm__
 #include <arm_acle.h>
-#if defined(__ARM_NEON)
+#ifdef __ARM_NEON
 #include <arm_neon.h>
 #endif
-#elif defined(__x86_64__)
+#elifdef __x86_64__
 #include <immintrin.h>
 #endif
 CHECKSUM_PRAGMA(clang attribute push(__attribute__((target(CHECKSUM_PRESET_TARGET))), apply_to = function))

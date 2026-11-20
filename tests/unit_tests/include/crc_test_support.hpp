@@ -226,6 +226,7 @@ constexpr std::uint64_t mask_of(unsigned width) { return width == 64 ? ~std::uin
 inline bitwise_reference::bitwise_reference(crc_model const &model) : model(model), remainder(model.initial_value) {}
 
 inline void bitwise_reference::feed_bit(unsigned bit) {
+  // NOLINTNEXTLINE(clang-analyzer-core.BitwiseShift): model.width is 1..64.
   bool const feedback = (((remainder >> (model.width - 1)) & 1U) ^ bit) != 0;
   remainder = (remainder << 1U) & mask_of(model.width);
   if(feedback) {

@@ -3,7 +3,6 @@
 #include <checksum/crc.hpp>
 
 #include <cstdint>
-#include <cstdio> // stderr
 #include <cstdlib>
 #include <iostream>
 #include <string_view>

@@ -2,4 +2,4 @@
 
 #define CHECKSUM_PRESET generic
 #define CHECKSUM_CRC_BRAIDED_ENTRY
-#include <checksum_private/crc_table_loops.hpp>
+#include <checksum_private/crc_table_loops.hpp> // IWYU pragma: keep

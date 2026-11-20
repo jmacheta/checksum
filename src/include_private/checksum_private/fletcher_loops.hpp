@@ -128,7 +128,7 @@ namespace checksum::fletcher_detail {
 template <isa Isa, class Integer, std::uint64_t Modulus> constexpr std::size_t values_per_reduction(std::uint64_t largest_value) noexcept {
   constexpr std::uint64_t maximum = std::numeric_limits<Integer>::max();
   std::uint64_t low = 0;
-  std::uint64_t high = std::uint64_t{1} << ((std::numeric_limits<Integer>::digits / 2) - 1); // n(n+1) and (n+1)(Modulus-1) cannot overflow
+  std::uint64_t high = std::uint64_t{1} << ((std::numeric_limits<Integer>::digits / 2U) - 1U); // n(n+1) and (n+1)(Modulus-1) cannot overflow
   while(low < high) {
     std::uint64_t const middle = high - ((high - low) / 2);
     std::uint64_t const start = (middle + 1) * (Modulus - 1);
@@ -141,6 +141,7 @@ template <isa Isa, class Integer, std::uint64_t Modulus> constexpr std::size_t v
   return static_cast<std::size_t>(low);
 }
 
+// NOLINTBEGIN(readability-magic-numbers): the expected bounds.
 static_assert(std::numeric_limits<std::size_t>::digits != 64 || values_per_reduction<isa::generic, std::size_t, 255>(255) == 380'368'695);
 static_assert(std::numeric_limits<std::size_t>::digits != 64 || values_per_reduction<isa::generic, std::size_t, 65'535>(65'535) == 23'726'745);
 static_assert(std::numeric_limits<std::size_t>::digits != 64 || values_per_reduction<isa::generic, std::size_t, 65'521>(255) == 380'368'439);
@@ -148,10 +149,11 @@ static_assert(std::numeric_limits<std::size_t>::digits != 32 || values_per_reduc
 static_assert(std::numeric_limits<std::size_t>::digits != 32 || values_per_reduction<isa::generic, std::size_t, 65'535>(65'535) == 360);
 static_assert(std::numeric_limits<std::size_t>::digits != 32 || values_per_reduction<isa::generic, std::size_t, 65'521>(255) == 5'552);
 static_assert(values_per_reduction<isa::generic, std::uint64_t, 0xFFFF'FFFF>(0xFFFF'FFFF) == 92'680);
+// NOLINTEND(readability-magic-numbers)
 
 template <isa Isa, std::uint64_t Modulus, class Integer> Integer reduce(Integer value) noexcept {
-  constexpr int bits = std::bit_width(Modulus);
-  if constexpr(bits < std::numeric_limits<Integer>::digits) {
+  constexpr auto bits = static_cast<unsigned>(std::bit_width(Modulus));
+  if constexpr(bits < static_cast<unsigned>(std::numeric_limits<Integer>::digits)) {
     constexpr Integer low_bits = (Integer{1} << bits) - 1;
     constexpr Integer high_weight = (Integer{1} << bits) - Modulus;
     while((value >> bits) != 0) {
@@ -165,7 +167,7 @@ template <isa Isa, std::uint64_t Modulus, class Word> Word reduce_chunk(Word val
   if constexpr(sizeof(Word) > sizeof(std::uint32_t)) {
     constexpr std::uint64_t high_weight = (std::uint64_t{1} << 32U) % Modulus;
     while((value >> 32U) != 0) {
-      value = (value & 0xFFFF'FFFFU) + ((value >> 32U) * high_weight);
+      value = (value & std::numeric_limits<std::uint32_t>::max()) + ((value >> 32U) * high_weight);
     }
   }
   return static_cast<std::uint32_t>(value) % static_cast<std::uint32_t>(Modulus);
@@ -212,7 +214,7 @@ CHECKSUM_ALWAYS_INLINE inline std::size_t sum_chunks(State &state, std::span<std
   constexpr std::uint64_t largest_sum = std::bit_ceil(Modulus) - 1;
   // The weighted sum of a chunk fits 64 bits, and so does sum2 plus max_values * sum1.
   static_assert(max_values * (max_values + 1) / 2 <= std::numeric_limits<std::uint64_t>::max() / largest_value);
-  static_assert(max_values <= std::uint64_t{1} << 31U);
+  static_assert(max_values <= std::uint64_t{1} << 31U); // NOLINT(readability-magic-numbers): 2^31
   // 32-bit arithmetic where every intermediate result fits, so that 32-bit targets reduce without 64-bit operations.
   constexpr std::uint64_t largest_word = std::numeric_limits<std::uint32_t>::max();
   using word = std::conditional_t<largest_weighted <= largest_word && (max_values + 2) * largest_sum <= largest_word &&
@@ -221,10 +223,11 @@ CHECKSUM_ALWAYS_INLINE inline std::size_t sum_chunks(State &state, std::span<std
   auto sum1 = static_cast<word>(state.sum1);
   auto sum2 = static_cast<word>(state.sum2);
   std::byte const *position = data.data();
-  std::size_t head = 0;
+  std::size_t head = 0; // NOLINT(misc-const-correctness): set where the kernel aligns
   if constexpr(bits == 8) {
     if constexpr(chunk_kernel::alignment > 1) {
       // Bytes are single blocks, so the bytes before the alignment of the kernel can go first, one by one.
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): the alignment of an address.
       head = std::min(data.size(), (0 - reinterpret_cast<std::uintptr_t>(position)) & (chunk_kernel::alignment - 1));
       for(std::byte const byte : data.first(head)) {
         sum1 += std::to_integer<word>(byte);
@@ -252,6 +255,7 @@ CHECKSUM_ALWAYS_INLINE inline std::size_t sum_chunks(State &state, std::span<std
 }
 
 template <isa Isa, class Value, std::uint64_t Modulus, std::size_t Limit, class State>
+// NOLINTNEXTLINE(readability-function-cognitive-complexity): split into helpers, GCC compiles the loops differently.
 CHECKSUM_ALWAYS_INLINE inline State sum_portable(State state, std::span<std::byte const> data) noexcept {
   // The widest integer the target adds natively, or 64 bits for 32-bit values. AArch64 sums 16-bit values in 32 bits:
   // Fletcher-32 at 20 bytes ran 7 % faster on a Cortex-A72 (a reduction every 360 values costs little), but 9 % slower on x86-64.
@@ -278,6 +282,7 @@ CHECKSUM_ALWAYS_INLINE inline State sum_portable(State state, std::span<std::byt
     if constexpr(sums_words) {
       // One value first if that aligns the words. A word adds 2 * sum1 + 2 * first half + second half to sum2, so per word
       // previous += sum, sum adds both halves and first_halves the first half.
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): the alignment of an address.
       if((reinterpret_cast<std::uintptr_t>(position) & 2U) != 0) {
         sum1 += load<Isa, Value>(position);
         sum2 += sum1;
@@ -380,7 +385,7 @@ CHECKSUM_NOINLINE State sum_long(State state, std::span<std::byte const> data) n
       return sum_groups<Isa, Value, Modulus>(state, data);
     }
   }
-  std::size_t size = 0;
+  std::size_t size = 0; // NOLINT(misc-const-correctness): set where there is a block kernel
   if constexpr(block_kernel<bits, Isa>::available) {
     size = sum_chunks<Isa, block_kernel<bits, Isa>, Value, Modulus>(state, data);
   }
@@ -488,7 +493,7 @@ template <isa Isa> adler32_state sum_any(adler32_state state, std::span<std::byt
 
 #include <checksum_private/target_end.hpp>
 
-#if defined(CHECKSUM_FLETCHER_ENTRY)
+#ifdef CHECKSUM_FLETCHER_ENTRY
 namespace checksum::fletcher_detail {
 
 // GCC fixes a function's target at its first declaration, which for sum_loop() is in fletcher.hpp: it only forwards to
@@ -517,7 +522,7 @@ static_assert(own_loops.contains(isa::CHECKSUM_PRESET) ==
 } // namespace checksum::fletcher_detail
 #endif
 
-#if defined(CHECKSUM_ADLER32_ENTRY)
+#ifdef CHECKSUM_ADLER32_ENTRY
 namespace checksum::adler32_detail {
 
 // GCC fixes a function's target at its first declaration, which for sum_loop() is in adler32.hpp: it only forwards to

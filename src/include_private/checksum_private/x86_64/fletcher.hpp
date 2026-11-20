@@ -51,7 +51,7 @@ struct block_kernel<8, Isa> {
   static constexpr std::size_t block_size = x86_vector_size<Isa>;
   // A 32-bit lane of the previous sums gains at most 8 * 255 * j at block j.
   static constexpr std::size_t max_blocks = 1024;
-  static_assert(std::uint64_t{8 * 255} * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
+  static_assert(std::uint64_t{8} * 255 * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
   // From 64 bytes the kernel beats the portable loops on a Core Ultra 7 155H with GCC and Clang, SSE2 and AVX2. The one
   // exception is Fletcher-16 with GCC and SSE2: 7 % slower at 64 bytes, faster from 96.
   static constexpr std::size_t minimum_size = 64;
@@ -66,7 +66,7 @@ struct block_kernel<16, Isa> {
   static constexpr std::size_t block_size = x86_vector_size<Isa>;
   // A 32-bit lane of the previous sums gains at most 2 * 65535 * j at block j.
   static constexpr std::size_t max_blocks = 128;
-  static_assert(std::uint64_t{2 * 65'535} * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
+  static_assert(std::uint64_t{2} * 65'535 * max_blocks * (max_blocks - 1) / 2 <= std::numeric_limits<std::uint32_t>::max());
   // Where the kernel overtakes the portable loop on a Core Ultra 7 155H: 96 bytes with Clang, 128-160 with GCC.
   static constexpr std::size_t minimum_size = 128;
   static chunk_sums sum(std::byte const *data, std::size_t blocks) noexcept;
@@ -154,6 +154,7 @@ template <isa Isa> x86_vector<Isa> add_lanes64(x86_vector<Isa> first, x86_vector
   }
 }
 
+// NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector loads, the intrinsics' interface.
 template <isa Isa> x86_vector<Isa> load_vector(std::byte const *data) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return _mm256_loadu_si256(reinterpret_cast<x86_vector<Isa> const *>(data));
@@ -161,6 +162,7 @@ template <isa Isa> x86_vector<Isa> load_vector(std::byte const *data) noexcept {
     return _mm_loadu_si128(reinterpret_cast<x86_vector<Isa> const *>(data));
   }
 }
+// NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 
 template <isa Isa> x86_vector<Isa> byte_sums(x86_vector<Isa> value) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
@@ -180,6 +182,7 @@ template <isa Isa, class Lane> std::uint64_t lane_total(x86_vector<Isa> value) n
   return total;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the low and high halves of the lanes.
 template <isa Isa, class Lane> std::uint64_t column_total(x86_vector<Isa> low, x86_vector<Isa> high, std::uint64_t values_per_block) noexcept {
   constexpr std::size_t lanes = x86_vector_size<Isa> / sizeof(Lane);
   constexpr std::size_t per_half = 16 / sizeof(Lane);

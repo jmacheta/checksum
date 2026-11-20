@@ -39,6 +39,7 @@ words:
 - addtogroup
 - aixm
 - alderlake
+- anyofallof
 - argn
 - armv
 - asan
@@ -95,6 +96,7 @@ words:
 - dtcm
 - eabi
 - elen
+- elifdef
 - endforeach
 - endfunction
 - endmacro

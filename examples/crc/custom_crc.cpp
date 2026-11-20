@@ -18,8 +18,10 @@ inline constexpr crc_parameters sensor_crc{
     .reflect_output = true,
 };
 
+namespace {
 // crc_lut_nibble: a 32-byte table instead of the 512-byte crc_lut_byte one.
 constexpr auto const &sensor_engine = crc_engine_for<sensor_crc, crc_lut_nibble>;
+} // namespace
 
 int main() {
   constexpr std::array<std::byte, 4> reading{std::byte{0x01}, std::byte{0x04}, std::byte{0x02}, std::byte{0xFF}};

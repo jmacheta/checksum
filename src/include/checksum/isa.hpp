@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <ranges>
 
 /**
  * @addtogroup checksum
@@ -51,7 +52,7 @@ public:
   constexpr isa_set() noexcept = default;
 
   /// preset and the earlier presets of its line, so that an explicit choice falls back one rung at a time.
-  constexpr isa_set(isa preset) noexcept; // NOLINT(google-explicit-constructor): a preset is the set of what it includes.
+  constexpr isa_set(isa preset) noexcept; // NOLINT(hicpp-explicit-conversions): a preset is the set of what it includes.
 
   /// Whether the set contains preset.
   [[nodiscard]] constexpr bool contains(isa preset) const noexcept;
@@ -118,10 +119,10 @@ constexpr isa select(isa_set cpu, isa_set own_loops) noexcept;
 
 // function.template operator()<preset>() for preset, a result of select() with OwnLoops that a dispatch engine keeps: its
 // switch over the presets of this build in OwnLoops, the only work of a call besides the variant itself.
-template <isa_set const &OwnLoops, class Function> constexpr auto dispatch(isa preset, Function &&function);
+template <isa_set const &OwnLoops, class Function> constexpr auto dispatch(isa preset, Function const &function);
 
 // function.template operator()<preset>() if preset is one of built_presets[Index] and later ones in OwnLoops, else for generic.
-template <isa_set const &OwnLoops, std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function &function);
+template <isa_set const &OwnLoops, std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function const &function);
 
 } // namespace checksum::isa_detail
 
@@ -157,6 +158,7 @@ constexpr bool isa_available(isa preset) noexcept {
   if(preset == isa::generic) {
     return true;
   }
+  // NOLINTNEXTLINE(readability-use-anyofallof): std::ranges::any_of() changes the code of detect_isa() with GCC.
   for(isa const built : isa_detail::built_presets) {
     if(built == preset) {
       return true;
@@ -167,6 +169,7 @@ constexpr bool isa_available(isa preset) noexcept {
 
 constexpr isa_set::isa_set(isa preset) noexcept : bits(0) {
   for(auto value = static_cast<unsigned>(preset);; --value) {
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): value counts down from preset, through enumerators only.
     if(isa_detail::includes(preset, static_cast<isa>(value))) {
       bits |= 1U << value;
     }
@@ -197,15 +200,15 @@ constexpr isa_set built_with_target_options() noexcept {
 }
 
 constexpr isa select(isa_set cpu, isa_set own_loops) noexcept {
-  for(auto it = built_presets.rbegin(); it != built_presets.rend(); ++it) {
-    if(cpu.contains(*it) && own_loops.contains(*it)) {
-      return *it;
+  for(isa const preset : std::views::reverse(built_presets)) {
+    if(cpu.contains(preset) && own_loops.contains(preset)) {
+      return preset;
     }
   }
   return isa::generic;
 }
 
-template <isa_set const &OwnLoops, std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function &function) {
+template <isa_set const &OwnLoops, std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function const &function) {
   if constexpr(Index == built_presets.size()) {
     return function.template operator()<isa::generic>();
   } else {
@@ -219,7 +222,7 @@ template <isa_set const &OwnLoops, std::size_t Index, class Function> constexpr 
   }
 }
 
-template <isa_set const &OwnLoops, class Function> constexpr auto dispatch(isa preset, Function &&function) {
+template <isa_set const &OwnLoops, class Function> constexpr auto dispatch(isa preset, Function const &function) {
   return dispatch_from<OwnLoops, 0>(preset, function);
 }
 

@@ -32,9 +32,9 @@ namespace checksum::fletcher4_detail {
 
 // Shortest input for the lanes. The portable ones overtake the word loop on a Cortex-A72 at 128 bytes with GCC but stay below
 // Clang's unrolled word loop; on 32-bit targets their 64-bit sums run out of registers, 3 times slower there.
+inline constexpr std::size_t portable_lanes_minimum_size = target_detail::word32_target ? std::numeric_limits<std::size_t>::max() : 256;
 template <isa Isa>
-inline constexpr std::size_t lanes_minimum_size =
-    lane_kernel<Isa>::available ? lane_kernel<Isa>::minimum_size : (target_detail::word32_target ? std::numeric_limits<std::size_t>::max() : 256);
+inline constexpr std::size_t lanes_minimum_size = lane_kernel<Isa>::available ? lane_kernel<Isa>::minimum_size : portable_lanes_minimum_size;
 
 // The little-endian word at data, from byte loads that compilers merge where unaligned loads are allowed: no memcpy call elsewhere.
 template <isa Isa> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load(std::byte const *data) noexcept;
@@ -73,8 +73,9 @@ template <isa Isa> fletcher4_state fletcher4_sum_any(fletcher4_state state, std:
 template <isa Isa> fletcher4_value fletcher4_compute_any(std::span<std::byte const> data) noexcept;
 
 template <isa Isa> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load(std::byte const *data) noexcept {
-  return std::to_integer<std::uint32_t>(data[0]) | (std::to_integer<std::uint32_t>(data[1]) << 8) | (std::to_integer<std::uint32_t>(data[2]) << 16) |
-         (std::to_integer<std::uint32_t>(data[3]) << 24);
+  // NOLINTNEXTLINE(readability-magic-numbers): the bit offsets of the bytes.
+  return std::to_integer<std::uint32_t>(data[0]) | (std::to_integer<std::uint32_t>(data[1]) << 8U) |
+         (std::to_integer<std::uint32_t>(data[2]) << 16U) | (std::to_integer<std::uint32_t>(data[3]) << 24U); // NOLINT(readability-magic-numbers)
 }
 
 template <isa Isa> CHECKSUM_ALWAYS_INLINE [[maybe_unused]] inline lane_sums sum_lanes(std::byte const *data, std::size_t groups) noexcept {
@@ -122,7 +123,7 @@ template <isa Isa> CHECKSUM_ALWAYS_INLINE inline fletcher4_state sum_words(fletc
   std::size_t words = data.size() / word_size;
   // In order, two words per iteration halve the loop overhead around the carry chains.
   if constexpr(target_detail::in_order_target<Isa>) {
-    for(std::size_t pairs = words / 2; pairs != 0; --pairs, position += 2 * word_size) {
+    for(std::size_t pairs = words / 2; pairs != 0; --pairs, position += std::size_t{2} * word_size) {
       std::uint64_t const first = load<Isa>(position);
       std::uint64_t const second = load<Isa>(position + word_size);
       state.sum1 += first;

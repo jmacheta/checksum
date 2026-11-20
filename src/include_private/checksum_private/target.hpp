@@ -16,13 +16,13 @@
 
 namespace checksum::target_detail {
 
-#if defined(CHECKSUM_ARM64)
+#ifdef CHECKSUM_ARM64
 inline constexpr bool arm64_target = true;
 #else
 inline constexpr bool arm64_target = false;
 #endif
 
-#if defined(__arm__)
+#ifdef __arm__
 inline constexpr bool arm32_target = true;
 #else
 inline constexpr bool arm32_target = false;

@@ -50,6 +50,7 @@ struct crc_polynomial {
 };
 
 /// A CRC model. A plain aggregate, usable as a template argument; crc_engine::create() validates it.
+// NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init): no default constructor, crc_polynomial has none.
 struct crc_parameters {
   crc_polynomial polynomial;       ///< Generator polynomial; its degree is the CRC width.
   std::uint64_t initial_value = 0; ///< Register value before the first message bit, unreflected.
@@ -94,6 +95,13 @@ namespace checksum::crc_detail {
 template <class Register> struct register_form;
 
 } // namespace checksum::crc_detail
+
+// The padding around the 16-byte aligned folding constants of a table, and of every class that holds one, is intended; MSVC warns
+// about it (C4324).
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
 
 namespace checksum {
 
@@ -343,11 +351,6 @@ template <class Register> struct lookup_table<Register, no_table_size> {
   register_form<Register> form;
 };
 
-// The padding before the 16-byte aligned constants is intended; MSVC warns about it (C4324).
-#if defined(_MSC_VER) && !defined(__clang__)
-#pragma warning(push)
-#pragma warning(disable : 4324)
-#endif
 template <class Register, std::size_t Size>
   requires has_folding<Size>
 struct lookup_table<Register, Size> {
@@ -385,6 +388,9 @@ constexpr Register loop_nibble(Register const *table, Register remainder, std::s
 // Also the constant-evaluation loop of crc_lut_sliced and crc_lut_braided.
 template <bool Reflected, class Register>
 constexpr Register loop_byte(Register const *table, Register remainder, std::span<std::byte const> data) noexcept;
+
+// Fills the braid slices of a crc_lut_braided table whose slicing-by-8 slices are filled.
+template <bool Reflected, class Register> constexpr void add_braid_slices(std::array<Register, braided_table_size> &table) noexcept;
 
 // Slice k of the slicing-by-8 table folds a byte followed by k zero bytes; braid slice 8 + k a byte followed by
 // braid_count * word_size - 1 - k zero bytes.
@@ -477,6 +483,7 @@ template <class Register> constexpr register_form<Register> make_register_form(c
       .polynomial = static_cast<Register>(reflected ? reflect(normal_form, width) : normal_form << shift), .shift = shift, .reflected = reflected};
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): both are register values by nature.
 template <bool Reflected, class Register> constexpr Register bitwise_step(Register remainder, Register polynomial) noexcept {
   promoted_register<Register> const value = remainder;
   promoted_register<Register> const feedback = Reflected ? value & 1U : value >> (register_bits<Register> - 1U);
@@ -539,6 +546,26 @@ constexpr Register loop_byte(Register const *table, Register remainder, std::spa
   return remainder;
 }
 
+template <bool Reflected, class Register> constexpr void add_braid_slices(std::array<Register, braided_table_size> &table) noexcept {
+  // advanced[n]: byte n followed by `zeros` zero bytes, starting from slice 7 (7 zero bytes); braid slice k
+  // (slice 8 + k) needs braid_count * word_size - 1 - k of them.
+  std::array<Register, slice_size> advanced{};
+  for(std::size_t index = 0; index < slice_size; ++index) {
+    advanced[index] = table[sliced_table_size - slice_size + index];
+  }
+  constexpr std::size_t block_size = braid_count * word_size;
+  for(std::size_t zeros = slice_count; zeros < block_size; ++zeros) {
+    for(Register &entry : advanced) {
+      entry = table_step<Reflected, byte_bits>(table.data(), entry, 0U);
+    }
+    if(zeros >= block_size - word_size) {
+      for(std::size_t index = 0; index < slice_size; ++index) {
+        table[((slice_count + block_size - 1 - zeros) * slice_size) + index] = advanced[index];
+      }
+    }
+  }
+}
+
 template <std::size_t Size, bool Reflected, class Register> constexpr std::array<Register, Size> table_entries(Register polynomial) noexcept {
   std::array<Register, Size> table{};
   if constexpr(Size == nibble_size) {
@@ -559,28 +586,13 @@ template <std::size_t Size, bool Reflected, class Register> constexpr std::array
       }
     }
     if constexpr(Size == braided_table_size) {
-      // advanced[n]: byte n followed by `zeros` zero bytes, starting from slice 7 (7 zero bytes); braid slice k
-      // (slice 8 + k) needs braid_count * word_size - 1 - k of them.
-      std::array<Register, slice_size> advanced{};
-      for(std::size_t index = 0; index < slice_size; ++index) {
-        advanced[index] = table[sliced_table_size - slice_size + index];
-      }
-      constexpr std::size_t block_size = braid_count * word_size;
-      for(std::size_t zeros = slice_count; zeros < block_size; ++zeros) {
-        for(Register &entry : advanced) {
-          entry = table_step<Reflected, byte_bits>(table.data(), entry, 0U);
-        }
-        if(zeros >= block_size - word_size) {
-          for(std::size_t index = 0; index < slice_size; ++index) {
-            table[((slice_count + block_size - 1 - zeros) * slice_size) + index] = advanced[index];
-          }
-        }
-      }
+      add_braid_slices<Reflected>(table);
     }
   }
   return table;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): a polynomial and a power, distinct by name.
 constexpr std::uint64_t power_modulo(std::uint64_t polynomial, unsigned exponent) noexcept {
   constexpr unsigned top_bit = 63;
   std::uint64_t remainder = 1;
@@ -614,6 +626,7 @@ constexpr folding_constants make_folding_constants(crc_parameters const &paramet
     return {reflect(power_modulo(polynomial, distance + register_width - 1), register_width),
             reflect(power_modulo(polynomial, distance - 1), register_width)};
   };
+  // NOLINTBEGIN(readability-magic-numbers): the block counts that the field names spell out.
   return {.by_sixteen = fold_pair(16 * block_bits),
           .by_eight = fold_pair(8 * block_bits),
           .by_seven = fold_pair(7 * block_bits),
@@ -625,6 +638,7 @@ constexpr folding_constants make_folding_constants(crc_parameters const &paramet
           .by_one = fold_pair(block_bits),
           .quotient = parameters.reflect_input ? reflect(quotient, register_width) : quotient,
           .polynomial = parameters.reflect_input ? reflect(polynomial, register_width) : polynomial};
+  // NOLINTEND(readability-magic-numbers)
 }
 
 template <class Register, class Fold> constexpr Register fold_internal(register_form<Register> const &form, Register state, Fold fold) noexcept {
@@ -923,6 +937,6 @@ crc_dispatch_engine<Register, Strategy>::compute(std::span<std::byte const> data
 } // namespace checksum
 
 // The named parameter sets, so that this header alone gives the whole CRC API like every other algorithm's.
-#include <checksum/crc_catalog.hpp>
+#include <checksum/crc_catalog.hpp> // IWYU pragma: export
 
 #endif // CHECKSUM_CRC_HPP

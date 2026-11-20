@@ -1,9 +1,10 @@
 // The run-time loops of XXH32 and XXH64, built only for isa::generic: no preset changes them, so every preset runs these.
 
+#include <checksum/byte_range.hpp>
 #include <checksum/xxhash.hpp>
 
 #include <cstddef>
-#include <cstdint>
+#include <cstdint> // IWYU pragma: keep
 #include <span>
 
 namespace checksum::xxhash_detail {
@@ -23,10 +24,12 @@ template <unsigned Width> word<Width> run_time_hash(std::span<std::byte const> d
     // Hides how the lanes were computed: GCC otherwise merges the last multiplication of each stripe with the first one of converge(),
     // which keeps two values per lane in the stripe loop and made XXH64 7 % slower at 1 to 2 KiB on x86-64.
 #if defined(__GNUC__) || defined(__clang__)
+    // NOLINTBEGIN(hicpp-no-assembler): empty statements that only hide the values.
     asm("" : "+r"(lanes[0]));
     asm("" : "+r"(lanes[1]));
     asm("" : "+r"(lanes[2]));
     asm("" : "+r"(lanes[3]));
+    // NOLINTEND(hicpp-no-assembler)
 #endif
   }
   return finish<Width>(converge<Width>(lanes), seed, data.size(), data.subspan(whole));

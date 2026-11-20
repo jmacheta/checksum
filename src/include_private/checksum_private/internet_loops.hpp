@@ -73,7 +73,7 @@ template <isa Isa, std::size_t Count> CHECKSUM_ALWAYS_INLINE inline void add_wor
   // A carry flag chain adds its carry back at once: one that starts without a carry leaves a sum below the word's maximum if
   // it carries out.
   word carry = 0;
-#if defined(__GNUC__)
+#ifdef __GNUC__
 #pragma GCC unroll 8
 #endif
   for(std::size_t index = 0; index < Count; ++index) {
