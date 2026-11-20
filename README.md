@@ -177,6 +177,8 @@ Platform differences, by design:
 
 - **Clang on 32-bit Arm** builds the `thumb2` presets only in a Thumb-2 build (`-mthumb`), and `thumb2_neon` and
   `thumb2_crc` only with the build's own NEON (`-mfpu=neon` or later); GCC adds both itself.
+- **Clang 18 on RISC-V** builds `riscv_v` only with the build's own V (`-march=rv64gcv`): it accepts vector intrinsics
+  nowhere else. Clang 19 and GCC add V themselves.
 - **Arm builds without DSP** (`-mcpu=cortex-m33+nodsp`, `cortex-m55+nodsp`) build and detect `thumb2`, not
   `thumb2_dsp`, also on a core that has DSP.
 - **Bare-metal Cortex-A with the MMU off:** all data memory is then Strongly-ordered, where unaligned accesses fault.

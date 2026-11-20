@@ -104,7 +104,8 @@ turns those skips into failures: a preset test fails if the CPU cannot run a req
 exits with an error, and `isa_test_support.required_presets_run` fails if a required preset is unknown, not built, or not
 run. Every CI job sets it (`required` in `ci.yml`) to what its CPU guarantees: `x86_avx2` on GitHub's x86-64 runners
 (VPCLMULQDQ and AVX-VNNI vary between their CPUs), `aarch64_pmull` on its Arm runners (Neoverse N2) and in QEMU,
-`thumb2_crc` and `riscv_zbc,riscv_v` in QEMU `-cpu max`. The bare-metal check asserts its presets by itself.
+`thumb2_crc` and `riscv_zbc,riscv_v` in QEMU `-cpu max` (`riscv_zbc` alone with Clang 18, which builds no `riscv_v`
+in an rv64gc build). The bare-metal check asserts its presets by itself.
 QEMU reports Zbc in `riscv_hwprobe` from 9.0 on, so the RISC-V jobs take QEMU 10.2 (Ubuntu 26.04's statically linked
 `qemu-user`, pinned by sha256 in `ci.yml`) instead of Ubuntu 24.04's 8.2, where `detect_isa()` misses `riscv_zbc`.
 
@@ -116,7 +117,7 @@ Software License, which allows use and redistribution). The full suite takes und
 CHECKSUM_EXPECTED_ISA=x86_avxvnni CHECKSUM_REQUIRED_ISA=x86_avxvnni sde64 -adl -- build/native-gcc/tests/unit_tests/Debug/checksum_ut
 ```
 
-The `cross-riscv64` and `cross-riscv64-clang` jobs run the RVV, detection and dispatch tests again at `-cpu max,vlen=256` and `vlen=512`.
+The `cross-riscv64` and `cross-riscv64-clang` (Clang 19) jobs run the RVV, detection and dispatch tests again at `-cpu max,vlen=256` and `vlen=512`.
 
 `detect_isa.matches_the_cpu` (`ut_isa.cpp`, Linux) requires exactly the built presets that the CPU runs: those that
 `CHECKSUM_EXPECTED_ISA` names (comma-separated preset names, each with the earlier rungs of its line), or else the

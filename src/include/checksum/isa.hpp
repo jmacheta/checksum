@@ -99,8 +99,11 @@ inline constexpr std::array built_presets{isa::thumb2, isa::thumb2_dsp, isa::thu
 inline constexpr std::array built_presets{isa::thumb2, isa::thumb2_dsp};
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2 && (defined(__thumb2__) || !defined(__clang__))
 inline constexpr std::array built_presets{isa::thumb2};
-#elif (defined(__GNUC__) || defined(__clang__)) && defined(__riscv) && __riscv_xlen == 64
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__riscv) && __riscv_xlen == 64 &&                                                         \
+    (!defined(__clang__) || __clang_major__ >= 19 || defined(__riscv_vector))
 inline constexpr std::array built_presets{isa::riscv_zbc, isa::riscv_v};
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__riscv) && __riscv_xlen == 64
+inline constexpr std::array built_presets{isa::riscv_zbc};
 #else
 inline constexpr std::array<isa, 0> built_presets{};
 #endif

@@ -35,8 +35,8 @@ in [performance.md](../performance.md) only.
   `__ARM_FEATURE_DSP`, `__riscv_zbc`, ...), or if the CPU or operating system reports them: CPUID on x86-64,
   `getauxval` and `riscv_hwprobe` on Linux, `IsProcessorFeaturePresent` on Windows, `elf_aux_info` on FreeBSD,
   `sysctlbyname` on Apple AArch64. Elsewhere (bare metal, other BSDs) only the macros count, so a Cortex-A9 build
-  with the `thumb2_crc` sources never runs them. Kernel headers without a Zbc key (before Linux 6.8) report no
-  `riscv_zbc` unless the flags have Zbc. The FreeBSD and Apple queries are untested in CI.
+  with the `thumb2_crc` sources never runs them. `riscv_hwprobe` is called with the kernel ABI's numbers, not the
+  toolchain's kernel headers, which before Linux 6.8 lack the Zbc key. The FreeBSD and Apple queries are untested in CI.
 - **Generic-only loops.** A loop that no preset changes is built once, in one source compiled for `generic`, and its
   functions take no preset: `crc_lut_none`, `crc_lut_nibble` and `crc_lut_byte` (`src/crc/lut_*.cpp`), XXH32 and XXH64
   (`src/xxhash/stripe_loop.cpp`), MurmurHash3 (`src/murmur3/block_loop.cpp`). Every static engine runs it, and its

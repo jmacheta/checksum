@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef> // IWYU pragma: keep
+#include <cstdint> // IWYU pragma: keep
 
 // MSVC and clang-cl query CPUID through <intrin.h>: __builtin_cpu_supports needs compiler-rt, which clang-cl does not link.
 #ifdef _MSC_VER
@@ -22,9 +23,7 @@
 #if defined(__linux__) && (defined(__aarch64__) || defined(__arm__) || defined(__riscv))
 #include <sys/auxv.h>
 #endif
-#if defined(__linux__) && defined(__riscv) && __has_include(<asm/hwprobe.h>)
-#include <asm/hwprobe.h>
-#include <sys/syscall.h>
+#if defined(__linux__) && defined(__riscv)
 #include <unistd.h>
 #endif
 #if defined(__FreeBSD__) && (defined(__aarch64__) || defined(__arm__))
@@ -148,13 +147,16 @@ bool runs(isa preset) noexcept {
   if(preset == isa::riscv_v) {
     return (getauxval(AT_HWCAP) & (1UL << ('V' - 'A'))) != 0;
   }
-  // Kernel headers before 6.8 have no Zbc key.
-#ifdef RISCV_HWPROBE_EXT_ZBC
-  riscv_hwprobe probe{.key = RISCV_HWPROBE_KEY_IMA_EXT_0, .value = 0};
-  return preset == isa::riscv_zbc && syscall(__NR_riscv_hwprobe, &probe, 1, 0, nullptr, 0) == 0 && (probe.value & RISCV_HWPROBE_EXT_ZBC) != 0;
-#else
-  return false;
-#endif
+  // The kernel ABI's riscv_hwprobe (Linux 6.4) and its Zbc bit (Linux 6.8), which toolchains with older kernel headers
+  // lack. An older kernel fails the call or leaves the bit clear.
+  constexpr long hwprobe_call = 258;
+  constexpr std::int64_t ima_ext_0_key = 4;
+  constexpr std::uint64_t zbc_bit = 1U << 7U;
+  struct {
+    std::int64_t key;
+    std::uint64_t value;
+  } probe{.key = ima_ext_0_key, .value = 0};
+  return preset == isa::riscv_zbc && syscall(hwprobe_call, &probe, 1, 0, nullptr, 0) == 0 && (probe.value & zbc_bit) != 0;
 #else
   static_cast<void>(preset);
   return false;

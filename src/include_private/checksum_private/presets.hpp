@@ -46,7 +46,10 @@
 #endif
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__riscv) && __riscv_xlen == 64
 #define CHECKSUM_TARGET_RISCV_ZBC "arch=+zbc"
+// Clang 18 accepts vector intrinsics only where the build has V, not in a target("arch=+v") function.
+#if !defined(__clang__) || __clang_major__ >= 19 || defined(__riscv_vector)
 #define CHECKSUM_TARGET_RISCV_V "arch=+v"
+#endif
 #elif defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64) && !defined(_M_ARM64EC)
 // MSVC compiles intrinsics without target options, so target_begin.hpp ignores these.
 #define CHECKSUM_TARGET_X86_PCLMUL ""
