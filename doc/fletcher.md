@@ -5,23 +5,32 @@ tables. Adler-32 and ZFS fletcher4 have their own guides: [adler32.md](adler32.m
 
 ## 1. Quick start
 
+The three ways to compute, the same in every guide: in a constant expression, with an instruction-set preset named in
+the program (section 5), and with the preset chosen for the running CPU (section 5.1). `data`, `header` and `payload`
+are spans or other ranges of bytes.
+
 ```cpp
 #include <checksum/fletcher.hpp>
 using namespace std::literals;
-
-// One call.
-std::uint32_t value = checksum::fletcher_compute<32>(std::span(buffer));
-
-// Incremental: a message may be split anywhere.
-constexpr checksum::fletcher_engine<16> fletcher16;
-auto state = fletcher16.update(fletcher16.initial(), header);
-state = fletcher16.update(state, payload);
-std::uint16_t frame_checksum = fletcher16.finalize(state);
 
 // Compile time.
 static_assert(checksum::fletcher_compute<16>("abcde"sv) == 0xC8F0);
 static_assert(checksum::fletcher_compute<32>("abcde"sv) == 0xF04FC729);
 static_assert(checksum::fletcher_compute<64>("abcde"sv) == 0xC8C6C527646362C6);
+
+// Explicit preset: AVX2 where this build has it (x86-64), isa::generic elsewhere.
+constexpr auto avx2 = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::x86_avx2 : checksum::isa::generic;
+if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the CPU, or know it
+  std::uint32_t value = checksum::fletcher_compute<32, avx2>(data);
+  constexpr checksum::fletcher_engine<32, avx2> fletcher32;
+  std::uint32_t frame_checksum = fletcher32.finalize(fletcher32.update(fletcher32.update(fletcher32.initial(), header), payload));
+}
+
+// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
+static checksum::fletcher_dispatch_engine<32> const fletcher32;
+checksum::isa chosen = fletcher32.preset();
+checksum::accumulator running{fletcher32};
+std::uint32_t frame_checksum = running.update(header).update(payload).value();
 ```
 
 `examples/fletcher` has complete programs: checksums at compile time, a file checksum computed in chunks, and a frame
@@ -50,7 +59,8 @@ which reads words little-endian.
 | `fletcher_engine<Width, Isa>` | The engine, an empty object. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the checksum (an unfinished block padded with zero bytes), `resume(checksum)` the state of a message with that checksum (section 4), `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. `value_type` is the checksum type. |
 | `fletcher_state<Width>` | `sum1`, `sum2` and `block_offset` (bytes of an unfinished block already in `sum1`). A plain value; the default is the empty message. `sum_type` is the type of one sum. |
 | `fletcher_compute<Width, Isa>(data)` | `fletcher_engine<Width, Isa>{}.compute(data)`. |
-| `fletcher_dispatch_engine<Width>` | The same members as `fletcher_engine<Width>`, with the preset chosen at run time (section 5.1). |
+| `fletcher_dispatch_engine<Width>` | The same members as `fletcher_engine<Width>`, made with `(cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
+| `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
 `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
 `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
@@ -91,18 +101,8 @@ Adler-32 uses the same byte kernels. Decisions per preset:
 
 ### 5.1 Choosing the preset at run time
 
-A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
-
-```cpp
-#include <checksum/fletcher.hpp>
-
-// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
-static checksum::fletcher_dispatch_engine<32> const fletcher32;
-
-std::uint32_t block_checksum(std::span<std::byte const> block) { return fletcher32.compute(block); }
-```
-
-`fletcher32.preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
+The dispatch engine of section 1 asks the CPU once, when it is made, and from then on runs the best variant this build
+has for it. `preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::fletcher_dispatch_engine<32>(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time
 where this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on
 top of the variant. Detection does not run in constant expressions: there, call `fletcher_compute<32>` or give the

@@ -5,23 +5,31 @@ The non-cryptographic hashes XXH32 and XXH64 with a seed, at compile time or at 
 
 ## 1. Quick start
 
+The three ways to compute, the same in every guide: in a constant expression, with an instruction-set preset named in
+the program (section 5), and with the preset chosen for the running CPU (section 5.1). `data`, `header` and `payload`
+are spans or other ranges of bytes.
+
 ```cpp
 #include <checksum/xxhash.hpp>
 using namespace std::literals;
 
-// One call, seed 0 or another seed.
-std::uint32_t small = checksum::xxhash_compute<32>(key);
-std::uint64_t hash = checksum::xxhash_compute<64>(key, 1234);
-
-// Incremental: the engine holds the seed, the state only the message; a message may be split anywhere.
-constexpr checksum::xxhash_engine<64> xxh64(1234);
-auto state = xxh64.update(xxh64.initial(), first_part);
-state = xxh64.update(state, second_part);
-std::uint64_t value = xxh64.finalize(state);
-
 // Compile time.
 static_assert(checksum::xxhash_compute<32>("abc"sv) == 0x32D153FF);
 static_assert(checksum::xxhash_compute<64>("abc"sv) == 0x44BC2CF5AD770999);
+
+// Explicit preset and seed: AVX2 where this build has it (x86-64), isa::generic elsewhere.
+constexpr auto avx2 = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::x86_avx2 : checksum::isa::generic;
+if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the CPU, or know it
+  std::uint64_t hash = checksum::xxhash_compute<64, avx2>(data, 1234);
+  constexpr checksum::xxhash_engine<64, avx2> xxh64(1234);  // the engine holds the seed, the state only the message
+  std::uint64_t value = xxh64.finalize(xxh64.update(xxh64.update(xxh64.initial(), header), payload));
+}
+
+// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
+static checksum::xxhash_dispatch_engine<64> const xxh64(1234);
+checksum::isa chosen = xxh64.preset();
+checksum::accumulator running{xxh64};
+std::uint64_t value = running.update(header).update(payload).value();
 ```
 
 `examples/xxhash` (message IDs at compile time, the XXH64 of a file, a cache keyed by a hash) has complete programs.
@@ -49,7 +57,8 @@ several ways.
 | `xxhash_engine<Width, Isa>` | The engine: `xxhash_engine<Width, Isa>{seed}`, seed 0 by default. `value_type`, the hash and the seed, is `std::uint32_t` for XXH32 and `std::uint64_t` for XXH64. |
 | `xxhash_state<Width>` | Four lanes, the byte count (`length`) and an unfinished stripe (`buffer`, 16 or 32 bytes). The default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
 | `xxhash_compute<Width, Isa>(data, seed = 0)` | `xxhash_engine<Width, Isa>{seed}.compute(data)`. |
-| `xxhash_dispatch_engine<Width>` | The same members as `xxhash_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`, with the preset chosen at run time. |
+| `xxhash_dispatch_engine<Width>` | The same members as `xxhash_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
+| `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
 ## 4. Behavior
 
@@ -68,18 +77,8 @@ explained in [Instruction-set presets](../README.md#instruction-set-presets).
 
 ### 5.1 Choosing the preset at run time
 
-A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
-
-```cpp
-#include <checksum/xxhash.hpp>
-
-// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
-static checksum::xxhash_dispatch_engine<64> const xxh64;
-
-std::uint64_t key_hash(std::string_view key) { return xxh64.compute(key); }
-```
-
-`xxh64.preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
+The dispatch engine of section 1 asks the CPU once, when it is made, and from then on runs the best variant this build
+has for it. `preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::xxhash_dispatch_engine<64>(0, checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `xxhash_compute<32>` / `xxhash_compute<64>` or

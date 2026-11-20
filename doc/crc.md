@@ -6,6 +6,10 @@ time. One header, `checksum/crc.hpp`, has the parameter model, the engines and t
 
 ## 1. Quick start
 
+The three ways to compute, the same in every guide: in a constant expression, with an instruction-set preset named in
+the program (section 5), and with the preset chosen for the running CPU (section 5.1). `data`, `header` and `payload`
+are spans or other ranges of bytes.
+
 ```cpp
 #include <checksum/crc.hpp>
 using namespace std::literals;
@@ -13,22 +17,19 @@ using namespace std::literals;
 // Compile time: the engine and its table are constants in read-only data.
 static_assert(checksum::crc_compute<checksum::crc32>("123456789"sv) == 0xCBF43926);
 
-// Run time, with a faster strategy.
-constexpr auto const &crc32 = checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_sliced>;
-std::uint32_t value = crc32.compute(std::span(buffer));
+// Explicit preset and strategy: AVX2 where this build has it (x86-64), isa::generic elsewhere.
+constexpr auto avx2 = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::x86_avx2 : checksum::isa::generic;
+if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the CPU, or know it
+  std::uint32_t crc = checksum::crc_compute<checksum::crc32, checksum::crc_lut_sliced, avx2>(data);
+  constexpr auto const &crc32 = checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_sliced, avx2>;
+  std::uint32_t frame_crc = crc32.finalize(crc32.update(crc32.update(crc32.initial(), header), payload));
+}
 
-// Incremental: a state value, or an accumulator that keeps it next to the engine.
-std::uint32_t frame_crc = crc32.finalize(crc32.update(crc32.update(crc32.initial(), header), payload));
+// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
+static auto const crc32 = checksum::crc_dispatch_engine<std::uint32_t, checksum::crc_lut_sliced>::create(checksum::crc32).value();
+checksum::isa chosen = crc32.preset();
 checksum::accumulator running{crc32};
-running.update(header).update(payload);
-
-// Continue from a stored CRC.
-std::uint32_t extended = crc32.finalize(crc32.update(crc32.resume(frame_crc), trailer));
-
-// Parameters known only at run time.
-auto engine = checksum::crc_polynomial::create(normal_form, width).and_then([](checksum::crc_polynomial polynomial) {
-  return checksum::crc_engine<std::uint64_t, checksum::crc_lut_byte>::create({.polynomial = polynomial});
-});
+std::uint32_t frame_crc = running.update(header).update(payload).value();
 ```
 
 `examples/crc` has complete programs: compile-time CRC, a file checksum, a custom CRC, run-time parameters, a MODBUS
@@ -94,6 +95,14 @@ than the CRC needs gives the same results. `Isa` picks the CPU kernel (section 5
 | `finalize(state)` | Turns a state into the CRC, a `value_type` (`Register`, like `state_type`). |
 | `resume(crc)` | The state of a message whose CRC is `crc`: `finalize` undone, so a stored CRC continues after any length. |
 | `compute(data)`, `compute(data, bit_length)` | `finalize(update(initial(), ...))`. |
+
+Parameters known only at run time make an engine with `create`:
+
+```cpp
+auto engine = checksum::crc_polynomial::create(normal_form, width).and_then([](checksum::crc_polynomial polynomial) {
+  return checksum::crc_engine<std::uint64_t, checksum::crc_lut_byte>::create({.polynomial = polynomial});
+});
+```
 
 `crc_engine_for<Parameters, Strategy = crc_lut_none, isa Isa = isa::generic>` is the engine built at compile time with
 the smallest register (`crc_register_for<width>`). It is a constant in read-only data, so the program contains no
@@ -166,6 +175,8 @@ custom strategy unless the strategy provides `template update<Register, Isa>(...
   std::uint16_t crc = checksum::crc_engine_for<checksum::crc15_can>.compute(bits, 83);  // std::array<std::byte, 11>
   ```
 
+- **Continuing from a stored CRC:** `crc32.update(crc32.resume(value), data)` continues a message whose CRC is `value`,
+  after any length.
 - **Preconditions:** a state passed to `update` or `finalize`, and a CRC passed to `resume`, must be below 2^width, and `bit_length` at most
   `8 * data.size()`. Both are checked with `assert`; with `NDEBUG` the state is masked and the length clamped, so a
   violation gives a wrong CRC but never undefined behavior. A failed `assert` during constant evaluation is a compile
@@ -196,18 +207,8 @@ Design and decisions per kernel: [design/acceleration.md](design/acceleration.md
 
 ### 5.1 Choosing the preset at run time
 
-A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
-
-```cpp
-#include <checksum/crc.hpp>
-
-// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
-static auto const crc32 = checksum::crc_dispatch_engine<std::uint32_t, checksum::crc_lut_sliced>::create(checksum::crc32).value();
-
-std::uint32_t frame_check(std::span<std::byte const> frame) { return crc32.compute(frame); }
-```
-
-`crc32.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+The dispatch engine of section 1 asks the CPU once, when it is made, and from then on runs the best variant this build
+has for it. `preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
 `crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(checksum::crc32, checksum::isa::x86_avx2)` runs that variant, falling back
 one rung at a time where this build lacks it; it does not check the CPU. A call costs one switch over the presets (one
 or two cycles) on top of the variant. Detection does not run in constant expressions: there, call

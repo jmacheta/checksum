@@ -51,14 +51,21 @@ using namespace std::literals;
 // Compile time.
 static_assert(checksum::crc_compute<checksum::crc32>("123456789"sv) == 0xCBF43926);
 
-// Run time, on any span or range of bytes; crc_lut_sliced trades 8 KiB of tables for speed.
+// Explicit preset and strategy, on any span or range of bytes: AVX2 where this build has it (x86-64), and
+// crc_lut_sliced, which trades 8 KiB of tables for speed.
 std::vector<std::byte> data = read_file("firmware.bin");
-std::uint32_t crc = checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_sliced>.compute(data);
+constexpr auto avx2 = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::x86_avx2 : checksum::isa::generic;
+if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the CPU, or know it
+  std::uint32_t crc = checksum::crc_compute<checksum::crc32, checksum::crc_lut_sliced, avx2>(data);
+}
 
-// The best CPU kernel for the running CPU, detected once at program start.
+// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
 static checksum::xxh3_dispatch_engine<64> const xxh3;
+checksum::isa chosen = xxh3.preset();
 std::uint64_t hash = xxh3.compute(data);
 ```
+
+The quick start of each guide shows these three ways for its algorithm.
 
 Every algorithm has the same shape:
 
@@ -119,7 +126,9 @@ supported yet: AVX-512, Arm Helium (MVE) and SVE2.
 - **A preset is a compile-time choice and a promise.** `internet_compute<checksum::isa::x86_avx2>(data)` runs the AVX2
   kernel; on a CPU without AVX2 that is undefined behavior (an illegal instruction). Compiler flags such as
   `-march=native` select no kernel, every preset gives the same result, and constant evaluation runs the portable code.
-- **What a build has:** `isa_available(preset)` is `constexpr`; naming a preset it rejects is a compile error. On
+- **What a build has:** `isa_available(preset)` is `constexpr`; naming a preset it rejects is a compile error, also in
+  an `if constexpr` branch outside a template. Portable code names its preset through a constant:
+  `constexpr auto avx2 = isa_available(isa::x86_avx2) ? isa::x86_avx2 : isa::generic;`. On
   32-bit Arm the presets need a Thumb-2 build; `thumb2_dsp` also needs the DSP extension, and `thumb2_neon` and
   `thumb2_crc` an A-profile ARMv7 or later build with a hardware floating-point ABI. Clang also needs a build in Thumb
   state (`-mthumb`) and, for `thumb2_neon` and `thumb2_crc`, the build's own NEON (`-mfpu=neon` or later). A Cortex-M0
@@ -147,7 +156,7 @@ std::uint32_t const value = crc->compute(data);
   `elf_aux_info` on FreeBSD and `sysctlbyname` on Apple AArch64. It also reports what the compiler flags already require
   of the CPU (`-mcpu=cortex-m4` gives `thumb2_dsp`, `-march=armv8-a+crc` gives `aarch64_crc`); without an
   operating-system feature query, bare metal included, that is all it reports. Make engines once, not per message: a
-  `static` or global engine detects the CPU during program start-up.
+  global engine detects the CPU during program start-up, a function-local `static` one on its first use.
 - An explicit `isa_set` chooses instead, e.g. from a configuration: `internet_dispatch_engine(checksum::isa::x86_avx2)`
   runs the AVX2 variant, falls back one rung at a time where the build lacks it, and runs `isa::generic` on another
   architecture. A preset converts to the set of its line up to it; sets combine with `|`. On RISC-V, where both lines

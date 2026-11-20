@@ -5,25 +5,31 @@ Adler-32, the checksum of the zlib format (RFC 1950), at compile time or at run 
 
 ## 1. Quick start
 
+The three ways to compute, the same in every guide: in a constant expression, with an instruction-set preset named in
+the program (section 5), and with the preset chosen for the running CPU (section 5.1). `data`, `header` and `payload`
+are spans or other ranges of bytes.
+
 ```cpp
 #include <checksum/adler32.hpp>
 using namespace std::literals;
 
-// One call.
-std::uint32_t value = checksum::adler32_compute(std::span(buffer));
-
-// Incremental: a message may be split anywhere.
-constexpr checksum::adler32_engine adler32;
-auto state = adler32.update(adler32.initial(), first_part);
-state = adler32.update(state, second_part);
-std::uint32_t stream_checksum = adler32.finalize(state);
-
-// Continue from a stored checksum.
-std::uint32_t extended = adler32.finalize(adler32.update(adler32.resume(stream_checksum), third_part));
-
 // Compile time.
 static_assert(checksum::adler32_compute("123456789"sv) == 0x091E01DE);
 static_assert(checksum::adler32_compute("Wikipedia"sv) == 0x11E60398);
+
+// Explicit preset: AVX2 where this build has it (x86-64), isa::generic elsewhere.
+constexpr auto avx2 = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::x86_avx2 : checksum::isa::generic;
+if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the CPU, or know it
+  std::uint32_t value = checksum::adler32_compute<avx2>(data);
+  constexpr checksum::adler32_engine<avx2> adler32;
+  std::uint32_t stream_checksum = adler32.finalize(adler32.update(adler32.update(adler32.initial(), header), payload));
+}
+
+// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
+static checksum::adler32_dispatch_engine const adler32;
+checksum::isa chosen = adler32.preset();
+checksum::accumulator running{adler32};
+std::uint32_t stream_checksum = running.update(header).update(payload).value();
 ```
 
 `examples/adler32` has complete programs: a checksum computed at compile time, checking the Adler-32 trailer of a
@@ -42,7 +48,8 @@ adds `sum1` after each byte. The checksum is `(sum2 << 16) | sum1`. It differs f
 | `adler32_engine<Isa>` | The engine, an empty object. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the checksum, `resume(checksum)` the state of a message with that checksum (section 4), `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. |
 | `adler32_state` | `sum1` and `sum2`. A plain value; the default (`sum1 = 1`, `sum2 = 0`) is the empty message. |
 | `adler32_compute<Isa>(data)` | `adler32_engine<Isa>{}.compute(data)`. |
-| `adler32_dispatch_engine` | The same members as `adler32_engine`, with the preset chosen at run time (section 5.1). |
+| `adler32_dispatch_engine` | The same members as `adler32_engine`, made with `(cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
+| `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
 `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
 `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
@@ -77,18 +84,8 @@ Decisions per preset: [design/acceleration.md](design/acceleration.md#fletcher-a
 
 ### 5.1 Choosing the preset at run time
 
-A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
-
-```cpp
-#include <checksum/adler32.hpp>
-
-// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
-static checksum::adler32_dispatch_engine const adler32;
-
-std::uint32_t stream_checksum(std::span<std::byte const> data) { return adler32.compute(data); }
-```
-
-`adler32.preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
+The dispatch engine of section 1 asks the CPU once, when it is made, and from then on runs the best variant this build
+has for it. `preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::adler32_dispatch_engine(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `adler32_compute` or give the engine an

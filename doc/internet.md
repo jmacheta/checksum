@@ -5,23 +5,30 @@ The Internet checksum of RFC 1071, used by IPv4, ICMP, IGMP, UDP and TCP, at com
 
 ## 1. Quick start
 
+The three ways to compute, the same in every guide: in a constant expression, with an instruction-set preset named in
+the program (section 5), and with the preset chosen for the running CPU (section 5.1). `data`, `header` and `payload`
+are spans or other ranges of bytes.
+
 ```cpp
 #include <checksum/internet.hpp>
-
-// One call. The result goes into the packet most significant byte first.
-std::uint16_t value = checksum::internet_compute(std::span(header));
-header[10] = std::byte(value >> 8);
-header[11] = std::byte(value & 0xFF);
-
-// Incremental, e.g. a UDP pseudo-header, the UDP header and the payload.
-constexpr checksum::internet_engine internet;
-auto state = internet.update(internet.initial(), pseudo_header);
-state = internet.update(state, udp_header);
-state = internet.update(state, payload);
-std::uint16_t udp_checksum = internet.finalize(state);
+using namespace std::literals;
 
 // Compile time.
-static_assert(checksum::internet_compute(std::string_view("123456789")) == 0xF62A);
+static_assert(checksum::internet_compute("123456789"sv) == 0xF62A);
+
+// Explicit preset: AVX2 where this build has it (x86-64), isa::generic elsewhere.
+constexpr auto avx2 = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::x86_avx2 : checksum::isa::generic;
+if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the CPU, or know it
+  std::uint16_t sum = checksum::internet_compute<avx2>(data);
+  constexpr checksum::internet_engine<avx2> internet;
+  std::uint16_t udp_checksum = internet.finalize(internet.update(internet.update(internet.initial(), header), payload));
+}
+
+// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
+static checksum::internet_dispatch_engine const internet;
+checksum::isa chosen = internet.preset();
+checksum::accumulator running{internet};
+std::uint16_t udp_checksum = running.update(header).update(payload).value();
 ```
 
 `examples/internet` has complete programs: an IPv4 header template filled in at compile time, an IPv4 header checksum
@@ -40,7 +47,8 @@ complement arithmetic (each carry out of bit 15 added back into bit 0), and the 
 | `internet_engine<Isa>` | The engine, an empty object. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the checksum `~state.sum`, `resume(checksum)` the state of a message with that checksum (section 4), `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. |
 | `internet_state` | The running sum (`sum`) and whether an odd number of bytes was folded (`odd`). A plain value; the default is the empty message. |
 | `internet_compute<Isa>(data)` | `internet_engine<Isa>{}.compute(data)`. |
-| `internet_dispatch_engine` | The same members as `internet_engine`, with the preset chosen at run time (section 5.1). |
+| `internet_dispatch_engine` | The same members as `internet_engine`, made with `(cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
+| `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
 `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
 `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
@@ -77,18 +85,8 @@ Decisions per preset: [design/acceleration.md](design/acceleration.md#internet-c
 
 ### 5.1 Choosing the preset at run time
 
-A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
-
-```cpp
-#include <checksum/internet.hpp>
-
-// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
-static checksum::internet_dispatch_engine const internet;
-
-std::uint16_t ip_checksum(std::span<std::byte const> header) { return internet.compute(header); }
-```
-
-`internet.preset()` names the chosen preset; on RISC-V only `riscv_v`, the preset with a kernel, counts, so a CPU with Zbc alone runs `generic`. An explicit preset chooses instead, e.g. from a configuration:
+The dispatch engine of section 1 asks the CPU once, when it is made, and from then on runs the best variant this build
+has for it. `preset()` names the chosen preset; on RISC-V only `riscv_v`, the preset with a kernel, counts, so a CPU with Zbc alone runs `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::internet_dispatch_engine(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `internet_compute` or give the engine an

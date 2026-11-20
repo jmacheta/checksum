@@ -5,24 +5,32 @@ The non-cryptographic hashes XXH3-64 and XXH3-128 with a seed, at compile time o
 
 ## 1. Quick start
 
+The three ways to compute, the same in every guide: in a constant expression, with an instruction-set preset named in
+the program (section 5), and with the preset chosen for the running CPU (section 5.1). `data`, `header` and `payload`
+are spans or other ranges of bytes.
+
 ```cpp
 #include <checksum/xxh3.hpp>
 using namespace std::literals;
-
-// One call, seed 0 or another seed.
-std::uint64_t hash = checksum::xxh3_compute<64>(key, 1234);
-checksum::hash128 wide = checksum::xxh3_compute<128>(key);
-
-// Incremental: the engine holds the seed, the state only the message; a message may be split anywhere.
-constexpr checksum::xxh3_engine<64> xxh3(1234);
-auto state = xxh3.update(xxh3.initial(), first_part);
-state = xxh3.update(state, second_part);
-std::uint64_t value = xxh3.finalize(state);
 
 // Compile time.
 static_assert(checksum::xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950);
 static_assert(checksum::xxh3_compute<128>("abc"sv) ==
               checksum::hash128{.low = 0x78AF5F94892F3950, .high = 0x06B05AB6733A6185});
+
+// Explicit preset and seed: AVX2 where this build has it (x86-64), isa::generic elsewhere.
+constexpr auto avx2 = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::x86_avx2 : checksum::isa::generic;
+if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the CPU, or know it
+  std::uint64_t hash = checksum::xxh3_compute<64, avx2>(data, 1234);
+  constexpr checksum::xxh3_engine<64, avx2> xxh3(1234);  // the engine holds the seed, the state only the message
+  std::uint64_t value = xxh3.finalize(xxh3.update(xxh3.update(xxh3.initial(), header), payload));
+}
+
+// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
+static checksum::xxh3_dispatch_engine<128> const xxh3(1234);
+checksum::isa chosen = xxh3.preset();
+checksum::accumulator running{xxh3};
+checksum::hash128 value = running.update(header).update(payload).value();
 ```
 
 `examples/xxh3` (asset IDs at compile time, a file read in chunks, deduplication by XXH3-128, a seeded hash table)
@@ -53,7 +61,8 @@ several ways.
 | `xxh3_state<Width>` | Eight accumulators, `length` and a 256-byte `buffer`: 328 bytes. The default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
 | `xxh3_compute<Width, Isa>(data, seed = 0)` | `xxh3_engine<Width, Isa>{seed}.compute(data)`. |
 | `hash128` | `low` and `high` 64 bits, as `XXH128_hash_t`; compares with `==`. MurmurHash3_x64_128 returns it too. |
-| `xxh3_dispatch_engine<Width>` | The same members as `xxh3_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`, with the preset chosen at run time. |
+| `xxh3_dispatch_engine<Width>` | The same members as `xxh3_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
+| `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
 The state keeps the last 1 to 256 bytes in its buffer, so it can hash the end of the message as the one-shot function
 does; messages up to 240 bytes are hashed from the buffer alone.
@@ -89,20 +98,8 @@ Decisions per preset: [design/acceleration.md](design/acceleration.md#xxh3).
 
 ### 5.1 Choosing the preset at run time
 
-A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
-
-```cpp
-#include <checksum/xxh3.hpp>
-
-// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
-static checksum::xxh3_dispatch_engine<64> const xxh3_64;
-static checksum::xxh3_dispatch_engine<128> const xxh3_128(42); // seed 42
-
-std::uint64_t key_hash(std::string_view key) { return xxh3_64.compute(key); }
-checksum::hash128 block_hash(std::span<std::byte const> data) { return xxh3_128.compute(data); }
-```
-
-`xxh3_64.preset()` names the chosen preset; on RISC-V only `riscv_v`, the preset with a kernel, counts, so a CPU with Zbc alone runs `generic`. An explicit preset chooses instead, e.g. from a configuration:
+The dispatch engine of section 1 asks the CPU once, when it is made, and from then on runs the best variant this build
+has for it. `preset()` names the chosen preset; on RISC-V only `riscv_v`, the preset with a kernel, counts, so a CPU with Zbc alone runs `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::xxh3_dispatch_engine<64>(0, checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `xxh3_compute<64>` / `xxh3_compute<128>` or

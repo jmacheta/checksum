@@ -5,22 +5,31 @@ fletcher4, the checksum of the ZFS file system, at compile time or at run time. 
 
 ## 1. Quick start
 
+The three ways to compute, the same in every guide: in a constant expression, with an instruction-set preset named in
+the program (section 5), and with the preset chosen for the running CPU (section 5.1). `data`, `header` and `payload`
+are spans or other ranges of bytes.
+
 ```cpp
 #include <checksum/fletcher4.hpp>
 using namespace std::literals;
 
-// One call.
-checksum::fletcher4_value value = checksum::fletcher4_compute(std::span(block));
-
-// Incremental: a message may be split anywhere.
-constexpr checksum::fletcher4_engine fletcher4;
-auto state = fletcher4.update(fletcher4.initial(), first_part);
-state = fletcher4.update(state, second_part);
-checksum::fletcher4_value checksum_words = fletcher4.finalize(state);
-
 // Compile time.
 static_assert(checksum::fletcher4_compute("abcdefgh"sv) ==
               checksum::fletcher4_value{0xCCCAC8C6, 0x1312E2B27, 0x195918D88, 0x1F9F4EFE9});
+
+// Explicit preset: AVX2 where this build has it (x86-64), isa::generic elsewhere.
+constexpr auto avx2 = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::x86_avx2 : checksum::isa::generic;
+if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the CPU, or know it
+  checksum::fletcher4_value value = checksum::fletcher4_compute<avx2>(data);
+  constexpr checksum::fletcher4_engine<avx2> fletcher4;
+  checksum::fletcher4_value block_checksum = fletcher4.finalize(fletcher4.update(fletcher4.update(fletcher4.initial(), header), payload));
+}
+
+// Run-time dispatch: the best preset of this build for the running CPU, chosen once.
+static checksum::fletcher4_dispatch_engine const fletcher4;
+checksum::isa chosen = fletcher4.preset();
+checksum::accumulator running{fletcher4};
+checksum::fletcher4_value block_checksum = running.update(header).update(payload).value();
 ```
 
 `examples/fletcher4` has complete programs: a checksum computed at compile time, a file read in chunks, and verifying
@@ -44,7 +53,8 @@ as `"abc\0"`.
 | `fletcher4_state` | `sum1` to `sum4` and `word_offset` (bytes of an unfinished word already in `sum1`). A plain value; the default is the empty message. |
 | `fletcher4_value` | The checksum: `std::array<std::uint64_t, 4>` holding `sum1` to `sum4`. |
 | `fletcher4_compute<Isa>(data)` | `fletcher4_engine<Isa>{}.compute(data)`. |
-| `fletcher4_dispatch_engine` | The same members as `fletcher4_engine`, with the preset chosen at run time. |
+| `fletcher4_dispatch_engine` | The same members as `fletcher4_engine`, made with `(cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
+| `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
 `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
 `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
@@ -80,18 +90,8 @@ Decisions per preset: [design/acceleration.md](design/acceleration.md#fletcher4)
 
 ### 5.1 Choosing the preset at run time
 
-A dispatch engine asks the CPU once, when it is made, and from then on runs the best variant this build has for it:
-
-```cpp
-#include <checksum/fletcher4.hpp>
-
-// Made once, during program start-up: detect_isa() queries the CPU or the operating system.
-static checksum::fletcher4_dispatch_engine const fletcher4;
-
-checksum::fletcher4_value block_checksum(std::span<std::byte const> block) { return fletcher4.compute(block); }
-```
-
-`fletcher4.preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
+The dispatch engine of section 1 asks the CPU once, when it is made, and from then on runs the best variant this build
+has for it. `preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::fletcher4_dispatch_engine(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `fletcher4_compute` or give the engine an
@@ -112,5 +112,5 @@ Measured figures: [performance.md](performance.md#fletcher4).
   message stay small. Use a CRC where errors must be detected reliably.
 - **Little-endian words only:** the equivalent of `fletcher_4_native` on a big-endian host needs its words swapped
   first.
-- **No continuation from a stored checksum:** unlike Adler-32 and Fletcher, continuing needs the state, since a
-  checksum does not record an unfinished word.
+- **Continuing from a stored checksum after whole words only:** a checksum does not record an unfinished word; keep the
+  state after a partial word.
