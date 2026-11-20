@@ -17,7 +17,7 @@ xxHash, MurmurHash3): `constexpr`, no allocation, CPU kernels selected by instru
 | `tests/unit_tests/` | Google Test, `ut_<algorithm>[_<area>].cpp` listed in its `CMakeLists.txt`, one executable `checksum_ut`; helpers in `include/` and `tests/include/` |
 | `tests/compile_fail/` | Negative compile tests |
 | `tests/bare_metal/` | `detect_isa()` and every dispatch engine on bare-metal Arm in QEMU system mode (`bare-cortex-*` presets) |
-| `tests/benchmarks/` | Google Benchmark, `checksum_bench_<algorithm>` (`checksum_bench` is CRC) |
+| `tests/benchmarks/` | Google Benchmark, `checksum_bench_<algorithm>` from `bench_<algorithm>.cpp` |
 | `examples/<algorithm>/` | Small complete programs, built but not run as tests |
 
 ## Commands

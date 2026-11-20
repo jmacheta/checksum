@@ -1,16 +1,16 @@
-// Throughput of the built-in strategies, crc_lut_sliced also for every preset with a CRC kernel, with zlib's crc32 and inline byte-table
-// loops as baselines.
+// Throughput of the built-in strategies, crc_lut_sliced also for every preset and through the dispatch engine, with zlib's
+// crc32 and inline byte-table loops as baselines. Benchmarks are named <strategy>[_<preset>]/<crc>/<size>.
 
 #include <checksum/crc.hpp>
 #include <checksum/crc_catalog.hpp>
 #include <checksum/isa.hpp>
 
+#include "bench_presets.hpp"
+
 #include <benchmark/benchmark.h>
-#include <isa_cpu.hpp>
 #include <test_data.hpp>
 #include <zlib.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -22,51 +22,37 @@ namespace {
 
 using namespace checksum;
 
-constexpr std::array<std::size_t, 6> sizes{16, 32, 64, 256, 4096, std::size_t{1} << 20};
+// Also 16 and 32 bytes, the short inputs of doc/performance.md.
+void sizes(benchmark::Benchmark *benchmark) { isa_bench::sizes(benchmark, {16, 32}); }
 
-std::vector<std::byte> const &input() {
-  static std::vector<std::byte> const data = random_bytes(sizes.back());
-  return data;
+// crc_engine_for<Parameters, Strategy, Isa>, or the dispatch engine of Parameters and Strategy if Dispatch.
+template <crc_parameters Parameters, class Strategy, isa Isa, bool Dispatch> decltype(auto) engine() {
+  if constexpr(Dispatch) {
+    using dispatch_engine = crc_dispatch_engine<crc_register_for<Parameters.polynomial.width()>, Strategy>;
+    return dispatch_engine(dispatch_engine::create(Parameters).value());
+  } else {
+    return (crc_engine_for<Parameters, Strategy, Isa>);
+  }
 }
 
-void run(benchmark::State &state, auto compute) {
-  std::span<std::byte const> data = std::span(input()).first(static_cast<std::size_t>(state.range(0)));
-  for(auto _ : state) {
-    benchmark::DoNotOptimize(data);
-    benchmark::DoNotOptimize(compute(data));
-  }
-  state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
-}
-
-template <crc_parameters Parameters, class Strategy, isa Isa> void register_engine(std::string const &strategy, char const *name) {
-  auto *bench = benchmark::RegisterBenchmark(strategy + "/" + name, [](benchmark::State &state) {
-    run(state, [](auto data) { return crc_engine_for<Parameters, Strategy, Isa>.compute(data); });
-  });
-  for(std::size_t const size : sizes) {
-    bench->Arg(static_cast<std::int64_t>(size));
-  }
+template <crc_parameters Parameters, class Strategy, isa Isa, bool Dispatch> void register_engine(std::string const &strategy, char const *name) {
+  sizes(benchmark::RegisterBenchmark(strategy + "/" + name, [](benchmark::State &state) {
+    auto const &crc = engine<Parameters, Strategy, Isa, Dispatch>();
+    isa_bench::measure(state, [&](std::span<std::byte const> data) { return crc.compute(data); });
+  }));
 }
 
 // Widths 8, 16, 32 and 64, each with reflected and unreflected input.
-template <class Strategy, isa Isa = isa::generic> void register_strategy(std::string const &strategy) {
-  register_engine<crc8_smbus, Strategy, Isa>(strategy, "crc8_smbus");
-  register_engine<crc8_maxim_dow, Strategy, Isa>(strategy, "crc8_maxim_dow");
-  register_engine<crc16_xmodem, Strategy, Isa>(strategy, "crc16_xmodem");
-  register_engine<crc16_kermit, Strategy, Isa>(strategy, "crc16_kermit");
-  register_engine<crc32_bzip2, Strategy, Isa>(strategy, "crc32_bzip2");
-  register_engine<crc32_iso_hdlc, Strategy, Isa>(strategy, "crc32_iso_hdlc");
-  register_engine<crc32c, Strategy, Isa>(strategy, "crc32c");
-  register_engine<crc64_ecma_182, Strategy, Isa>(strategy, "crc64_ecma_182");
-  register_engine<crc64_xz, Strategy, Isa>(strategy, "crc64_xz");
-}
-
-// crc_lut_sliced for a preset with a CRC kernel, named sliced_<preset>, where this build has it and the CPU runs it.
-template <isa Preset> void register_preset(char const *name) {
-  if constexpr(isa_available(Preset)) {
-    if(isa_cpu::cpu_runs_or_exit(Preset)) {
-      register_strategy<crc_lut_sliced, Preset>(std::string("sliced_") + name);
-    }
-  }
+template <class Strategy, isa Isa = isa::generic, bool Dispatch = false> void register_strategy(std::string const &strategy) {
+  register_engine<crc8_smbus, Strategy, Isa, Dispatch>(strategy, "crc8_smbus");
+  register_engine<crc8_maxim_dow, Strategy, Isa, Dispatch>(strategy, "crc8_maxim_dow");
+  register_engine<crc16_xmodem, Strategy, Isa, Dispatch>(strategy, "crc16_xmodem");
+  register_engine<crc16_kermit, Strategy, Isa, Dispatch>(strategy, "crc16_kermit");
+  register_engine<crc32_bzip2, Strategy, Isa, Dispatch>(strategy, "crc32_bzip2");
+  register_engine<crc32_iso_hdlc, Strategy, Isa, Dispatch>(strategy, "crc32_iso_hdlc");
+  register_engine<crc32c, Strategy, Isa, Dispatch>(strategy, "crc32c");
+  register_engine<crc64_ecma_182, Strategy, Isa, Dispatch>(strategy, "crc64_ecma_182");
+  register_engine<crc64_xz, Strategy, Isa, Dispatch>(strategy, "crc64_xz");
 }
 
 // zlib's crc32 computes CRC-32/ISO-HDLC.
@@ -97,7 +83,7 @@ std::uint16_t inline_xmodem(std::span<std::byte const> data) {
 } // namespace
 
 int main(int argc, char **argv) {
-  auto const data = std::span<std::byte const>(input());
+  std::vector<std::byte> const data = random_bytes(std::size_t{1} << 20);
   if(zlib_crc32(data) != crc_engine_for<crc32_iso_hdlc, crc_lut_braided>.compute(data) ||
      inline_iso_hdlc(data) != crc_engine_for<crc32_iso_hdlc, crc_lut_byte>.compute(data) ||
      inline_xmodem(data) != crc_engine_for<crc16_xmodem, crc_lut_byte>.compute(data)) {
@@ -108,28 +94,12 @@ int main(int argc, char **argv) {
   register_strategy<crc_lut_none>("none");
   register_strategy<crc_lut_nibble>("nibble");
   register_strategy<crc_lut_byte>("byte");
-  register_strategy<crc_lut_sliced>("sliced");
+  isa_bench::for_each_preset([]<isa Preset>(std::string const &suffix) { register_strategy<crc_lut_sliced, Preset>("sliced" + suffix); });
+  register_strategy<crc_lut_sliced, isa::generic, true>("sliced_dispatch");
   register_strategy<crc_lut_braided>("braided");
-  register_preset<isa::x86_pclmul>("x86_pclmul");
-  register_preset<isa::x86_vpclmul>("x86_vpclmul");
-  register_preset<isa::aarch64_crc>("aarch64_crc");
-  register_preset<isa::aarch64_pmull>("aarch64_pmull");
-  register_preset<isa::thumb2_crc>("thumb2_crc");
-  register_preset<isa::riscv_zbc>("riscv_zbc");
 
-  for(std::size_t const size : sizes) {
-    benchmark::RegisterBenchmark("zlib/crc32_iso_hdlc", [](benchmark::State &state) {
-      run(state, zlib_crc32);
-    })->Arg(static_cast<std::int64_t>(size));
-  }
-  benchmark::RegisterBenchmark("inline_byte/crc32_iso_hdlc", [](benchmark::State &state) { run(state, inline_iso_hdlc); })->Arg(16);
-  benchmark::RegisterBenchmark("inline_byte/crc16_xmodem", [](benchmark::State &state) { run(state, inline_xmodem); })->Arg(16);
-
-  benchmark::Initialize(&argc, argv);
-  if(benchmark::ReportUnrecognizedArguments(argc, argv)) {
-    return 1;
-  }
-  benchmark::RunSpecifiedBenchmarks();
-  benchmark::Shutdown();
-  return 0;
+  sizes(benchmark::RegisterBenchmark("zlib/crc32_iso_hdlc", [](benchmark::State &state) { isa_bench::measure(state, zlib_crc32); }));
+  benchmark::RegisterBenchmark("inline_byte/crc32_iso_hdlc", [](benchmark::State &state) { isa_bench::measure(state, inline_iso_hdlc); })->Arg(16);
+  benchmark::RegisterBenchmark("inline_byte/crc16_xmodem", [](benchmark::State &state) { isa_bench::measure(state, inline_xmodem); })->Arg(16);
+  return isa_bench::run(argc, argv);
 }

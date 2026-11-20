@@ -1,79 +1,34 @@
-// Throughput of XXH32, XXH64, XXH3-64 and XXH3-128 (these two for every preset), of seeded XXH3-64 and of XXH3-64 streamed in pieces.
+// Throughput of XXH32 and XXH64, for every preset and through the dispatch engine.
 
-#include <checksum/isa.hpp>
-#include <checksum/xxh3.hpp>
 #include <checksum/xxhash.hpp>
 
 #include "bench_presets.hpp"
 
 #include <benchmark/benchmark.h>
-#include <test_data.hpp>
 
 #include <cstddef>
-#include <cstdint>
 #include <span>
-#include <vector>
+#include <string>
 
 namespace {
 
-template <class Hash> void run(benchmark::State &state, Hash hash) {
-  std::vector<std::byte> const data = random_bytes(static_cast<std::size_t>(state.range(0)));
-  std::span<std::byte const> message = data;
-  for(auto _ : state) {
-    benchmark::DoNotOptimize(message);
-    benchmark::DoNotOptimize(hash(message));
-  }
-  state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
+template <class Engine> void xxhash(benchmark::State &state) {
+  Engine const engine{};
+  isa_bench::measure(state, [&](std::span<std::byte const> data) { return engine.compute(data); });
 }
 
-void xxhash32(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxhash_compute<32>(data); });
-}
+void sizes(benchmark::Benchmark *benchmark) { isa_bench::sizes(benchmark); }
 
-void xxhash64(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxhash_compute<64>(data); });
-}
-
-template <checksum::isa Isa> void xxh3_64(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxh3_compute<64, Isa>(data); });
-}
-
-void xxh3_64_seeded(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxh3_compute<64>(data, 0x9E3779B97F4A7C15U); });
-}
-
-// The message folded in pieces of Piece bytes.
-template <std::size_t Piece> void xxh3_64_streaming(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) {
-    constexpr checksum::xxh3_engine<64> engine;
-    checksum::xxh3_state<64> hash{};
-    for(; data.size() > Piece; data = data.subspan(Piece)) {
-      hash = engine.update(hash, data.first(Piece));
-    }
-    return engine.finalize(engine.update(hash, data));
-  });
-}
-
-template <checksum::isa Isa> void xxh3_128(benchmark::State &state) {
-  run(state, [](std::span<std::byte const> data) { return checksum::xxh3_compute<128, Isa>(data); });
-}
-
-// IPv4 and UDP headers, a cache line, a short packet, a full Ethernet payload, a page and a large buffer.
-BENCHMARK(xxhash32)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
-BENCHMARK(xxhash64)->Arg(20)->Arg(64)->Arg(256)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
-BENCHMARK(xxh3_64_seeded)->Arg(20)->Arg(200)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
-BENCHMARK(xxh3_64_streaming<64>)->Arg(std::int64_t{1} << 20);
-BENCHMARK(xxh3_64_streaming<4096>)->Arg(std::int64_t{1} << 20);
-
-// XXH3 also at 200 bytes (129-240 class) and 512 bytes (two buffers).
-void xxh3_sizes(benchmark::Benchmark *benchmark) {
-  benchmark->Arg(20)->Arg(64)->Arg(200)->Arg(256)->Arg(512)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
+template <unsigned Width> void register_width() {
+  isa_bench::register_presets(
+      "xxhash" + std::to_string(Width), [](auto preset) { return xxhash<checksum::xxhash_engine<Width, decltype(preset)::value>>; },
+      xxhash<checksum::xxhash_dispatch_engine<Width>>, sizes);
 }
 
 } // namespace
 
 int main(int argc, char **argv) {
-  isa_bench::register_presets("xxh3_64", [](auto preset) { return xxh3_64<decltype(preset)::value>; }, xxh3_sizes);
-  isa_bench::register_presets("xxh3_128", [](auto preset) { return xxh3_128<decltype(preset)::value>; }, xxh3_sizes);
+  register_width<32>();
+  register_width<64>();
   return isa_bench::run(argc, argv);
 }

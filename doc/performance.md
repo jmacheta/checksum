@@ -30,8 +30,10 @@ figures refer to.
   | DSP | `isa::thumb2_dsp` |
 
 To measure on your machine: `cmake --preset native-gcc-bench && cmake --build --preset native-gcc-bench`, then run
-`checksum_bench_<algorithm>` (`checksum_bench` for CRC) from `build/native-gcc-bench/`, filtered with
-`--benchmark_filter=`. Benchmarks are named `<name>` for `isa::generic` and `<name>_<preset>` for the others.
+`checksum_bench_<algorithm>` from `build/native-gcc-bench/tests/benchmarks/Release/`, filtered with
+`--benchmark_filter=`. Benchmarks are named `<name>/<size>` for `isa::generic`, `<name>_<preset>/<size>` for the other
+presets and `<name>_dispatch/<size>` for the dispatch engine; `<name>` is the algorithm with its width (`fletcher16`,
+`xxh3_64`), or the CRC strategy followed by the CRC (`sliced_x86_vpclmul/crc32c/4096`).
 
 ## Platforms
 

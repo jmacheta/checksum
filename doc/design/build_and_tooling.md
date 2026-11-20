@@ -31,7 +31,7 @@
 - Test presets inherit the hidden `test-common` (output on failure, 8 jobs, stop on failure) and test the Debug
   configuration only.
 - Only the `native-*-bench` presets turn on `CHECKSUM_BENCHMARKS`. They have configure and build presets only (Release,
-  `-O2 -march=native`, which affects only the portable loops); run the executables in `build/<preset>/` by hand.
+  `-O2 -march=native`, which affects only the portable loops); run the executables in `build/<preset>/tests/benchmarks/Release/` by hand.
 - Cross builds have no toolchain files: system, processor, compilers, QEMU emulator and flags are set in the presets.
   Emulator settings are never CMake options.
 - The Clang cross presets (`cross-arm-clang`, `cross-arm-crc32-clang`, `cross-riscv64-clang`) set the target triplet

@@ -46,7 +46,14 @@
             "configurePreset": "native-gcc-bench",
             "configuration": "Release",
             "targets": [
-                "checksum_bench"
+                "checksum_bench_crc",
+                "checksum_bench_internet",
+                "checksum_bench_fletcher",
+                "checksum_bench_fletcher4",
+                "checksum_bench_adler32",
+                "checksum_bench_xxhash",
+                "checksum_bench_xxh3",
+                "checksum_bench_murmur3"
             ]
         },
         {
@@ -55,7 +62,14 @@
             "configurePreset": "native-clang-bench",
             "configuration": "Release",
             "targets": [
-                "checksum_bench"
+                "checksum_bench_crc",
+                "checksum_bench_internet",
+                "checksum_bench_fletcher",
+                "checksum_bench_fletcher4",
+                "checksum_bench_adler32",
+                "checksum_bench_xxhash",
+                "checksum_bench_xxh3",
+                "checksum_bench_murmur3"
             ]
         }
     ]
