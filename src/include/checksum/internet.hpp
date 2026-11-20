@@ -72,7 +72,7 @@ public:
 template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr internet_engine<Isa>::value_type internet_compute(Range &&data) noexcept;
 
 /// An internet_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
-class internet_dispatch_engine : public detail::dispatch_engine<internet_engine<>> {
+class internet_dispatch_engine : public detail::dispatch_engine<internet_engine<>, isa::riscv_v> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit internet_dispatch_engine(isa_set cpu = detect_isa()) noexcept;

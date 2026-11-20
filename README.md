@@ -151,7 +151,8 @@ std::uint32_t const value = crc->compute(data);
 - An explicit `isa_set` chooses instead, e.g. from a configuration: `internet_dispatch_engine(checksum::isa::x86_avx2)`
   runs the AVX2 variant, falls back one rung at a time where the build lacks it, and runs `isa::generic` on another
   architecture. A preset converts to the set of its line up to it; sets combine with `|`. On RISC-V, where both lines
-  are built, CRC prefers `riscv_zbc` and the others `riscv_v`.
+  are built without target options, an engine picks only a preset with a kernel: `riscv_zbc` for CRC, `riscv_v` for the
+  Internet checksum and XXH3, `generic` for the others.
 - **constexpr:** `detect_isa()` runs only at run time, so a default-constructed engine cannot be `constexpr`. Give an
   explicit set: `constexpr checksum::internet_dispatch_engine engine(checksum::isa_set{})` (generic) or a preset. This
   is deliberate: a constant-evaluable detection would silently make every `static` engine generic.

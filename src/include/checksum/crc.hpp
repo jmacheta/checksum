@@ -272,6 +272,9 @@ public:
   [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept;
 
 private:
+  // Of the presets without target options (isa_detail::runs_own_loop()), only riscv_zbc and later ones have a CRC kernel.
+  static constexpr isa kernel_preset = isa::riscv_zbc;
+
   constexpr crc_dispatch_engine(crc_engine<Register, Strategy> const &static_engine, isa preset) noexcept;
 
   crc_engine<Register, Strategy> engine; // the table and parameters, shared by every preset
@@ -835,8 +838,7 @@ constexpr std::optional<crc_dispatch_engine<Register, Strategy>> crc_dispatch_en
   if constexpr(!crc_detail::takes_preset<Strategy, Register>()) {
     return crc_dispatch_engine(*engine, isa::generic);
   } else {
-    // RISC-V builds both riscv_zbc and riscv_v; only Zbc has a CRC kernel, and riscv_v runs the loop of generic.
-    return crc_dispatch_engine(*engine, isa_detail::select(cpu, isa::riscv_zbc));
+    return crc_dispatch_engine(*engine, isa_detail::select(cpu, kernel_preset));
   }
 }
 
@@ -853,7 +855,8 @@ template <crc_register Register, crc_strategy_for<Register> Strategy>
 constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
 crc_dispatch_engine<Register, Strategy>::update(state_type state, std::span<std::byte const> data) const noexcept {
   state = engine.checked_state(state);
-  return isa_detail::dispatch(chosen, [&]<isa Isa>() { return crc_detail::strategy_update<Strategy, Isa>(engine.table, state, data); });
+  return isa_detail::dispatch<kernel_preset>(chosen,
+                                             [&]<isa Isa>() { return crc_detail::strategy_update<Strategy, Isa>(engine.table, state, data); });
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy>
@@ -861,7 +864,7 @@ template <byte_range Range>
 constexpr typename crc_dispatch_engine<Register, Strategy>::state_type crc_dispatch_engine<Register, Strategy>::update(state_type state,
                                                                                                                        Range &&data) const noexcept {
   state = engine.checked_state(state);
-  return isa_detail::dispatch(chosen, [&]<isa Isa>() {
+  return isa_detail::dispatch<kernel_preset>(chosen, [&]<isa Isa>() {
     detail::for_each_chunk(std::forward<Range>(data),
                            [&](std::span<std::byte const> chunk) { state = crc_detail::strategy_update<Strategy, Isa>(engine.table, state, chunk); });
     return state;

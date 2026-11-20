@@ -89,7 +89,7 @@ template <unsigned Width, isa Isa = isa::generic, byte_range Range>
 /// An xxhash_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
 template <unsigned Width>
   requires(Width == 32 || Width == 64)
-class xxhash_dispatch_engine : public detail::dispatch_engine<xxhash_engine<Width>, typename xxhash_engine<Width>::value_type> {
+class xxhash_dispatch_engine : public detail::dispatch_engine<xxhash_engine<Width>, isa::generic, typename xxhash_engine<Width>::value_type> {
 public:
   /// The engine of the hash with seed and the best preset of this build in cpu: by default the presets the running CPU executes.
   constexpr explicit xxhash_dispatch_engine(typename xxhash_engine<Width>::value_type seed = 0, isa_set cpu = detect_isa()) noexcept;
@@ -371,7 +371,7 @@ constexpr xxhash_engine<Width, Isa>::value_type xxhash_compute(Range &&data, typ
 template <unsigned Width>
   requires(Width == 32 || Width == 64)
 constexpr xxhash_dispatch_engine<Width>::xxhash_dispatch_engine(typename xxhash_engine<Width>::value_type seed, isa_set cpu) noexcept
-    : detail::dispatch_engine<xxhash_engine<Width>, typename xxhash_engine<Width>::value_type>(cpu, seed) {}
+    : detail::dispatch_engine<xxhash_engine<Width>, isa::generic, typename xxhash_engine<Width>::value_type>(cpu, seed) {}
 
 } // namespace checksum
 

@@ -88,7 +88,7 @@ static checksum::internet_dispatch_engine const internet;
 std::uint16_t ip_checksum(std::span<std::byte const> header) { return internet.compute(header); }
 ```
 
-`internet.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`internet.preset()` names the chosen preset; on RISC-V only `riscv_v`, the preset with a kernel, counts, so a CPU with Zbc alone runs `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::internet_dispatch_engine(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `internet_compute` or give the engine an

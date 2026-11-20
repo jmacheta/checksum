@@ -509,6 +509,11 @@ template state_word<16> sum_loop<isa::CHECKSUM_PRESET>(state_word<16> state, std
 template state_word<32> sum_loop<isa::CHECKSUM_PRESET>(state_word<32> state, std::span<std::byte const> data) noexcept;
 template state_word<64> sum_loop<isa::CHECKSUM_PRESET>(state_word<64> state, std::span<std::byte const> data) noexcept;
 
+// Dispatch engines run this preset only where its loop differs from generic's: it has target options or a kernel.
+static_assert((fletcher_dispatch_engine<16>(isa::CHECKSUM_PRESET).preset() == isa::CHECKSUM_PRESET) ==
+              (!isa_detail::without_target_options(isa::CHECKSUM_PRESET) || block_kernel<8, isa::CHECKSUM_PRESET>::available ||
+               block_kernel<16, isa::CHECKSUM_PRESET>::available || block_kernel<32, isa::CHECKSUM_PRESET>::available));
+
 } // namespace checksum::fletcher_detail
 #endif
 
@@ -520,6 +525,10 @@ namespace checksum::adler32_detail {
 template <isa Isa> adler32_state sum_loop(adler32_state state, std::span<std::byte const> data) noexcept { return sum_any<Isa>(state, data); }
 
 template adler32_state sum_loop<isa::CHECKSUM_PRESET>(adler32_state state, std::span<std::byte const> data) noexcept;
+
+// Dispatch engines run this preset only where its loop differs from generic's: it has target options or a kernel.
+static_assert((adler32_dispatch_engine(isa::CHECKSUM_PRESET).preset() == isa::CHECKSUM_PRESET) ==
+              (!isa_detail::without_target_options(isa::CHECKSUM_PRESET) || fletcher_detail::block_kernel<8, isa::CHECKSUM_PRESET>::available));
 
 } // namespace checksum::adler32_detail
 #endif

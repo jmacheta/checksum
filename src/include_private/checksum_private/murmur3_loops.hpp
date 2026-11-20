@@ -97,6 +97,10 @@ template void block_loop<isa::CHECKSUM_PRESET, 32>(lane_array<32> &, std::span<s
 template void block_loop<isa::CHECKSUM_PRESET, 128>(lane_array<128> &, std::span<std::byte const>) noexcept;
 template std::uint32_t run_time_hash_32<isa::CHECKSUM_PRESET>(std::span<std::byte const>, std::uint32_t) noexcept;
 
+// Dispatch engines run this preset only where its loop differs from generic's: it has target options or a kernel.
+static_assert((murmur3_dispatch_engine<32>(0, isa::CHECKSUM_PRESET).preset() == isa::CHECKSUM_PRESET) ==
+              (!isa_detail::without_target_options(isa::CHECKSUM_PRESET)));
+
 } // namespace checksum::murmur3_detail
 
 #endif // CHECKSUM_PRIVATE_MURMUR3_LOOPS_HPP

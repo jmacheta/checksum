@@ -88,7 +88,7 @@ static checksum::adler32_dispatch_engine const adler32;
 std::uint32_t stream_checksum(std::span<std::byte const> data) { return adler32.compute(data); }
 ```
 
-`adler32.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`adler32.preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::adler32_dispatch_engine(checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `adler32_compute` or give the engine an

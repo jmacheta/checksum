@@ -81,7 +81,7 @@ static checksum::murmur3_dispatch_engine<32> const murmur3_32(42); // seed 42
 std::uint32_t key_hash(std::string_view key) { return murmur3_32.compute(key); }
 ```
 
-`murmur3_32.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`murmur3_32.preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::murmur3_dispatch_engine<32>(42, checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time
 where this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on
 top of the variant. Detection does not run in constant expressions: there, call `murmur3_compute<32>` or give the engine

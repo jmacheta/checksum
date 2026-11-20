@@ -24,7 +24,10 @@ in [performance.md](../performance.md) only.
   `thumb2_crc` adds `"crc"` to it. GCC adds NEON and ARMv8-A CRC to any A-profile hard-float build.
 - **Run-time choice on top.** `detect_isa()` (`src/isa/detect.cpp`, the only source with CPU queries) returns an
   `isa_set`, the default argument of every dispatch engine. An engine turns the set into one built preset with
-  `isa_detail::select()` and calls the templates through `isa_detail::dispatch()`. `detect_isa()` is deliberately not
+  `isa_detail::select()` and calls the templates through `isa_detail::dispatch()`. It picks only presets that run a loop of
+  their own (`isa_detail::runs_own_loop()`): on RISC-V, whose presets compile without target options, those from the
+  algorithm's `KernelPreset` on (`riscv_zbc` for CRC, `riscv_v` for Internet and XXH3, none for the others). A
+  `static_assert` at the end of each loops header checks this against the kernels. `detect_isa()` is deliberately not
   `constexpr`: a constant-evaluable detection would silently make `static` engines generic.
 - **Detection never guesses.** A built preset is reported if `isa_detail::compiler_guarantees()`
   (`checksum_private/compiled_isa.hpp`) finds its extensions in the build's predefined macros (`__ARM_FEATURE_CRC32`,
@@ -89,8 +92,9 @@ in [performance.md](../performance.md) only.
    preset without one. Add its macros to `compiler_guarantees()` in `checksum_private/compiled_isa.hpp`.
 7. Add its name to `tests/include/isa_cpu.hpp`; `ut_isa.cpp` fails without it. Preset tests and benchmarks pick it up
    from `built_presets`.
-8. If the preset opens a second line on one architecture (as `riscv_zbc` and `riscv_v`), dispatch engines whose kernels
-   are all on one line require its first preset in `isa_detail::select()`, as CRC requires `riscv_zbc`.
+8. If the preset compiles without target options (as `riscv_zbc` and `riscv_v`), add it to
+   `isa_detail::without_target_options()`, and give the dispatch engine of each algorithm with a kernel for it that preset
+   as `KernelPreset`; the `static_assert` at the end of each loops header fails otherwise.
 9. Update the preset tables of the user guides and the ladder in the README.
 
 ## CRC

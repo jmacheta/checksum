@@ -104,7 +104,7 @@ template <unsigned Width, isa Isa = isa::generic, byte_range Range>
 /// An xxh3_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
 template <unsigned Width>
   requires(Width == 64 || Width == 128)
-class xxh3_dispatch_engine : public detail::dispatch_engine<xxh3_engine<Width>, std::uint64_t> {
+class xxh3_dispatch_engine : public detail::dispatch_engine<xxh3_engine<Width>, isa::riscv_v, std::uint64_t> {
 public:
   /// The engine of the hash with seed and the best preset of this build in cpu: by default the presets the running CPU executes.
   constexpr explicit xxh3_dispatch_engine(std::uint64_t seed = 0, isa_set cpu = detect_isa()) noexcept;
@@ -705,7 +705,7 @@ constexpr xxh3_engine<Width, Isa>::value_type xxh3_compute(Range &&data, std::ui
 template <unsigned Width>
   requires(Width == 64 || Width == 128)
 constexpr xxh3_dispatch_engine<Width>::xxh3_dispatch_engine(std::uint64_t seed, isa_set cpu) noexcept
-    : detail::dispatch_engine<xxh3_engine<Width>, std::uint64_t>(cpu, seed) {}
+    : detail::dispatch_engine<xxh3_engine<Width>, isa::riscv_v, std::uint64_t>(cpu, seed) {}
 
 } // namespace checksum
 

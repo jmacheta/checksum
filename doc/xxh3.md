@@ -102,7 +102,7 @@ std::uint64_t key_hash(std::string_view key) { return xxh3_64.compute(key); }
 checksum::hash128 block_hash(std::span<std::byte const> data) { return xxh3_128.compute(data); }
 ```
 
-`xxh3_64.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`xxh3_64.preset()` names the chosen preset; on RISC-V only `riscv_v`, the preset with a kernel, counts, so a CPU with Zbc alone runs `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::xxh3_dispatch_engine<64>(0, checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `xxh3_compute<64>` / `xxh3_compute<128>` or

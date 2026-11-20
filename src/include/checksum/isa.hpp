@@ -104,16 +104,25 @@ inline constexpr std::array built_presets{isa::riscv_zbc, isa::riscv_v};
 inline constexpr std::array<isa, 0> built_presets{};
 #endif
 
-// The preset of cpu that a dispatch engine runs: the latest preset of this build in cpu, else generic. If this build has
-// required, only the presets that include it count: RISC-V builds the presets of two lines, and CRC has kernels only on one.
-constexpr isa select(isa_set cpu, isa required = isa::generic) noexcept;
+// Whether preset compiles the loops without target options, as the RISC-V presets do (GCC has no target pragma there): its
+// loop of an algorithm is generic's unless the algorithm has a kernel for it.
+constexpr bool without_target_options(isa preset) noexcept;
 
-// function.template operator()<preset>() for preset, a result of select() that a dispatch engine keeps: its switch over the
-// presets of this build, the only work of a call besides the variant itself.
-template <class Function> constexpr auto dispatch(isa preset, Function &&function);
+// Whether preset runs a loop of its own for an algorithm whose kernels for the presets without target options start at
+// kernel_preset, generic if it has none there.
+constexpr bool runs_own_loop(isa preset, isa kernel_preset) noexcept;
 
-// function.template operator()<preset>() if preset is built_presets[Index] or a later one, else for generic.
-template <std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function &function);
+// The preset of cpu that a dispatch engine of such an algorithm runs: the latest preset of this build in cpu that runs its own
+// loop, else generic.
+constexpr isa select(isa_set cpu, isa kernel_preset) noexcept;
+
+// function.template operator()<preset>() for preset, a result of select() with KernelPreset that a dispatch engine keeps: its
+// switch over the presets of this build that run their own loop, the only work of a call besides the variant itself.
+template <isa KernelPreset, class Function> constexpr auto dispatch(isa preset, Function &&function);
+
+// function.template operator()<preset>() if preset is one of built_presets[Index] and later ones that run their own loop, else for
+// generic.
+template <isa KernelPreset, std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function &function);
 
 } // namespace checksum::isa_detail
 
@@ -176,28 +185,38 @@ constexpr bool isa_set::contains(isa preset) const noexcept { return ((bits >> s
 
 namespace checksum::isa_detail {
 
-constexpr isa select(isa_set cpu, isa required) noexcept {
+constexpr bool without_target_options(isa preset) noexcept { return preset == isa::riscv_zbc || preset == isa::riscv_v; }
+
+constexpr bool runs_own_loop(isa preset, isa kernel_preset) noexcept {
+  return !without_target_options(preset) || (kernel_preset != isa::generic && includes(preset, kernel_preset));
+}
+
+constexpr isa select(isa_set cpu, isa kernel_preset) noexcept {
   for(auto it = built_presets.rbegin(); it != built_presets.rend(); ++it) {
-    if(cpu.contains(*it) && (!isa_available(required) || includes(*it, required))) {
+    if(cpu.contains(*it) && runs_own_loop(*it, kernel_preset)) {
       return *it;
     }
   }
   return isa::generic;
 }
 
-template <std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function &function) {
+template <isa KernelPreset, std::size_t Index, class Function> constexpr auto dispatch_from(isa preset, Function &function) {
   if constexpr(Index == built_presets.size()) {
     return function.template operator()<isa::generic>();
   } else {
     constexpr isa candidate = built_presets[Index];
-    if(preset == candidate) {
-      return function.template operator()<candidate>();
+    if constexpr(runs_own_loop(candidate, KernelPreset)) {
+      if(preset == candidate) {
+        return function.template operator()<candidate>();
+      }
     }
-    return dispatch_from<Index + 1>(preset, function);
+    return dispatch_from<KernelPreset, Index + 1>(preset, function);
   }
 }
 
-template <class Function> constexpr auto dispatch(isa preset, Function &&function) { return dispatch_from<0>(preset, function); }
+template <isa KernelPreset, class Function> constexpr auto dispatch(isa preset, Function &&function) {
+  return dispatch_from<KernelPreset, 0>(preset, function);
+}
 
 } // namespace checksum::isa_detail
 

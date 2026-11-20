@@ -199,6 +199,10 @@ template <isa Isa> fletcher4_value compute_loop(std::span<std::byte const> data)
 template fletcher4_state sum_loop<isa::CHECKSUM_PRESET>(fletcher4_state state, std::span<std::byte const> data) noexcept;
 template fletcher4_value compute_loop<isa::CHECKSUM_PRESET>(std::span<std::byte const> data) noexcept;
 
+// Dispatch engines run this preset only where its loop differs from generic's: it has target options or a kernel.
+static_assert((fletcher4_dispatch_engine(isa::CHECKSUM_PRESET).preset() == isa::CHECKSUM_PRESET) ==
+              (!isa_detail::without_target_options(isa::CHECKSUM_PRESET) || lane_kernel<isa::CHECKSUM_PRESET>::available));
+
 } // namespace checksum::fletcher4_detail
 
 #endif // CHECKSUM_PRIVATE_FLETCHER4_LOOPS_HPP

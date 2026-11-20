@@ -91,7 +91,7 @@ template <unsigned Width, isa Isa = isa::generic, byte_range Range>
 /// A murmur3_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
 template <unsigned Width>
   requires(Width == 32 || Width == 128)
-class murmur3_dispatch_engine : public detail::dispatch_engine<murmur3_engine<Width>, std::uint32_t> {
+class murmur3_dispatch_engine : public detail::dispatch_engine<murmur3_engine<Width>, isa::generic, std::uint32_t> {
 public:
   /// The engine of the hash with seed and the best preset of this build in cpu: by default the presets the running CPU executes.
   constexpr explicit murmur3_dispatch_engine(std::uint32_t seed = 0, isa_set cpu = detect_isa()) noexcept;
@@ -376,7 +376,7 @@ constexpr murmur3_engine<Width, Isa>::value_type murmur3_compute(Range &&data, s
 template <unsigned Width>
   requires(Width == 32 || Width == 128)
 constexpr murmur3_dispatch_engine<Width>::murmur3_dispatch_engine(std::uint32_t seed, isa_set cpu) noexcept
-    : detail::dispatch_engine<murmur3_engine<Width>, std::uint32_t>(cpu, seed) {}
+    : detail::dispatch_engine<murmur3_engine<Width>, isa::generic, std::uint32_t>(cpu, seed) {}
 
 } // namespace checksum
 

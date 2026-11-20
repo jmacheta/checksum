@@ -256,6 +256,14 @@ Register run_braided(Register const *table, folding_constants const &folding, Re
 
 #include <checksum_private/target_end.hpp>
 
+namespace checksum::crc_detail {
+
+// Dispatch engines run this preset only where its loop differs from generic's: it has target options or a kernel.
+static_assert((crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(crc32c, isa::CHECKSUM_PRESET)->preset() == isa::CHECKSUM_PRESET) ==
+              (!isa_detail::without_target_options(isa::CHECKSUM_PRESET) || folding_kernel<isa::CHECKSUM_PRESET>::available));
+
+} // namespace checksum::crc_detail
+
 #if defined(CHECKSUM_CRC_SLICED_ENTRY)
 namespace checksum::crc_detail {
 

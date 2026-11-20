@@ -70,7 +70,7 @@ public:
 template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr adler32_engine<Isa>::value_type adler32_compute(Range &&data) noexcept;
 
 /// An adler32_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
-class adler32_dispatch_engine : public detail::dispatch_engine<adler32_engine<>> {
+class adler32_dispatch_engine : public detail::dispatch_engine<adler32_engine<>, isa::generic> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit adler32_dispatch_engine(isa_set cpu = detect_isa()) noexcept;

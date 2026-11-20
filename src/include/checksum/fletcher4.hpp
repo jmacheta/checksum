@@ -83,7 +83,7 @@ template <isa Isa = isa::generic, byte_range Range>
 [[nodiscard]] constexpr fletcher4_engine<Isa>::value_type fletcher4_compute(Range &&data) noexcept;
 
 /// A fletcher4_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
-class fletcher4_dispatch_engine : public detail::dispatch_engine<fletcher4_engine<>> {
+class fletcher4_dispatch_engine : public detail::dispatch_engine<fletcher4_engine<>, isa::generic> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit fletcher4_dispatch_engine(isa_set cpu = detect_isa()) noexcept;

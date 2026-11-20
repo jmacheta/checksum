@@ -36,16 +36,27 @@ static_assert(!isa_set{isa::x86_avx2}.contains(isa::x86_vpclmul) && !isa_set{isa
 static_assert(isa_set{isa::thumb2_crc}.contains(isa::thumb2_dsp) && !isa_set{isa::riscv_v}.contains(isa::riscv_zbc));
 static_assert((isa_set{isa::riscv_zbc} | isa::riscv_v).contains(isa::riscv_zbc) && (isa_set{isa::riscv_zbc} | isa::riscv_v).contains(isa::riscv_v));
 
-// select() takes the latest preset of this build in the set that includes the required one, if this build has that, and generic
-// otherwise: CRC on a RISC-V CPU with V but no Zbc runs generic.
-static_assert(isa_detail::select(isa_set{}) == isa::generic);
-static_assert(isa_detail::select(isa::x86_vpclmul) == (isa_available(isa::x86_vpclmul) ? isa::x86_vpclmul : isa::generic));
-static_assert(isa_detail::select(isa::aarch64_pmull) == (isa_available(isa::aarch64_pmull) ? isa::aarch64_pmull : isa::generic));
-static_assert(isa_detail::select(isa_set{isa::riscv_zbc} | isa::riscv_v) == (isa_available(isa::riscv_v) ? isa::riscv_v : isa::generic));
-static_assert(isa_detail::select(isa_set{isa::riscv_zbc} | isa::riscv_v, isa::riscv_zbc) ==
-              (isa_available(isa::riscv_zbc) ? isa::riscv_zbc : isa::generic));
-static_assert(isa_detail::select(isa::riscv_v, isa::riscv_zbc) == isa::generic);
-static_assert(isa_detail::select(isa::x86_vpclmul, isa::riscv_zbc) == isa_detail::select(isa::x86_vpclmul));
+// select() takes the latest preset of this build in the set that runs a loop of its own, else generic. The presets without
+// target options (RISC-V) run their own only from the algorithm's kernel preset on: riscv_zbc for CRC, riscv_v for Internet and
+// XXH3, none for the others.
+constexpr isa_set riscv_both = isa_set{isa::riscv_zbc} | isa::riscv_v;
+static_assert(isa_detail::select(isa_set{}, isa::generic) == isa::generic);
+static_assert(isa_detail::select(isa::x86_vpclmul, isa::generic) == (isa_available(isa::x86_vpclmul) ? isa::x86_vpclmul : isa::generic));
+static_assert(isa_detail::select(isa::aarch64_pmull, isa::generic) == (isa_available(isa::aarch64_pmull) ? isa::aarch64_pmull : isa::generic));
+static_assert(isa_detail::select(riscv_both, isa::riscv_v) == (isa_available(isa::riscv_v) ? isa::riscv_v : isa::generic));
+static_assert(isa_detail::select(riscv_both, isa::riscv_zbc) == (isa_available(isa::riscv_zbc) ? isa::riscv_zbc : isa::generic));
+static_assert(isa_detail::select(riscv_both, isa::generic) == isa::generic);
+static_assert(isa_detail::select(isa::riscv_v, isa::riscv_zbc) == isa::generic && isa_detail::select(isa::riscv_zbc, isa::riscv_v) == isa::generic);
+
+// The dispatch engines report the preset whose loop runs.
+static_assert(internet_dispatch_engine(riscv_both).preset() == isa_detail::select(riscv_both, isa::riscv_v));
+static_assert(xxh3_dispatch_engine<64>(0, riscv_both).preset() == isa_detail::select(riscv_both, isa::riscv_v));
+static_assert(internet_dispatch_engine(isa::riscv_zbc).preset() == isa::generic &&
+              xxh3_dispatch_engine<128>(0, isa::riscv_zbc).preset() == isa::generic);
+static_assert(adler32_dispatch_engine(riscv_both).preset() == isa::generic && fletcher_dispatch_engine<32>(riscv_both).preset() == isa::generic &&
+              fletcher4_dispatch_engine(riscv_both).preset() == isa::generic && xxhash_dispatch_engine<64>(0, riscv_both).preset() == isa::generic &&
+              murmur3_dispatch_engine<32>(0, riscv_both).preset() == isa::generic);
+static_assert(crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(crc32c, isa::riscv_v)->preset() == isa::generic);
 
 // Constant evaluation runs the portable code for any set.
 static_assert(internet_dispatch_engine(isa::x86_avx2).compute("123456789"sv) == internet_compute("123456789"sv));
@@ -102,12 +113,13 @@ void check_crcs(isa_set cpu, std::vector<std::byte> const &buffer) {
 }
 
 // Every member of a dispatch engine against the static engine of isa::generic, from a state other than the initial one.
+// kernel_preset is that of the algorithm (isa_detail::runs_own_loop()).
 template <class Generic, class Dispatch>
-void check_engine(Generic const &generic, Dispatch const &dispatch, isa_set cpu, std::vector<std::byte> const &buffer) {
+void check_engine(Generic const &generic, Dispatch const &dispatch, isa kernel_preset, isa_set cpu, std::vector<std::byte> const &buffer) {
   static_assert(std::same_as<typename Generic::state_type, typename Dispatch::state_type>);
   static_assert(std::same_as<typename Generic::value_type, typename Dispatch::value_type>);
   EXPECT_TRUE(cpu.contains(dispatch.preset()) && isa_available(dispatch.preset()));
-  EXPECT_EQ(dispatch.preset(), isa_detail::select(cpu));
+  EXPECT_EQ(dispatch.preset(), isa_detail::select(cpu, kernel_preset));
   EXPECT_EQ(dispatch.initial(), generic.initial());
   auto const start = generic.update(generic.initial(), at(buffer, 2, 37));
   for(std::size_t const size : sizes) {
@@ -129,31 +141,32 @@ void check_engine(Generic const &generic, Dispatch const &dispatch, isa_set cpu,
 
 // Every dispatch engine made for cpu against the generic template.
 void check_engines(isa_set cpu, std::vector<std::byte> const &buffer) {
-  check_engine(internet_engine{}, internet_dispatch_engine(cpu), cpu, buffer);
-  check_engine(adler32_engine{}, adler32_dispatch_engine(cpu), cpu, buffer);
-  check_engine(fletcher_engine<16>{}, fletcher_dispatch_engine<16>(cpu), cpu, buffer);
-  check_engine(fletcher_engine<32>{}, fletcher_dispatch_engine<32>(cpu), cpu, buffer);
-  check_engine(fletcher_engine<64>{}, fletcher_dispatch_engine<64>(cpu), cpu, buffer);
-  check_engine(fletcher4_engine{}, fletcher4_dispatch_engine(cpu), cpu, buffer);
-  check_engine(xxh3_engine<64>{5}, xxh3_dispatch_engine<64>(5, cpu), cpu, buffer);
-  check_engine(xxh3_engine<128>{}, xxh3_dispatch_engine<128>(0, cpu), cpu, buffer);
-  check_engine(xxhash_engine<32>{3}, xxhash_dispatch_engine<32>(3, cpu), cpu, buffer);
-  check_engine(xxhash_engine<64>{}, xxhash_dispatch_engine<64>(0, cpu), cpu, buffer);
-  check_engine(murmur3_engine<32>{9}, murmur3_dispatch_engine<32>(9, cpu), cpu, buffer);
-  check_engine(murmur3_engine<128>{2}, murmur3_dispatch_engine<128>(2, cpu), cpu, buffer);
+  check_engine(internet_engine{}, internet_dispatch_engine(cpu), isa::riscv_v, cpu, buffer);
+  check_engine(adler32_engine{}, adler32_dispatch_engine(cpu), isa::generic, cpu, buffer);
+  check_engine(fletcher_engine<16>{}, fletcher_dispatch_engine<16>(cpu), isa::generic, cpu, buffer);
+  check_engine(fletcher_engine<32>{}, fletcher_dispatch_engine<32>(cpu), isa::generic, cpu, buffer);
+  check_engine(fletcher_engine<64>{}, fletcher_dispatch_engine<64>(cpu), isa::generic, cpu, buffer);
+  check_engine(fletcher4_engine{}, fletcher4_dispatch_engine(cpu), isa::generic, cpu, buffer);
+  check_engine(xxh3_engine<64>{5}, xxh3_dispatch_engine<64>(5, cpu), isa::riscv_v, cpu, buffer);
+  check_engine(xxh3_engine<128>{}, xxh3_dispatch_engine<128>(0, cpu), isa::riscv_v, cpu, buffer);
+  check_engine(xxhash_engine<32>{3}, xxhash_dispatch_engine<32>(3, cpu), isa::generic, cpu, buffer);
+  check_engine(xxhash_engine<64>{}, xxhash_dispatch_engine<64>(0, cpu), isa::generic, cpu, buffer);
+  check_engine(murmur3_engine<32>{9}, murmur3_dispatch_engine<32>(9, cpu), isa::generic, cpu, buffer);
+  check_engine(murmur3_engine<128>{2}, murmur3_dispatch_engine<128>(2, cpu), isa::generic, cpu, buffer);
 }
 
 // Default-constructed engines detect the CPU themselves.
 TEST(dispatch, default_engines_choose_the_detected_preset) {
-  isa const best = isa_detail::select(detect_isa());
-  EXPECT_EQ(internet_dispatch_engine{}.preset(), best);
+  isa const best = isa_detail::select(detect_isa(), isa::generic);
+  isa const best_rvv = isa_detail::select(detect_isa(), isa::riscv_v);
+  EXPECT_EQ(internet_dispatch_engine{}.preset(), best_rvv);
   EXPECT_EQ(adler32_dispatch_engine{}.preset(), best);
   EXPECT_EQ(fletcher_dispatch_engine<16>{}.preset(), best);
   EXPECT_EQ(fletcher_dispatch_engine<32>{}.preset(), best);
   EXPECT_EQ(fletcher_dispatch_engine<64>{}.preset(), best);
   EXPECT_EQ(fletcher4_dispatch_engine{}.preset(), best);
-  EXPECT_EQ(xxh3_dispatch_engine<64>{}.preset(), best);
-  EXPECT_EQ(xxh3_dispatch_engine<128>{}.preset(), best);
+  EXPECT_EQ(xxh3_dispatch_engine<64>{}.preset(), best_rvv);
+  EXPECT_EQ(xxh3_dispatch_engine<128>{}.preset(), best_rvv);
   EXPECT_EQ(xxhash_dispatch_engine<32>{}.preset(), best);
   EXPECT_EQ(xxhash_dispatch_engine<64>{}.preset(), best);
   EXPECT_EQ(murmur3_dispatch_engine<32>{}.preset(), best);
@@ -178,7 +191,7 @@ TEST(dispatch, presets_of_other_architectures_run_generic) {
   auto const buffer = random_bytes(70'008, 12);
   for(isa const preset : {isa::x86_avxvnni, isa::aarch64_pmull, isa::thumb2_crc, isa::riscv_v}) {
     if(!isa_available(preset)) {
-      EXPECT_EQ(isa_detail::select(preset), isa::generic);
+      EXPECT_EQ(isa_detail::select(preset, preset), isa::generic);
       EXPECT_EQ((crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(crc32_iso_hdlc, preset)->preset()), isa::generic);
     }
   }
@@ -191,7 +204,7 @@ TYPED_TEST_SUITE(dispatch_presets, isa_test::presets, isa_test::preset_name);
 
 TYPED_TEST(dispatch_presets, explicit_preset_matches_generic) {
   constexpr isa preset = TypeParam::value;
-  EXPECT_EQ(isa_detail::select(preset), preset);
+  EXPECT_EQ(isa_detail::select(preset, preset), preset);
   auto const buffer = random_bytes(70'008, 13);
   check_engines(preset, buffer);
   check_crcs(preset, buffer);

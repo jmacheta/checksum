@@ -66,6 +66,10 @@ template std::uint64_t stripe_loop<isa::CHECKSUM_PRESET, 64>(lane_array<64> &, s
 template std::uint32_t run_time_hash<isa::CHECKSUM_PRESET, 32>(std::span<std::byte const>, std::uint32_t) noexcept;
 template std::uint64_t run_time_hash<isa::CHECKSUM_PRESET, 64>(std::span<std::byte const>, std::uint64_t) noexcept;
 
+// Dispatch engines run this preset only where its loop differs from generic's: it has target options or a kernel.
+static_assert((xxhash_dispatch_engine<32>(0, isa::CHECKSUM_PRESET).preset() == isa::CHECKSUM_PRESET) ==
+              (!isa_detail::without_target_options(isa::CHECKSUM_PRESET)));
+
 } // namespace checksum::xxhash_detail
 
 #endif // CHECKSUM_PRIVATE_XXHASH_LOOPS_HPP

@@ -79,7 +79,7 @@ static checksum::xxhash_dispatch_engine<64> const xxh64;
 std::uint64_t key_hash(std::string_view key) { return xxh64.compute(key); }
 ```
 
-`xxh64.preset()` names the chosen preset. An explicit preset chooses instead, e.g. from a configuration:
+`xxh64.preset()` names the chosen preset; on RISC-V, where no preset has a kernel, it is `generic`. An explicit preset chooses instead, e.g. from a configuration:
 `checksum::xxhash_dispatch_engine<64>(0, checksum::isa::x86_avx2)` runs that variant, falling back one rung at a time where
 this build lacks it; it does not check the CPU. A call costs one switch over the presets (one or two cycles) on top of
 the variant. Detection does not run in constant expressions: there, call `xxhash_compute<32>` / `xxhash_compute<64>` or
