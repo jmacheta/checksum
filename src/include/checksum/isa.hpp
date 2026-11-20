@@ -62,7 +62,7 @@ public:
   friend constexpr bool operator==(isa_set, isa_set) noexcept = default;
 
 private:
-  constexpr explicit isa_set(std::uint32_t bits) noexcept;
+  constexpr explicit isa_set(std::uint32_t mask) noexcept;
 
   std::uint32_t bits = 1; // bit n for the preset of value n
 };
@@ -104,9 +104,9 @@ inline constexpr std::array built_presets{isa::riscv_zbc, isa::riscv_v};
 inline constexpr std::array<isa, 0> built_presets{};
 #endif
 
-// The preset of cpu that a dispatch engine runs: preferred (not generic) if this build has it and cpu contains it, else the
-// latest preset of this build in cpu, else generic. Only RISC-V builds presets of two lines, which preferred settles for CRC.
-constexpr isa select(isa_set cpu, isa preferred = isa::generic) noexcept;
+// The preset of cpu that a dispatch engine runs: the latest preset of this build in cpu, else generic. If this build has
+// required, only the presets that include it count: RISC-V builds the presets of two lines, and CRC has kernels only on one.
+constexpr isa select(isa_set cpu, isa required = isa::generic) noexcept;
 
 // function.template operator()<preset>() for preset, a result of select() that a dispatch engine keeps: its switch over the
 // presets of this build, the only work of a call besides the variant itself.
@@ -168,7 +168,7 @@ constexpr isa_set::isa_set(isa preset) noexcept : bits(0) {
   }
 }
 
-constexpr isa_set::isa_set(std::uint32_t bits) noexcept : bits(bits) {}
+constexpr isa_set::isa_set(std::uint32_t mask) noexcept : bits(mask) {}
 
 constexpr bool isa_set::contains(isa preset) const noexcept { return ((bits >> static_cast<unsigned>(preset)) & 1U) != 0; }
 
@@ -176,12 +176,9 @@ constexpr bool isa_set::contains(isa preset) const noexcept { return ((bits >> s
 
 namespace checksum::isa_detail {
 
-constexpr isa select(isa_set cpu, isa preferred) noexcept {
-  if(preferred != isa::generic && isa_available(preferred) && cpu.contains(preferred)) {
-    return preferred;
-  }
+constexpr isa select(isa_set cpu, isa required) noexcept {
   for(auto it = built_presets.rbegin(); it != built_presets.rend(); ++it) {
-    if(cpu.contains(*it)) {
+    if(cpu.contains(*it) && (!isa_available(required) || includes(*it, required))) {
       return *it;
     }
   }

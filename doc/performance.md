@@ -394,7 +394,7 @@ inline short paths of the header add to each caller.
 
 ## xxHash
 
-User guide: [xxhash.md](xxhash.md).
+User guides: [xxh3.md](xxh3.md), [xxhash.md](xxhash.md).
 
 ### x86-64
 

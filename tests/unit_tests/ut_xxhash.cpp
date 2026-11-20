@@ -52,7 +52,7 @@ template <unsigned Width> constexpr std::size_t prefix_mismatches(std::size_t si
 
 // The hash of data, folded in pieces of chunk_size bytes.
 template <unsigned Width>
-constexpr auto chunked(std::span<std::byte const> data, std::size_t chunk_size, typename xxhash_state<Width>::value_type seed) {
+constexpr auto chunked(std::span<std::byte const> data, std::size_t chunk_size, typename xxhash_engine<Width>::value_type seed) {
   return engine_checks::chunked(xxhash_engine<Width>(seed), data, chunk_size);
 }
 
@@ -152,6 +152,15 @@ TYPED_TEST(xxhash, byte_ranges) {
   EXPECT_EQ(xxhash_compute<width>(std::list<std::byte>(message.begin(), message.end()), set.seed), set.prefixes[300]);
 }
 
+// States of one message compare equal however it was split, though their buffers keep different stale bytes.
+TYPED_TEST(xxhash, equal_states_after_any_split) {
+  constexpr unsigned width = TypeParam::value;
+  static_assert(engine_checks::same_state_for_any_split(xxhash_engine<width>(7), std::span(message).first(70)));
+  for(std::size_t const size : {0UZ, 1UZ, 15UZ, 16UZ, 17UZ, 31UZ, 32UZ, 33UZ, 65UZ, 300UZ}) {
+    EXPECT_TRUE(engine_checks::same_state_for_any_split(xxhash_engine<width>(7), std::span(message).first(size))) << "size " << size;
+  }
+}
+
 // Every prefix up to past a few blocks computed at compile time, for every seed; longer prefixes exceed the constant-evaluation step limit
 // of Clang.
 TYPED_TEST(xxhash, constant_evaluation) {
@@ -186,7 +195,7 @@ TYPED_TEST(xxhash, long_message) {
 // Seeds of all ones wrap every lane's initial value; hashes from xxhash.h 0.8.4.
 TYPED_TEST(xxhash, edge_values) {
   constexpr unsigned width = TypeParam::value;
-  constexpr auto seed = static_cast<xxhash_state<width>::value_type>(~std::uint64_t{0});
+  constexpr auto seed = static_cast<xxhash_engine<width>::value_type>(~std::uint64_t{0});
   struct expected_hashes {
     std::size_t size;
     std::uint32_t xxh32;

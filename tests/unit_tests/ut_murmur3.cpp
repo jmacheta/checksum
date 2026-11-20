@@ -172,6 +172,15 @@ TYPED_TEST(murmur3, edge_values) {
   }
 }
 
+// States of one message compare equal however it was split, though their buffers keep different stale bytes.
+TYPED_TEST(murmur3, equal_states_after_any_split) {
+  constexpr unsigned width = TypeParam::value;
+  static_assert(engine_checks::same_state_for_any_split(murmur3_engine<width>(7), std::span(message).first(70)));
+  for(std::size_t const size : {0UZ, 1UZ, 3UZ, 4UZ, 5UZ, 15UZ, 16UZ, 17UZ, 33UZ, 300UZ}) {
+    EXPECT_TRUE(engine_checks::same_state_for_any_split(murmur3_engine<width>(7), std::span(message).first(size))) << "size " << size;
+  }
+}
+
 // Every prefix up to past a few blocks computed at compile time, for every seed; longer prefixes exceed the constant-evaluation step limit
 // of Clang.
 TYPED_TEST(murmur3, constant_evaluation) {

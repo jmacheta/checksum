@@ -46,7 +46,7 @@ template <isa Isa, class Lane> std::uint64_t column_total(x86_vector<Isa> low, x
 
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
-struct kernel<8, Isa> {
+struct block_kernel<8, Isa> {
   static constexpr bool available = true;
   static constexpr std::size_t block_size = x86_vector_size<Isa>;
   // A 32-bit lane of the previous sums gains at most 8 * 255 * j at block j.
@@ -61,7 +61,7 @@ struct kernel<8, Isa> {
 
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
-struct kernel<16, Isa> {
+struct block_kernel<16, Isa> {
   static constexpr bool available = true;
   static constexpr std::size_t block_size = x86_vector_size<Isa>;
   // A 32-bit lane of the previous sums gains at most 2 * 65535 * j at block j.
@@ -74,7 +74,7 @@ struct kernel<16, Isa> {
 
 template <isa Isa>
   requires(isa_detail::includes(Isa, isa::x86_avx2))
-struct kernel<32, Isa> {
+struct block_kernel<32, Isa> {
   static constexpr bool available = true;
   static constexpr std::size_t block_size = x86_vector_size<Isa>;
   // The 64-bit lanes have room for far more; 65536 values per chunk keep the weighted sum of the chunk within 64 bits.
@@ -198,7 +198,7 @@ template <isa Isa, class Lane> std::uint64_t column_total(x86_vector<Isa> low, x
 
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
-chunk_sums kernel<8, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
+chunk_sums block_kernel<8, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avxvnni)) {
     // vpdpbusd weights four blocks by 127, 126, ..., 0 with one instruction per block, and adding the byte sums once at the end
     // makes the weights 128 .. 1; so previous gains the sums only every four blocks. Four accumulators hide the latency of
@@ -267,7 +267,7 @@ chunk_sums kernel<8, Isa>::sum(std::byte const *data, std::size_t blocks) noexce
 // Column sums of the values, weighted at the end of the chunk; previous as for bytes.
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
-chunk_sums kernel<16, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
+chunk_sums block_kernel<16, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
   constexpr std::uint64_t values_per_block = block_size / 2;
   x86_vector<Isa> sum{};
   x86_vector<Isa> previous{};
@@ -289,7 +289,7 @@ chunk_sums kernel<16, Isa>::sum(std::byte const *data, std::size_t blocks) noexc
 
 template <isa Isa>
   requires(isa_detail::includes(Isa, isa::x86_avx2))
-chunk_sums kernel<32, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
+chunk_sums block_kernel<32, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
   constexpr std::uint64_t values_per_block = block_size / 4;
   x86_vector<Isa> sum{};
   x86_vector<Isa> previous{};

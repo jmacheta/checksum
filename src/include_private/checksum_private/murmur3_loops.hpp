@@ -57,7 +57,11 @@ template <isa Isa> lane_array<32> fold_blocks_by_four(lane_array<32> lanes, std:
 }
 
 template <isa Isa> lane_array<32> fold_blocks_32(lane_array<32> lanes, std::span<std::byte const> data) noexcept {
-  return target_detail::in_order_target<Isa> ? fold_blocks_by_four<Isa>(lanes, data) : fold_blocks<32>(lanes, data);
+  if constexpr(target_detail::in_order_target<Isa>) {
+    return fold_blocks_by_four<Isa>(lanes, data);
+  } else {
+    return fold_blocks<32>(lanes, data);
+  }
 }
 
 template <isa Isa, unsigned Width> void block_loop_any(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {

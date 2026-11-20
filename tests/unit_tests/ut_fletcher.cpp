@@ -176,7 +176,7 @@ constexpr auto constant_message = random_array<constant_message_size>();
 // Every prefix computed at compile time, plus splits inside a block.
 TYPED_TEST(fletcher, constant_evaluation) {
   constexpr unsigned width = TypeParam::value;
-  using value_type = fletcher_state<width>::value_type;
+  using value_type = fletcher_engine<width>::value_type;
   static constexpr auto prefixes = [] {
     std::array<value_type, constant_message_size + 1> result{};
     for(std::size_t size = 0; size <= constant_message_size; ++size) {
@@ -212,7 +212,7 @@ static_assert(continued(fletcher_engine<32>{}, fletcher_compute<32>("abcd"sv), "
 // block it does not: the checksum already counts the block as padded.
 TYPED_TEST(fletcher, resume_from_checksum) {
   constexpr unsigned width = TypeParam::value;
-  using value_type = fletcher_state<width>::value_type;
+  using value_type = fletcher_engine<width>::value_type;
   constexpr std::size_t block_size = width / 16;
   constexpr std::size_t constant_size = 64;
   static constexpr auto resumed = [] {

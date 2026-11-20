@@ -29,8 +29,6 @@ namespace checksum {
 template <unsigned Width>
   requires(Width == 16 || Width == 32 || Width == 64)
 struct fletcher_state {
-  /// The checksum: std::uint16_t, std::uint32_t or std::uint64_t.
-  using value_type = std::conditional_t<Width == 16, std::uint16_t, std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>>;
   /// One sum: Width/2 bits.
   using sum_type = std::conditional_t<Width == 16, std::uint8_t, std::conditional_t<Width == 32, std::uint16_t, std::uint32_t>>;
 
@@ -50,56 +48,44 @@ class fletcher_engine {
                 "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
 
 public:
-  using state_type = fletcher_state<Width>;             ///< Running checksum.
-  using value_type = fletcher_state<Width>::value_type; ///< The checksum: std::uint16_t, std::uint32_t or std::uint64_t.
+  using state_type = fletcher_state<Width>; ///< Running checksum.
+  /// The checksum: std::uint16_t, std::uint32_t or std::uint64_t.
+  using value_type = std::conditional_t<Width == 16, std::uint16_t, std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>>;
 
   /// The preset whose loop the engine runs: Isa.
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
-  [[nodiscard]] static constexpr state_type initial() noexcept;
+  [[nodiscard]] constexpr state_type initial() const noexcept;
 
   /// Folds data into state; data may be split anywhere, including inside a block.
-  [[nodiscard]] static constexpr state_type update(state_type state, std::span<std::byte const> data) noexcept;
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data) const noexcept;
 
   /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-  template <byte_range Range> [[nodiscard]] static constexpr state_type update(state_type state, Range &&data) noexcept;
+  template <byte_range Range> [[nodiscard]] constexpr state_type update(state_type state, Range &&data) const noexcept;
 
   /// The checksum of state, an unfinished block padded with zero bytes.
-  [[nodiscard]] static constexpr value_type finalize(state_type const &state) noexcept;
+  [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
 
   /// State of a message whose checksum is checksum. That message must end on a whole block, since a checksum does not record an
   /// unfinished block.
-  [[nodiscard]] static constexpr state_type resume(value_type checksum) noexcept;
+  [[nodiscard]] constexpr state_type resume(value_type checksum) const noexcept;
 
   /// finalize(update(initial(), data)).
-  [[nodiscard]] static constexpr value_type compute(std::span<std::byte const> data) noexcept;
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
 
   /// finalize(update(initial(), data)) for a byte range.
-  template <byte_range Range> [[nodiscard]] static constexpr value_type compute(Range &&data) noexcept;
+  template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
 };
 
 /// fletcher_engine<Width, Isa>{}.compute(data).
 template <unsigned Width, isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr fletcher_state<Width>::value_type fletcher_compute(Range &&data) noexcept;
-
-} // namespace checksum
-
-namespace checksum::fletcher_detail {
-
-// fletcher_engine as a template of the preset alone, for detail::dispatch_engine.
-template <unsigned Width> struct engine_of {
-  template <isa Isa> using type = fletcher_engine<Width, Isa>;
-};
-
-} // namespace checksum::fletcher_detail
-
-namespace checksum {
+[[nodiscard]] constexpr fletcher_engine<Width, Isa>::value_type fletcher_compute(Range &&data) noexcept;
 
 /// A fletcher_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
 template <unsigned Width>
   requires(Width == 16 || Width == 32 || Width == 64)
-class fletcher_dispatch_engine : public detail::dispatch_engine<fletcher_detail::engine_of<Width>::template type> {
+class fletcher_dispatch_engine : public detail::dispatch_engine<fletcher_engine<Width>> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit fletcher_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
@@ -198,13 +184,13 @@ constexpr isa fletcher_engine<Width, Isa>::preset() noexcept {
 
 template <unsigned Width, isa Isa>
   requires(Width == 16 || Width == 32 || Width == 64)
-constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::initial() noexcept {
+constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::initial() const noexcept {
   return {};
 }
 
 template <unsigned Width, isa Isa>
   requires(Width == 16 || Width == 32 || Width == 64)
-constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
+constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_state<Width> state, std::span<std::byte const> data) const noexcept {
   if consteval {
     return fletcher_detail::update_bytes(state, data);
   } else {
@@ -215,14 +201,14 @@ constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_sta
 template <unsigned Width, isa Isa>
   requires(Width == 16 || Width == 32 || Width == 64)
 template <byte_range Range>
-constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_state<Width> state, Range &&data) noexcept {
+constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_state<Width> state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
 template <unsigned Width, isa Isa>
   requires(Width == 16 || Width == 32 || Width == 64)
-constexpr fletcher_state<Width>::value_type fletcher_engine<Width, Isa>::finalize(fletcher_state<Width> const &state) noexcept {
+constexpr fletcher_engine<Width, Isa>::value_type fletcher_engine<Width, Isa>::finalize(fletcher_state<Width> const &state) const noexcept {
   fletcher_detail::integer<Width> const sum1 = fletcher_detail::reduce_once<Width>(state.sum1);
   fletcher_detail::integer<Width> sum2 = fletcher_detail::reduce_once<Width>(state.sum2);
   // The zero padding adds nothing to sum1, but the padded block still adds sum1 to sum2.
@@ -234,32 +220,31 @@ constexpr fletcher_state<Width>::value_type fletcher_engine<Width, Isa>::finaliz
 
 template <unsigned Width, isa Isa>
   requires(Width == 16 || Width == 32 || Width == 64)
-constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::resume(value_type checksum) noexcept {
+constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::resume(value_type checksum) const noexcept {
   using sum_type = fletcher_state<Width>::sum_type;
   return {.sum1 = static_cast<sum_type>(checksum), .sum2 = static_cast<sum_type>(checksum >> (Width / 2))};
 }
 
 template <unsigned Width, isa Isa>
   requires(Width == 16 || Width == 32 || Width == 64)
-constexpr fletcher_state<Width>::value_type fletcher_engine<Width, Isa>::compute(std::span<std::byte const> data) noexcept {
+constexpr fletcher_engine<Width, Isa>::value_type fletcher_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
   return finalize(update(initial(), data));
 }
 
 template <unsigned Width, isa Isa>
   requires(Width == 16 || Width == 32 || Width == 64)
 template <byte_range Range>
-constexpr fletcher_state<Width>::value_type fletcher_engine<Width, Isa>::compute(Range &&data) noexcept {
+constexpr fletcher_engine<Width, Isa>::value_type fletcher_engine<Width, Isa>::compute(Range &&data) const noexcept {
   return finalize(update(initial(), std::forward<Range>(data)));
 }
 
-template <unsigned Width, isa Isa, byte_range Range> constexpr fletcher_state<Width>::value_type fletcher_compute(Range &&data) noexcept {
+template <unsigned Width, isa Isa, byte_range Range> constexpr fletcher_engine<Width, Isa>::value_type fletcher_compute(Range &&data) noexcept {
   return fletcher_engine<Width, Isa>{}.compute(std::forward<Range>(data));
 }
 
 template <unsigned Width>
   requires(Width == 16 || Width == 32 || Width == 64)
-constexpr fletcher_dispatch_engine<Width>::fletcher_dispatch_engine(isa_set cpu) noexcept
-    : detail::dispatch_engine<fletcher_detail::engine_of<Width>::template type>(cpu) {}
+constexpr fletcher_dispatch_engine<Width>::fletcher_dispatch_engine(isa_set cpu) noexcept : detail::dispatch_engine<fletcher_engine<Width>>(cpu) {}
 
 } // namespace checksum
 

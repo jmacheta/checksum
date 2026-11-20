@@ -36,13 +36,16 @@ static_assert(!isa_set{isa::x86_avx2}.contains(isa::x86_vpclmul) && !isa_set{isa
 static_assert(isa_set{isa::thumb2_crc}.contains(isa::thumb2_dsp) && !isa_set{isa::riscv_v}.contains(isa::riscv_zbc));
 static_assert((isa_set{isa::riscv_zbc} | isa::riscv_v).contains(isa::riscv_zbc) && (isa_set{isa::riscv_zbc} | isa::riscv_v).contains(isa::riscv_v));
 
-// select() takes the latest preset of this build in the set, the preferred one first, and generic otherwise.
+// select() takes the latest preset of this build in the set that includes the required one, if this build has that, and generic
+// otherwise: CRC on a RISC-V CPU with V but no Zbc runs generic.
 static_assert(isa_detail::select(isa_set{}) == isa::generic);
 static_assert(isa_detail::select(isa::x86_vpclmul) == (isa_available(isa::x86_vpclmul) ? isa::x86_vpclmul : isa::generic));
 static_assert(isa_detail::select(isa::aarch64_pmull) == (isa_available(isa::aarch64_pmull) ? isa::aarch64_pmull : isa::generic));
 static_assert(isa_detail::select(isa_set{isa::riscv_zbc} | isa::riscv_v) == (isa_available(isa::riscv_v) ? isa::riscv_v : isa::generic));
 static_assert(isa_detail::select(isa_set{isa::riscv_zbc} | isa::riscv_v, isa::riscv_zbc) ==
               (isa_available(isa::riscv_zbc) ? isa::riscv_zbc : isa::generic));
+static_assert(isa_detail::select(isa::riscv_v, isa::riscv_zbc) == isa::generic);
+static_assert(isa_detail::select(isa::x86_vpclmul, isa::riscv_zbc) == isa_detail::select(isa::x86_vpclmul));
 
 // Constant evaluation runs the portable code for any set.
 static_assert(internet_dispatch_engine(isa::x86_avx2).compute("123456789"sv) == internet_compute("123456789"sv));

@@ -22,7 +22,8 @@
 #include <span>
 #include <utility>
 
-// isa_detail::vector_array of __m128i or uint64x2_t drops their __may_alias__ attribute, which arrays of accumulators do not need.
+// As template arguments (std::conditional_t, isa_detail::vector_array), __m128i, __m256i and uint64x2_t drop their __may_alias__
+// attribute, which kernel vectors do not need.
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-attributes"

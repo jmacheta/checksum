@@ -71,7 +71,7 @@ CHECKSUM_XXH3_FOLD_TARGET void stripe_any(accumulator_array &accumulators, std::
       return;
     }
   }
-  fold_stripes<portable_kernel>(accumulators, data, block_stripe, secret, last_stripe);
+  fold_stripes(accumulators, data, block_stripe, secret, last_stripe);
 }
 
 #undef CHECKSUM_XXH3_FOLD_TARGET

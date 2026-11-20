@@ -29,9 +29,13 @@ template <checksum::engine Engine> constexpr Engine::value_type split_check_text
 template <checksum::resumable_engine Engine, class Range>
 constexpr Engine::value_type continued(Engine const &engine, typename Engine::value_type checksum, Range const &data);
 
-// Every split of data into three updates gives the one-pass result (and state, for resumable engines), and the first two parts
-// give the result of their prefix.
+// Every split of data into three updates gives the one-pass result and state, and the first two parts give the result of their
+// prefix.
 template <checksum::engine Engine> void check_split_anywhere(Engine const &engine, std::span<std::byte const> data);
+
+// Every split of data into two updates gives a state equal to the one-pass state, which differs from the state of data with its
+// last byte changed.
+template <checksum::engine Engine> constexpr bool same_state_for_any_split(Engine const &engine, std::span<std::byte const> data);
 
 // Every size up to largest (by default 2048 bytes: past every kernel threshold and the first blocks after it), from every start
 // offset modulo 8; buffer holds at least largest + 7 bytes.
@@ -79,11 +83,24 @@ template <checksum::engine Engine> void check_split_anywhere(Engine const &engin
       ASSERT_EQ(engine.finalize(state), engine.compute(data.first(second))) << "split at " << first << " and " << second;
       state = engine.update(state, data.subspan(second));
       ASSERT_EQ(engine.finalize(state), whole) << "split at " << first << " and " << second;
-      if constexpr(checksum::resumable_engine<Engine>) {
-        ASSERT_EQ(state, engine.update(engine.initial(), data)) << "split at " << first << " and " << second;
-      }
+      ASSERT_EQ(state, engine.update(engine.initial(), data)) << "split at " << first << " and " << second;
     }
   }
+}
+
+template <checksum::engine Engine> constexpr bool same_state_for_any_split(Engine const &engine, std::span<std::byte const> data) {
+  auto const whole = engine.update(engine.initial(), data);
+  for(std::size_t split = 0; split <= data.size(); ++split) {
+    if(engine.update(engine.update(engine.initial(), data.first(split)), data.subspan(split)) != whole) {
+      return false;
+    }
+  }
+  if(data.empty()) {
+    return true;
+  }
+  std::vector<std::byte> changed(data.begin(), data.end());
+  changed.back() ^= std::byte{1};
+  return engine.update(engine.initial(), changed) != whole;
 }
 
 template <checksum::engine Engine, checksum::engine Generic>

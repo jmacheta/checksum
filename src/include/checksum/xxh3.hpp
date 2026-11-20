@@ -21,12 +21,6 @@
 #include <intrin.h>
 #endif
 
-// A native 64 x 64-bit multiplication with a 128-bit result at run time: unsigned __int128, or MSVC's _umul128 (x64) and
-// __umulh (ARM64).
-#if defined(__SIZEOF_INT128__) || (defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64)))
-#define CHECKSUM_XXH3_NATIVE_MULTIPLY // NOLINT(cppcoreguidelines-macro-usage): tested by #if.
-#endif
-
 /**
  * @addtogroup checksum
  * @{
@@ -41,9 +35,6 @@ namespace checksum {
 template <unsigned Width>
   requires(Width == 64 || Width == 128)
 struct xxh3_state {
-  /// The hash type: std::uint64_t or hash128.
-  using value_type = std::conditional_t<Width == 64, std::uint64_t, hash128>;
-
   /// Lane accumulators of the folded input: all but the last 1 to 256 bytes, rounded down to a multiple of 256.
   std::array<std::uint64_t, 8> accumulators{0xC2B2AE3DU,         0x9E3779B185EBCA87U, 0xC2B2AE3D27D4EB4FU, 0x165667B19E3779F9U,
                                             0x85EBCA77C2B2AE63U, 0x85EBCA77U,         0x27D4EB2F165667C5U, 0x9E3779B1U};
@@ -51,7 +42,18 @@ struct xxh3_state {
   std::array<std::byte, 256>
       buffer{}; ///< The input after the folded part, from the start. While it holds fewer than 64 bytes, its end keeps the stripe before them.
 
-  friend constexpr bool operator==(xxh3_state const &, xxh3_state const &) noexcept = default;
+  /// Equal if they hash alike with every seed: the same length and input after the folded part, the same accumulators past 240
+  /// bytes, and past 256 bytes with fewer than 64 bytes buffered the same end of the stripe before them.
+  friend constexpr bool operator==(xxh3_state const &left, xxh3_state const &right) noexcept {
+    constexpr std::uint64_t midsize_max = 240;
+    constexpr std::size_t stripe_size = 64;
+    std::uint64_t const size = left.buffer.size();
+    auto const buffered = static_cast<std::size_t>(left.length == 0 ? 0 : ((left.length - 1) % size) + 1);
+    std::size_t const stripe_end = left.length > size && buffered < stripe_size ? stripe_size - buffered : 0;
+    return left.length == right.length && (left.length <= midsize_max || left.accumulators == right.accumulators) &&
+           std::ranges::equal(std::span(left.buffer).first(buffered), std::span(right.buffer).first(buffered)) &&
+           std::ranges::equal(std::span(left.buffer).last(stripe_end), std::span(right.buffer).last(stripe_end));
+  }
 };
 
 /// XXH3-64 (Width 64) or XXH3-128 (Width 128) with a seed, the default secret and the run-time stripe loop compiled for the
@@ -63,8 +65,8 @@ class xxh3_engine {
                 "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
 
 public:
-  using state_type = xxh3_state<Width>;             ///< Running hash.
-  using value_type = xxh3_state<Width>::value_type; ///< The hash: std::uint64_t or hash128.
+  using state_type = xxh3_state<Width>;                                       ///< Running hash.
+  using value_type = std::conditional_t<Width == 64, std::uint64_t, hash128>; ///< The hash.
 
   /// The engine of the hash with seed.
   constexpr explicit xxh3_engine(std::uint64_t seed = 0) noexcept;
@@ -92,30 +94,17 @@ public:
   template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
 
 private:
-  std::uint64_t seed;
+  std::uint64_t hash_seed;
 };
 
 /// xxh3_engine<Width, Isa>{seed}.compute(data).
 template <unsigned Width, isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed = 0) noexcept;
-
-} // namespace checksum
-
-namespace checksum::xxh3_detail {
-
-// xxh3_engine as a template of the preset alone, for detail::dispatch_engine.
-template <unsigned Width> struct engine_of {
-  template <isa Isa> using type = xxh3_engine<Width, Isa>;
-};
-
-} // namespace checksum::xxh3_detail
-
-namespace checksum {
+[[nodiscard]] constexpr xxh3_engine<Width, Isa>::value_type xxh3_compute(Range &&data, std::uint64_t seed = 0) noexcept;
 
 /// An xxh3_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
 template <unsigned Width>
   requires(Width == 64 || Width == 128)
-class xxh3_dispatch_engine : public detail::dispatch_engine<xxh3_detail::engine_of<Width>::template type, std::uint64_t> {
+class xxh3_dispatch_engine : public detail::dispatch_engine<xxh3_engine<Width>, std::uint64_t> {
 public:
   /// The engine of the hash with seed and the best preset of this build in cpu: by default the presets the running CPU executes.
   constexpr explicit xxh3_dispatch_engine(std::uint64_t seed = 0, isa_set cpu = detect_isa()) noexcept;
@@ -126,9 +115,9 @@ public:
 /// Implementation details; not part of the public API.
 namespace checksum::xxh3_detail {
 
-using xxhash_detail::load;
+using detail::load;
 
-template <unsigned Width> using value = xxh3_state<Width>::value_type;
+template <unsigned Width> using value = xxh3_engine<Width>::value_type;
 
 using accumulator_array = std::array<std::uint64_t, 8>;
 
@@ -174,10 +163,17 @@ inline constexpr std::array<std::uint64_t, secret_size / 8> default_secret_words
     0x3F349CE33F76FAA8U, 0x1D4F0BC7C7BBDCF9U, 0x3159B4CD4BE0518AU, 0x647378D9C97E9FC8U, 0xC3EBD33483ACC5EAU, 0xEB6313FAFFA081C5U,
     0x49DAF0B751DD0D17U, 0x9E68D429265516D3U, 0xFCA1477D58BE162BU, 0xCE31D07AD1B8F88FU, 0x280416958F3ACB45U, 0x7E404BBBCAFBD7AFU};
 
+// Whether the target multiplies two 64-bit values into 128 bits: unsigned __int128, or MSVC's _umul128 (x64) and __umulh (ARM64).
+#if defined(__SIZEOF_INT128__) || (defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64)))
+inline constexpr bool native_multiply = true;
+#else
+inline constexpr bool native_multiply = false;
+#endif
+
 // The full product of two 64-bit values, from four 32-bit products.
 constexpr hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noexcept;
 
-// multiply_portable(), or a native 128-bit multiplication at run time where the target has one.
+// multiply_portable(), or the native multiplication at run time where the target has one.
 constexpr hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept;
 
 // The exclusive or of the two Integer words at secret.
@@ -233,9 +229,8 @@ struct portable_kernel {
   static constexpr void scramble(lanes &values, std::byte const *secret) noexcept;
 };
 
-// Folds the whole stripes of data into the accumulators with Kernel, the first one block_stripe stripes into a block, scrambling them
-// after the last stripe of each block. Then mixes in the last stripe of the message at last_stripe, unless it is null.
-template <class Kernel>
+// Folds the whole stripes of data into the accumulators with portable_kernel, the first one block_stripe stripes into a block,
+// scrambling them after the last stripe of each block. Then mixes in the last stripe of the message at last_stripe, unless it is null.
 constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                             std::byte const *last_stripe) noexcept;
 
@@ -285,25 +280,23 @@ constexpr hash128 multiply_portable(std::uint64_t left, std::uint64_t right) noe
 }
 
 constexpr hash128 multiply(std::uint64_t left, std::uint64_t right) noexcept {
-#if defined(CHECKSUM_XXH3_NATIVE_MULTIPLY)
-  if !consteval {
+  if consteval {
+    return multiply_portable(left, right);
+  } else {
 #if defined(__SIZEOF_INT128__)
     __extension__ typedef unsigned __int128 wide_type; // NOLINT(modernize-use-using): __extension__ silences -Wpedantic only on a typedef.
     wide_type const product = static_cast<wide_type>(left) * right;
     return {.low = static_cast<std::uint64_t>(product), .high = static_cast<std::uint64_t>(product >> 64U)};
-#elif defined(_M_X64)
+#elif defined(_MSC_VER) && defined(_M_X64)
     std::uint64_t high = 0;
     std::uint64_t const low = _umul128(left, right, &high);
     return {.low = low, .high = high};
-#else
+#elif defined(_MSC_VER) && defined(_M_ARM64)
     return {.low = left * right, .high = __umulh(left, right)};
-#endif
-  } else {
-    return multiply_portable(left, right);
-  }
 #else
-  return multiply_portable(left, right);
+    return multiply_portable(left, right);
 #endif
+  }
 }
 
 template <class Integer> constexpr Integer secret_xor(std::byte const *secret) noexcept {
@@ -311,19 +304,19 @@ template <class Integer> constexpr Integer secret_xor(std::byte const *secret) n
 }
 
 constexpr std::uint64_t multiply_fold(std::uint64_t left, std::uint64_t right) noexcept {
-  auto const portable = [&] {
+  auto const folded = [&] {
     hash128 const product = multiply(left, right);
     return product.low ^ product.high;
   };
-#if !defined(CHECKSUM_XXH3_NATIVE_MULTIPLY)
-  if !consteval {
-    return run_time_multiply_fold(left, right);
+  if constexpr(native_multiply) {
+    return folded();
   } else {
-    return portable();
+    if !consteval {
+      return run_time_multiply_fold(left, right);
+    } else {
+      return folded();
+    }
   }
-#else
-  return portable();
-#endif
 }
 
 constexpr std::uint64_t avalanche(std::uint64_t hash) noexcept {
@@ -526,33 +519,32 @@ constexpr void portable_kernel::scramble(lanes &values, std::byte const *secret)
   }
 }
 
-template <class Kernel>
 constexpr void fold_stripes(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                             std::byte const *last_stripe) noexcept {
   // A local copy stays in registers: stores through the reference could alias data.
-  typename Kernel::lanes lanes = Kernel::load(accumulators);
+  portable_kernel::lanes lanes = portable_kernel::load(accumulators);
   std::byte const *position = data.data();
   std::byte const *key = secret.data() + (secret_consume_rate * block_stripe);
   std::byte const *const block_end = secret.data() + (secret_consume_rate * stripes_per_block);
   for(std::size_t count = data.size() / stripe_size; count != 0; --count, position += stripe_size) {
-    Kernel::accumulate(lanes, position, key);
+    portable_kernel::accumulate(lanes, position, key);
     key += secret_consume_rate;
     if(key == block_end) {
-      Kernel::scramble(lanes, secret.data() + secret_size - stripe_size);
+      portable_kernel::scramble(lanes, secret.data() + secret_size - stripe_size);
       key = secret.data();
     }
   }
   if(last_stripe != nullptr) {
-    Kernel::accumulate(lanes, last_stripe, secret.data() + secret_size - stripe_size - secret_last_accumulate_start);
+    portable_kernel::accumulate(lanes, last_stripe, secret.data() + secret_size - stripe_size - secret_last_accumulate_start);
   }
-  Kernel::store(accumulators, lanes);
+  portable_kernel::store(accumulators, lanes);
 }
 
 template <isa Isa>
 constexpr void fold(accumulator_array &accumulators, std::span<std::byte const> data, std::size_t block_stripe, secret_array const &secret,
                     std::byte const *last_stripe) noexcept {
   if consteval {
-    fold_stripes<portable_kernel>(accumulators, data, block_stripe, secret, last_stripe);
+    fold_stripes(accumulators, data, block_stripe, secret, last_stripe);
   } else {
     stripe_loop<Isa>(accumulators, data, block_stripe, secret, last_stripe);
   }
@@ -619,7 +611,7 @@ namespace checksum {
 
 template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128)
-constexpr xxh3_engine<Width, Isa>::xxh3_engine(std::uint64_t seed) noexcept : seed(seed) {}
+constexpr xxh3_engine<Width, Isa>::xxh3_engine(std::uint64_t seed) noexcept : hash_seed(seed) {}
 
 template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128)
@@ -636,7 +628,7 @@ constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::initial() const noexcept {
 template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128)
 constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::update(xxh3_state<Width> state, std::span<std::byte const> data) const noexcept {
-  xxh3_detail::update<Width, Isa>(state, seed, data);
+  xxh3_detail::update<Width, Isa>(state, hash_seed, data);
   return state;
 }
 
@@ -644,13 +636,14 @@ template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128)
 template <byte_range Range>
 constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::update(xxh3_state<Width> state, Range &&data) const noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { xxh3_detail::update<Width, Isa>(state, seed, chunk); });
+  detail::for_each_chunk(std::forward<Range>(data),
+                         [&](std::span<std::byte const> chunk) { xxh3_detail::update<Width, Isa>(state, hash_seed, chunk); });
   return state;
 }
 
 template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128)
-constexpr xxh3_state<Width>::value_type xxh3_engine<Width, Isa>::finalize(xxh3_state<Width> const &state) const noexcept {
+constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::finalize(xxh3_state<Width> const &state) const noexcept {
   using namespace xxh3_detail;
   if(state.length <= midsize_max) {
     return compute(std::span(state.buffer).first(static_cast<std::size_t>(state.length)));
@@ -666,7 +659,7 @@ constexpr xxh3_state<Width>::value_type xxh3_engine<Width, Isa>::finalize(xxh3_s
     auto const tail = std::ranges::copy(std::span(state.buffer).last(stripe_size - buffered), wrapped.begin()).out;
     std::ranges::copy(std::span(state.buffer).first(buffered), tail);
   }
-  return with_secret(seed, [&](secret_array const &secret) {
+  return with_secret(hash_seed, [&](secret_array const &secret) {
     accumulator_array accumulators = state.accumulators;
     fold<Isa>(accumulators, std::span(state.buffer).first(((buffered - 1) / stripe_size) * stripe_size), stripe_index(folded), secret, last_stripe);
     return finish_large<Width>(accumulators, state.length, secret);
@@ -675,23 +668,23 @@ constexpr xxh3_state<Width>::value_type xxh3_engine<Width, Isa>::finalize(xxh3_s
 
 template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128)
-constexpr xxh3_state<Width>::value_type xxh3_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
+constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
   if(data.size() <= xxh3_detail::small_max) {
-    return xxh3_detail::hash_small<Width>(data, seed);
+    return xxh3_detail::hash_small<Width>(data, hash_seed);
   }
   if(data.size() <= xxh3_detail::medium_max) {
-    return xxh3_detail::hash_medium<Width>(data, seed);
+    return xxh3_detail::hash_medium<Width>(data, hash_seed);
   }
   if(data.size() <= xxh3_detail::midsize_max) {
-    return xxh3_detail::hash_midsize<Width>(data, seed);
+    return xxh3_detail::hash_midsize<Width>(data, hash_seed);
   }
-  return xxh3_detail::hash_large<Width, Isa>(data, seed);
+  return xxh3_detail::hash_large<Width, Isa>(data, hash_seed);
 }
 
 template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128)
 template <byte_range Range>
-constexpr xxh3_state<Width>::value_type xxh3_engine<Width, Isa>::compute(Range &&data) const noexcept {
+constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::compute(Range &&data) const noexcept {
   // Contiguous ranges skip the buffer of the state.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
@@ -704,14 +697,15 @@ constexpr xxh3_state<Width>::value_type xxh3_engine<Width, Isa>::compute(Range &
   }
 }
 
-template <unsigned Width, isa Isa, byte_range Range> constexpr xxh3_state<Width>::value_type xxh3_compute(Range &&data, std::uint64_t seed) noexcept {
+template <unsigned Width, isa Isa, byte_range Range>
+constexpr xxh3_engine<Width, Isa>::value_type xxh3_compute(Range &&data, std::uint64_t seed) noexcept {
   return xxh3_engine<Width, Isa>{seed}.compute(std::forward<Range>(data));
 }
 
 template <unsigned Width>
   requires(Width == 64 || Width == 128)
 constexpr xxh3_dispatch_engine<Width>::xxh3_dispatch_engine(std::uint64_t seed, isa_set cpu) noexcept
-    : detail::dispatch_engine<xxh3_detail::engine_of<Width>::template type, std::uint64_t>(cpu, seed) {}
+    : detail::dispatch_engine<xxh3_engine<Width>, std::uint64_t>(cpu, seed) {}
 
 } // namespace checksum
 

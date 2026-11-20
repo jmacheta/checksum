@@ -302,6 +302,16 @@ TYPED_TEST(xxh3, byte_ranges) {
   EXPECT_EQ(xxh3_compute<width>(std::list<std::byte>(message.begin(), message.end()), set.seed), set.blocks.back());
 }
 
+// States of one message compare equal however it was split, though their buffers keep different stale bytes: past 256 bytes with
+// fewer than 64 buffered, the end of the buffer counts too.
+TYPED_TEST(xxh3, equal_states_after_any_split) {
+  constexpr unsigned width = TypeParam::value;
+  static_assert(engine_checks::same_state_for_any_split(xxh3_engine<width>(7), std::span(message).first(70)));
+  for(std::size_t const size : {0UZ, 1UZ, 16UZ, 17UZ, 240UZ, 241UZ, 256UZ, 257UZ, 300UZ, 320UZ, 321UZ, 512UZ, 513UZ, 600UZ}) {
+    EXPECT_TRUE(engine_checks::same_state_for_any_split(xxh3_engine<width>(7), std::span(message).first(size))) << "size " << size;
+  }
+}
+
 // Every prefix up to past a few blocks computed at compile time, for every seed; longer prefixes exceed the constant-evaluation step limit
 // of Clang.
 TYPED_TEST(xxh3, constant_evaluation) {

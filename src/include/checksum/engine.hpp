@@ -65,7 +65,7 @@ public:
   constexpr void reset() noexcept;
 
 private:
-  Engine const *engine; // never null
+  Engine const *bound_engine; // never null
   typename Engine::state_type running_state;
 };
 
@@ -77,12 +77,23 @@ namespace checksum::detail {
 // The Seed of engines without one.
 struct no_seed {};
 
-/// The members of every dispatch engine but CRC's: each runs Engine<preset()>, made with the seed of the dispatch engine if it has
-/// one. The preset is chosen once, when the dispatch engine is made.
-template <template <isa> class Engine, class Seed = no_seed> class dispatch_engine {
+// The static engine Engine with its preset, the last template argument, replaced by Isa.
+template <class Engine, isa Isa> struct rebind_preset;
+
+template <template <isa> class Engine, isa Old, isa Isa> struct rebind_preset<Engine<Old>, Isa> {
+  using type = Engine<Isa>;
+};
+
+template <template <unsigned, isa> class Engine, unsigned Width, isa Old, isa Isa> struct rebind_preset<Engine<Width, Old>, Isa> {
+  using type = Engine<Width, Isa>;
+};
+
+/// The members of every dispatch engine but CRC's: each runs the static engine Engine rebound to preset(), made with the seed of
+/// the dispatch engine if it has one. The preset is chosen once, when the dispatch engine is made.
+template <class Engine, class Seed = no_seed> class dispatch_engine {
 public:
-  using state_type = Engine<isa::generic>::state_type; ///< As the static engine's.
-  using value_type = Engine<isa::generic>::value_type; ///< As the static engine's.
+  using state_type = Engine::state_type; ///< As the static engine's.
+  using value_type = Engine::value_type; ///< As the static engine's.
 
   /// The preset whose loop the engine runs.
   [[nodiscard]] constexpr isa preset() const noexcept;
@@ -101,7 +112,7 @@ public:
 
   /// As the static engine's resume(), where it has one.
   [[nodiscard]] constexpr state_type resume(value_type checksum) const noexcept
-    requires requires(Engine<isa::generic> const &candidate, value_type value) { candidate.resume(value); };
+    requires requires(Engine const &candidate, value_type value) { candidate.resume(value); };
 
   /// As the static engine's compute(), with the chosen preset's loop.
   [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
@@ -113,9 +124,9 @@ protected:
   constexpr explicit dispatch_engine(isa_set cpu, Seed seed = {}) noexcept;
 
 private:
-  template <isa Isa> [[nodiscard]] constexpr Engine<Isa> engine() const noexcept;
+  template <isa Isa> [[nodiscard]] constexpr rebind_preset<Engine, Isa>::type engine() const noexcept;
 
-  Seed seed;
+  Seed hash_seed;
   isa chosen;
 };
 
@@ -126,15 +137,15 @@ private:
 namespace checksum {
 
 template <engine Engine>
-constexpr accumulator<Engine>::accumulator(Engine const &engine) noexcept : engine(&engine), running_state(engine.initial()) {}
+constexpr accumulator<Engine>::accumulator(Engine const &engine) noexcept : bound_engine(&engine), running_state(engine.initial()) {}
 
 template <engine Engine> constexpr accumulator<Engine> &accumulator<Engine>::update(std::span<std::byte const> data) noexcept {
-  running_state = engine->update(running_state, data);
+  running_state = bound_engine->update(running_state, data);
   return *this;
 }
 
 template <engine Engine> template <byte_range Range> constexpr accumulator<Engine> &accumulator<Engine>::update(Range &&data) noexcept {
-  running_state = engine->update(running_state, std::forward<Range>(data));
+  running_state = bound_engine->update(running_state, std::forward<Range>(data));
   return *this;
 }
 
@@ -144,68 +155,70 @@ constexpr accumulator<Engine> &accumulator<Engine>::update(std::span<std::byte c
     candidate.update(state, bits, std::size_t{});
   }
 {
-  running_state = engine->update(running_state, data, bit_length);
+  running_state = bound_engine->update(running_state, data, bit_length);
   return *this;
 }
 
-template <engine Engine> constexpr Engine::value_type accumulator<Engine>::value() const noexcept { return engine->finalize(running_state); }
+template <engine Engine> constexpr Engine::value_type accumulator<Engine>::value() const noexcept { return bound_engine->finalize(running_state); }
 
 template <engine Engine> constexpr Engine::state_type const &accumulator<Engine>::state() const noexcept { return running_state; }
 
-template <engine Engine> constexpr void accumulator<Engine>::reset() noexcept { running_state = engine->initial(); }
+template <engine Engine> constexpr void accumulator<Engine>::reset() noexcept { running_state = bound_engine->initial(); }
 
 } // namespace checksum
 
 namespace checksum::detail {
 
-template <template <isa> class Engine, class Seed>
-constexpr dispatch_engine<Engine, Seed>::dispatch_engine(isa_set cpu, Seed seed) noexcept : seed(seed), chosen(isa_detail::select(cpu)) {}
+template <class Engine, class Seed>
+constexpr dispatch_engine<Engine, Seed>::dispatch_engine(isa_set cpu, Seed seed) noexcept : hash_seed(seed), chosen(isa_detail::select(cpu)) {}
 
-template <template <isa> class Engine, class Seed> template <isa Isa> constexpr Engine<Isa> dispatch_engine<Engine, Seed>::engine() const noexcept {
+template <class Engine, class Seed>
+template <isa Isa>
+constexpr rebind_preset<Engine, Isa>::type dispatch_engine<Engine, Seed>::engine() const noexcept {
+  using preset_engine = rebind_preset<Engine, Isa>::type;
   if constexpr(std::same_as<Seed, no_seed>) {
-    return Engine<Isa>();
+    return preset_engine();
   } else {
-    return Engine<Isa>(seed);
+    return preset_engine(hash_seed);
   }
 }
 
-template <template <isa> class Engine, class Seed> constexpr isa dispatch_engine<Engine, Seed>::preset() const noexcept { return chosen; }
+template <class Engine, class Seed> constexpr isa dispatch_engine<Engine, Seed>::preset() const noexcept { return chosen; }
 
-template <template <isa> class Engine, class Seed>
-constexpr dispatch_engine<Engine, Seed>::state_type dispatch_engine<Engine, Seed>::initial() const noexcept {
+template <class Engine, class Seed> constexpr dispatch_engine<Engine, Seed>::state_type dispatch_engine<Engine, Seed>::initial() const noexcept {
   return engine<isa::generic>().initial();
 }
 
-template <template <isa> class Engine, class Seed>
+template <class Engine, class Seed>
 constexpr dispatch_engine<Engine, Seed>::state_type dispatch_engine<Engine, Seed>::update(state_type state,
                                                                                           std::span<std::byte const> data) const noexcept {
   return isa_detail::dispatch(chosen, [&]<isa Isa>() { return engine<Isa>().update(state, data); });
 }
 
-template <template <isa> class Engine, class Seed>
+template <class Engine, class Seed>
 template <byte_range Range>
 constexpr dispatch_engine<Engine, Seed>::state_type dispatch_engine<Engine, Seed>::update(state_type state, Range &&data) const noexcept {
   return isa_detail::dispatch(chosen, [&]<isa Isa>() { return engine<Isa>().update(state, std::forward<Range>(data)); });
 }
 
-template <template <isa> class Engine, class Seed>
+template <class Engine, class Seed>
 constexpr dispatch_engine<Engine, Seed>::value_type dispatch_engine<Engine, Seed>::finalize(state_type const &state) const noexcept {
   return isa_detail::dispatch(chosen, [&]<isa Isa>() { return engine<Isa>().finalize(state); });
 }
 
-template <template <isa> class Engine, class Seed>
+template <class Engine, class Seed>
 constexpr dispatch_engine<Engine, Seed>::state_type dispatch_engine<Engine, Seed>::resume(value_type checksum) const noexcept
-  requires requires(Engine<isa::generic> const &candidate, value_type value) { candidate.resume(value); }
+  requires requires(Engine const &candidate, value_type value) { candidate.resume(value); }
 {
   return engine<isa::generic>().resume(checksum);
 }
 
-template <template <isa> class Engine, class Seed>
+template <class Engine, class Seed>
 constexpr dispatch_engine<Engine, Seed>::value_type dispatch_engine<Engine, Seed>::compute(std::span<std::byte const> data) const noexcept {
   return isa_detail::dispatch(chosen, [&]<isa Isa>() { return engine<Isa>().compute(data); });
 }
 
-template <template <isa> class Engine, class Seed>
+template <class Engine, class Seed>
 template <byte_range Range>
 constexpr dispatch_engine<Engine, Seed>::value_type dispatch_engine<Engine, Seed>::compute(Range &&data) const noexcept {
   return isa_detail::dispatch(chosen, [&]<isa Isa>() { return engine<Isa>().compute(std::forward<Range>(data)); });

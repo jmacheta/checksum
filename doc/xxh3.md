@@ -49,8 +49,8 @@ several ways.
 
 | Name | What it does |
 | --- | --- |
-| `xxh3_engine<Width, Isa>` | The engine: `xxh3_engine<Width, Isa>{seed}`, seed 0 by default. The seed is a `std::uint64_t`. `finalize` runs the stripe loop of `Isa` for the remaining buffer. |
-| `xxh3_state<Width>` | Eight accumulators, `length` and a 256-byte `buffer`: 328 bytes. The default is the empty message. `value_type` is `std::uint64_t` or `hash128`. |
+| `xxh3_engine<Width, Isa>` | The engine: `xxh3_engine<Width, Isa>{seed}`, seed 0 by default. The seed is a `std::uint64_t`; `value_type`, the hash, is `std::uint64_t` or `hash128`. `finalize` runs the stripe loop of `Isa` for the remaining buffer. |
+| `xxh3_state<Width>` | Eight accumulators, `length` and a 256-byte `buffer`: 328 bytes. The default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
 | `xxh3_compute<Width, Isa>(data, seed = 0)` | `xxh3_engine<Width, Isa>{seed}.compute(data)`. |
 | `hash128` | `low` and `high` 64 bits, as `XXH128_hash_t`; compares with `==`. MurmurHash3_x64_128 returns it too. |
 | `xxh3_dispatch_engine<Width>` | The same members as `xxh3_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`, with the preset chosen at run time. |

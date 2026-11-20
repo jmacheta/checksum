@@ -50,8 +50,8 @@ template <class Register> unsigned top_byte(Register const *table, std::size_t i
 // in flight, and carrying next across iterations stops compilers re-associating it onto the critical path.
 template <bool Reflected, class Register>
 Register loop_byte_fast(Register const *table, Register remainder, std::span<std::byte const> data) noexcept {
-  // The split loop costs 30-40 % on in-order cores (Cortex-M4, 16- and 32-bit registers). ponytail: 32-bit targets
-  // stand in for in-order cores; 64-bit in-order ones (A53, A55) are unmeasured, select by core if they lose there.
+  // The split loop costs 30-40 % on in-order cores (Cortex-M4, 16- and 32-bit registers). 32-bit targets stand in for
+  // in-order cores; on 64-bit in-order ones (Cortex-A53, A55) it is unmeasured.
   if constexpr(target_detail::word32_target && sizeof(Register) > 1) {
     return loop_byte<Reflected>(table, remainder, data);
   } else {

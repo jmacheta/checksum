@@ -46,8 +46,8 @@ several ways.
 
 | Name | What it does |
 | --- | --- |
-| `xxhash_engine<Width, Isa>` | The engine: `xxhash_engine<Width, Isa>{seed}`, seed 0 by default. The seed is a `std::uint32_t` for XXH32 and a `std::uint64_t` for XXH64. |
-| `xxhash_state<Width>` | Four lanes, the byte count (`length`) and an unfinished stripe (`buffer`, 16 or 32 bytes). The default is the empty message. `value_type` is `std::uint32_t` or `std::uint64_t`. |
+| `xxhash_engine<Width, Isa>` | The engine: `xxhash_engine<Width, Isa>{seed}`, seed 0 by default. `value_type`, the hash and the seed, is `std::uint32_t` for XXH32 and `std::uint64_t` for XXH64. |
+| `xxhash_state<Width>` | Four lanes, the byte count (`length`) and an unfinished stripe (`buffer`, 16 or 32 bytes). The default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
 | `xxhash_compute<Width, Isa>(data, seed = 0)` | `xxhash_engine<Width, Isa>{seed}.compute(data)`. |
 | `xxhash_dispatch_engine<Width>` | The same members as `xxhash_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`, with the preset chosen at run time. |
 

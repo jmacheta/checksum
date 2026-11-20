@@ -1,7 +1,7 @@
 # MurmurHash3 user guide
 
 The non-cryptographic hashes MurmurHash3_x86_32 and MurmurHash3_x64_128 with a 32-bit seed, at compile time or at run
-time. One header, `checksum/murmur3.hpp`. For new designs prefer [xxHash](xxhash.md).
+time. One header, `checksum/murmur3.hpp`. For new designs prefer [XXH3](xxh3.md).
 
 ## 1. Quick start
 
@@ -39,7 +39,7 @@ MurmurHash3_x86_128 is not provided.
 | Name | What it does |
 | --- | --- |
 | `murmur3_engine<Width, Isa>` | The engine, `murmur3_engine<Width, Isa>{seed}` with a `std::uint32_t` seed, 0 by default. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the hash, `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. There is no `resume`: the hash does not determine the state. |
-| `murmur3_state<Width>` | The lanes, the byte count (`length`) and an unfinished block (`buffer`). A plain value; the default is the empty message. |
+| `murmur3_state<Width>` | The lanes, the byte count (`length`) and an unfinished block (`buffer`). A plain value; the default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
 | `murmur3_compute<Width, Isa>(data, seed = 0)` | `murmur3_engine<Width, Isa>{seed}.compute(data)`. |
 | `murmur3_dispatch_engine<Width>` | The same members as `murmur3_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`, with the preset chosen at run time. |
 

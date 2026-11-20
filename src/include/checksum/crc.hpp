@@ -34,7 +34,7 @@ struct crc_polynomial {
   std::uint64_t value; ///< Koopman notation.
 
   /// Makes a polynomial from Koopman notation, e.g. CRC-16/CCITT: 0x8810. Implicit, so `.polynomial = 0x8810` works.
-  constexpr explicit(false) crc_polynomial(std::uint64_t value) noexcept;
+  constexpr explicit(false) crc_polynomial(std::uint64_t koopman) noexcept;
 
   /// Makes a polynomial from its normal form (the x^width term omitted), e.g. CRC-16/CCITT: create(0x1021, 16).
   /// @return std::nullopt if width > 64, normal_form >= 2^width, or the x^0 term is missing
@@ -149,7 +149,7 @@ public:
 private:
   template <crc_register Other, crc_strategy_for<Other> OtherStrategy> friend class crc_dispatch_engine;
 
-  constexpr crc_engine(crc_parameters const &parameters, typename Strategy::template table_type<Register> const &table) noexcept;
+  constexpr crc_engine(crc_parameters const &parameters, typename Strategy::template table_type<Register> const &strategy_table) noexcept;
 
   // Asserts the state precondition and masks state to the width.
   [[nodiscard]] constexpr state_type checked_state(state_type state) const noexcept;
@@ -171,7 +171,7 @@ inline constexpr auto crc_engine_for = crc_engine<crc_register_for<Parameters.po
 
 /// crc_engine_for<Parameters, Strategy, Isa>.compute(data).
 template <crc_parameters Parameters, class Strategy = crc_lut_none, isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr crc_register_for<Parameters.polynomial.width()> crc_compute(Range &&data) noexcept;
+[[nodiscard]] constexpr crc_engine<crc_register_for<Parameters.polynomial.width()>, Strategy, Isa>::value_type crc_compute(Range &&data) noexcept;
 
 } // namespace checksum
 
@@ -272,7 +272,7 @@ public:
   [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept;
 
 private:
-  constexpr crc_dispatch_engine(crc_engine<Register, Strategy> const &engine, isa preset) noexcept;
+  constexpr crc_dispatch_engine(crc_engine<Register, Strategy> const &static_engine, isa preset) noexcept;
 
   crc_engine<Register, Strategy> engine; // the table and parameters, shared by every preset
   isa chosen;
@@ -440,7 +440,7 @@ constexpr std::uint64_t reflect(std::uint64_t value, unsigned width) noexcept {
 
 namespace checksum {
 
-constexpr crc_polynomial::crc_polynomial(std::uint64_t value) noexcept : value(value) {}
+constexpr crc_polynomial::crc_polynomial(std::uint64_t koopman) noexcept : value(koopman) {}
 
 constexpr std::optional<crc_polynomial> crc_polynomial::create(std::uint64_t normal_form, unsigned width) noexcept {
   if(width > 64 || std::cmp_greater(std::bit_width(normal_form), width) || (width != 0 && (normal_form & 1U) == 0)) {
@@ -686,7 +686,7 @@ constexpr Register crc_detail::lookup_strategy<Size>::update(table_type<Register
       if constexpr(crc_detail::has_folding<Size>) {
         return crc_detail::update_loop<Isa, decltype(reflected)::value>(table, remainder, data);
       } else {
-        // ponytail: no kernel, so every preset runs the build's loop; per-preset copies once a preset compiles it better.
+        // No kernel: every preset runs the one loop of the build.
         return crc_detail::update_loop<decltype(reflected)::value>(table, remainder, data);
       }
     }
@@ -715,8 +715,8 @@ template <class Strategy, class Register> consteval bool crc_detail::takes_prese
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
 constexpr crc_engine<Register, Strategy, Isa>::crc_engine(crc_parameters const &parameters,
-                                                          typename Strategy::template table_type<Register> const &table) noexcept
-    : table(table), form(crc_detail::make_register_form<Register>(parameters)),
+                                                          typename Strategy::template table_type<Register> const &strategy_table) noexcept
+    : table(strategy_table), form(crc_detail::make_register_form<Register>(parameters)),
       initial_state(static_cast<Register>(form.reflected ? crc_detail::reflect(parameters.initial_value, parameters.polynomial.width())
                                                          : parameters.initial_value)),
       final_xor(static_cast<Register>(parameters.final_xor)), mask(static_cast<Register>(~std::uint64_t{0} >> (64U - parameters.polynomial.width()))),
@@ -817,13 +817,13 @@ crc_engine<Register, Strategy, Isa>::compute(std::span<std::byte const> data, st
 }
 
 template <crc_parameters Parameters, class Strategy, isa Isa, byte_range Range>
-constexpr crc_register_for<Parameters.polynomial.width()> crc_compute(Range &&data) noexcept {
+constexpr crc_engine<crc_register_for<Parameters.polynomial.width()>, Strategy, Isa>::value_type crc_compute(Range &&data) noexcept {
   return crc_engine_for<Parameters, Strategy, Isa>.compute(std::forward<Range>(data));
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr crc_dispatch_engine<Register, Strategy>::crc_dispatch_engine(crc_engine<Register, Strategy> const &engine, isa preset) noexcept
-    : engine(engine), chosen(preset) {}
+constexpr crc_dispatch_engine<Register, Strategy>::crc_dispatch_engine(crc_engine<Register, Strategy> const &static_engine, isa preset) noexcept
+    : engine(static_engine), chosen(preset) {}
 
 template <crc_register Register, crc_strategy_for<Register> Strategy>
 constexpr std::optional<crc_dispatch_engine<Register, Strategy>> crc_dispatch_engine<Register, Strategy>::create(crc_parameters const &parameters,
@@ -835,7 +835,7 @@ constexpr std::optional<crc_dispatch_engine<Register, Strategy>> crc_dispatch_en
   if constexpr(!crc_detail::takes_preset<Strategy, Register>()) {
     return crc_dispatch_engine(*engine, isa::generic);
   } else {
-    // RISC-V builds both riscv_zbc and riscv_v; only Zbc has a CRC kernel.
+    // RISC-V builds both riscv_zbc and riscv_v; only Zbc has a CRC kernel, and riscv_v runs the loop of generic.
     return crc_dispatch_engine(*engine, isa_detail::select(cpu, isa::riscv_zbc));
   }
 }

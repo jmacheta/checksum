@@ -47,8 +47,8 @@ which reads words little-endian.
 
 | Name | What it does |
 | --- | --- |
-| `fletcher_engine<Width, Isa>` | The engine, an empty object. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the checksum (an unfinished block padded with zero bytes), `resume(checksum)` the state of a message with that checksum (section 4), `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. |
-| `fletcher_state<Width>` | `sum1`, `sum2` and `block_offset` (bytes of an unfinished block already in `sum1`). A plain value; the default is the empty message. `value_type` is the checksum type, `sum_type` the type of one sum. |
+| `fletcher_engine<Width, Isa>` | The engine, an empty object. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the checksum (an unfinished block padded with zero bytes), `resume(checksum)` the state of a message with that checksum (section 4), `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. `value_type` is the checksum type. |
+| `fletcher_state<Width>` | `sum1`, `sum2` and `block_offset` (bytes of an unfinished block already in `sum1`). A plain value; the default is the empty message. `sum_type` is the type of one sum. |
 | `fletcher_compute<Width, Isa>(data)` | `fletcher_engine<Width, Isa>{}.compute(data)`. |
 | `fletcher_dispatch_engine<Width>` | The same members as `fletcher_engine<Width>`, with the preset chosen at run time (section 5.1). |
 

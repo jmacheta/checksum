@@ -29,14 +29,17 @@ namespace checksum {
 template <unsigned Width>
   requires(Width == 32 || Width == 64)
 struct xxhash_state {
-  /// The hash, seed and lane type: std::uint32_t or std::uint64_t.
-  using value_type = std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>;
+  /// Lane accumulators: std::uint32_t or std::uint64_t, set from the seed when the first stripe is folded.
+  std::array<std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>, 4> lanes{};
+  std::uint64_t length = 0;                  ///< Bytes folded so far.
+  std::array<std::byte, Width / 2> buffer{}; ///< The unfinished stripe: its first length % buffer.size() bytes.
 
-  std::array<value_type, 4> lanes{};                      ///< Lane accumulators; set from the seed when the first stripe is folded.
-  std::uint64_t length = 0;                               ///< Bytes folded so far.
-  std::array<std::byte, 4 * sizeof(value_type)> buffer{}; ///< The unfinished stripe: its first length % buffer.size() bytes.
-
-  friend constexpr bool operator==(xxhash_state const &, xxhash_state const &) noexcept = default;
+  /// Equal if they hash alike with every seed: the same length and unfinished stripe, and the same lanes from the first stripe on.
+  friend constexpr bool operator==(xxhash_state const &left, xxhash_state const &right) noexcept {
+    auto const buffered = static_cast<std::size_t>(left.length % left.buffer.size());
+    return left.length == right.length && (left.length < left.buffer.size() || left.lanes == right.lanes) &&
+           std::ranges::equal(std::span(left.buffer).first(buffered), std::span(right.buffer).first(buffered));
+  }
 };
 
 /// XXH32 (Width 32) or XXH64 (Width 64) with a seed and the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp).
@@ -47,8 +50,8 @@ class xxhash_engine {
                 "This build has no variant for that instruction-set preset: isa_available() rejects it on this architecture and compiler.");
 
 public:
-  using state_type = xxhash_state<Width>;             ///< Running hash.
-  using value_type = xxhash_state<Width>::value_type; ///< The hash and the seed: std::uint32_t or std::uint64_t.
+  using state_type = xxhash_state<Width>;                                           ///< Running hash.
+  using value_type = std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>; ///< The hash and the seed.
 
   /// The engine of the hash with seed.
   constexpr explicit xxhash_engine(value_type seed = 0) noexcept;
@@ -75,34 +78,21 @@ public:
   template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
 
 private:
-  value_type seed;
+  value_type hash_seed;
 };
 
 /// xxhash_engine<Width, Isa>{seed}.compute(data).
 template <unsigned Width, isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_compute(Range &&data, typename xxhash_state<Width>::value_type seed = 0) noexcept;
-
-} // namespace checksum
-
-namespace checksum::xxhash_detail {
-
-// xxhash_engine as a template of the preset alone, for detail::dispatch_engine.
-template <unsigned Width> struct engine_of {
-  template <isa Isa> using type = xxhash_engine<Width, Isa>;
-};
-
-} // namespace checksum::xxhash_detail
-
-namespace checksum {
+[[nodiscard]] constexpr xxhash_engine<Width, Isa>::value_type xxhash_compute(Range &&data,
+                                                                             typename xxhash_engine<Width, Isa>::value_type seed = 0) noexcept;
 
 /// An xxhash_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
 template <unsigned Width>
   requires(Width == 32 || Width == 64)
-class xxhash_dispatch_engine
-    : public detail::dispatch_engine<xxhash_detail::engine_of<Width>::template type, typename xxhash_state<Width>::value_type> {
+class xxhash_dispatch_engine : public detail::dispatch_engine<xxhash_engine<Width>, typename xxhash_engine<Width>::value_type> {
 public:
   /// The engine of the hash with seed and the best preset of this build in cpu: by default the presets the running CPU executes.
-  constexpr explicit xxhash_dispatch_engine(typename xxhash_state<Width>::value_type seed = 0, isa_set cpu = detect_isa()) noexcept;
+  constexpr explicit xxhash_dispatch_engine(typename xxhash_engine<Width>::value_type seed = 0, isa_set cpu = detect_isa()) noexcept;
 };
 
 } // namespace checksum
@@ -110,11 +100,11 @@ public:
 /// Implementation details; not part of the public API.
 namespace checksum::xxhash_detail {
 
-template <unsigned Width> using word = xxhash_state<Width>::value_type;
+template <unsigned Width> using lane_array = decltype(xxhash_state<Width>::lanes);
 
-template <unsigned Width> using lane_array = std::array<word<Width>, 4>;
+template <unsigned Width> using word = lane_array<Width>::value_type;
 
-template <unsigned Width> inline constexpr std::size_t stripe_size = 4 * sizeof(word<Width>);
+template <unsigned Width> inline constexpr std::size_t stripe_size = std::tuple_size_v<decltype(xxhash_state<Width>::buffer)>;
 
 // Rotations of the four lanes when they converge, for both widths.
 inline constexpr std::array<int, 4> convergence_rotations{1, 7, 12, 18};
@@ -280,7 +270,7 @@ namespace checksum {
 
 template <unsigned Width, isa Isa>
   requires(Width == 32 || Width == 64)
-constexpr xxhash_engine<Width, Isa>::xxhash_engine(value_type seed) noexcept : seed(seed) {}
+constexpr xxhash_engine<Width, Isa>::xxhash_engine(value_type seed) noexcept : hash_seed(seed) {}
 
 template <unsigned Width, isa Isa>
   requires(Width == 32 || Width == 64)
@@ -300,7 +290,7 @@ constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::update(xxhash_state<Wid
   constexpr std::size_t stripe_size = xxhash_detail::stripe_size<Width>;
   auto const buffered = static_cast<std::size_t>(state.length % stripe_size);
   if(state.length < stripe_size && data.size() >= stripe_size - buffered) {
-    state.lanes = xxhash_detail::initial_lanes<Width>(seed);
+    state.lanes = xxhash_detail::initial_lanes<Width>(hash_seed);
   }
   state.length += data.size();
   if(buffered != 0) {
@@ -330,37 +320,37 @@ constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::update(xxhash_state<Wid
 
 template <unsigned Width, isa Isa>
   requires(Width == 32 || Width == 64)
-constexpr xxhash_state<Width>::value_type xxhash_engine<Width, Isa>::finalize(xxhash_state<Width> const &state) const noexcept {
+constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::finalize(xxhash_state<Width> const &state) const noexcept {
   auto const buffered = static_cast<std::size_t>(state.length % xxhash_detail::stripe_size<Width>);
   // Before the first stripe the lanes are unused, and converging them would cost 8 multiplications for nothing.
   xxhash_detail::word<Width> const converged = state.length >= xxhash_detail::stripe_size<Width> ? xxhash_detail::converge<Width>(state.lanes) : 0;
-  return xxhash_detail::finish<Width>(converged, seed, state.length, std::span(state.buffer).first(buffered));
+  return xxhash_detail::finish<Width>(converged, hash_seed, state.length, std::span(state.buffer).first(buffered));
 }
 
 template <unsigned Width, isa Isa>
   requires(Width == 32 || Width == 64)
-constexpr xxhash_state<Width>::value_type xxhash_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
+constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
   std::size_t const whole = data.size() - (data.size() % xxhash_detail::stripe_size<Width>);
   // On 32-bit targets the four lanes of XXH64 do not fit the registers: as locals they ran 18 % slower on Cortex-M4.
   if constexpr(sizeof(std::size_t) >= sizeof(xxhash_detail::word<Width>)) {
     if !consteval {
       if(whole != 0) {
-        return xxhash_detail::run_time_hash<Isa, Width>(data, seed);
+        return xxhash_detail::run_time_hash<Isa, Width>(data, hash_seed);
       }
     }
   }
   xxhash_detail::word<Width> converged = 0;
   if(whole != 0) {
-    xxhash_detail::lane_array<Width> lanes = xxhash_detail::initial_lanes<Width>(seed);
+    xxhash_detail::lane_array<Width> lanes = xxhash_detail::initial_lanes<Width>(hash_seed);
     converged = xxhash_detail::fold_and_converge<Isa, Width>(lanes, data.first(whole), true);
   }
-  return xxhash_detail::finish<Width>(converged, seed, data.size(), data.subspan(whole));
+  return xxhash_detail::finish<Width>(converged, hash_seed, data.size(), data.subspan(whole));
 }
 
 template <unsigned Width, isa Isa>
   requires(Width == 32 || Width == 64)
 template <byte_range Range>
-constexpr xxhash_state<Width>::value_type xxhash_engine<Width, Isa>::compute(Range &&data) const noexcept {
+constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::compute(Range &&data) const noexcept {
   // Contiguous ranges skip the buffer of the state.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
@@ -374,14 +364,14 @@ constexpr xxhash_state<Width>::value_type xxhash_engine<Width, Isa>::compute(Ran
 }
 
 template <unsigned Width, isa Isa, byte_range Range>
-constexpr xxhash_state<Width>::value_type xxhash_compute(Range &&data, typename xxhash_state<Width>::value_type seed) noexcept {
+constexpr xxhash_engine<Width, Isa>::value_type xxhash_compute(Range &&data, typename xxhash_engine<Width, Isa>::value_type seed) noexcept {
   return xxhash_engine<Width, Isa>{seed}.compute(std::forward<Range>(data));
 }
 
 template <unsigned Width>
   requires(Width == 32 || Width == 64)
-constexpr xxhash_dispatch_engine<Width>::xxhash_dispatch_engine(typename xxhash_state<Width>::value_type seed, isa_set cpu) noexcept
-    : detail::dispatch_engine<xxhash_detail::engine_of<Width>::template type, typename xxhash_state<Width>::value_type>(cpu, seed) {}
+constexpr xxhash_dispatch_engine<Width>::xxhash_dispatch_engine(typename xxhash_engine<Width>::value_type seed, isa_set cpu) noexcept
+    : detail::dispatch_engine<xxhash_engine<Width>, typename xxhash_engine<Width>::value_type>(cpu, seed) {}
 
 } // namespace checksum
 

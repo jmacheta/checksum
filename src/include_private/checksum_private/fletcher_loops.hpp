@@ -258,13 +258,13 @@ CHECKSUM_ALWAYS_INLINE inline State sum_portable(State state, std::span<std::byt
   using accumulator = std::conditional_t<sizeof(Value) == 4, std::uint64_t,
                                          std::conditional_t<sizeof(Value) == 2 && target_detail::arm64_target, std::uint32_t, std::size_t>>;
   // 32-bit targets sum 16-bit values as 32-bit words, two values each; 64-bit targets keep the 4-value formula on native words.
-  constexpr bool sums_words = sizeof(Value) == 2 && std::numeric_limits<std::size_t>::digits == 32;
+  constexpr bool sums_words = sizeof(Value) == 2 && target_detail::word32_target;
   constexpr std::size_t size = sizeof(Value);
   constexpr std::size_t run = values_per_reduction<Isa, accumulator, Modulus>(std::numeric_limits<Value>::max());
   static_assert(run >= 8);
   // Sums below 2 * Modulus count as below Modulus + 1 for the bound; one run also reduces the sums of empty data. 32-bit
   // targets keep the loop, tuned on a Cortex-M4.
-  constexpr bool one_run = std::numeric_limits<std::size_t>::digits == 64 &&
+  constexpr bool one_run = !target_detail::word32_target &&
                            (Limit - 1) / size <= values_per_reduction<Isa, accumulator, (2 * Modulus) + 1>(std::numeric_limits<Value>::max());
   // In a run of w words, previous is at most 2M * w(w - 1) / 2.
   static_assert(!sums_words || Modulus * (run / 2) * ((run / 2) - 1) <= std::numeric_limits<std::uint32_t>::max());
@@ -314,7 +314,7 @@ CHECKSUM_ALWAYS_INLINE inline State sum_portable(State state, std::span<std::byt
       // 32-bit target the multiplications cost more than the chain, so the values are added one by one.
       // 64-bit targets bound the loop by its end, which made Fletcher-32 at 20 bytes faster on x86-64; on a Cortex-M4 that cost
       // Fletcher-64 3 % at 4 KiB, so 32-bit targets count the values.
-      constexpr bool bounded_by_end = std::numeric_limits<std::size_t>::digits == 64;
+      constexpr bool bounded_by_end = !target_detail::word32_target;
       std::byte const *const end = position + ((count / 4) * 4 * size);
       for(; bounded_by_end ? position != end : count >= 4; position += 4 * size, count -= bounded_by_end ? 0 : 4) {
         accumulator const first = load<Isa, Value>(position);
@@ -336,7 +336,7 @@ CHECKSUM_ALWAYS_INLINE inline State sum_portable(State state, std::span<std::byt
         }
       }
       count %= 4;
-      if constexpr(std::numeric_limits<std::size_t>::digits == 64) {
+      if constexpr(!target_detail::word32_target) {
         if((count & 2U) != 0) {
           accumulator const first = load<Isa, Value>(position);
           accumulator const second = load<Isa, Value>(position + size);
@@ -356,7 +356,7 @@ CHECKSUM_ALWAYS_INLINE inline State sum_portable(State state, std::span<std::byt
       sum1 += load<Isa, Value>(position);
       sum2 += sum1;
     }
-    if constexpr(sizeof(accumulator) == sizeof(std::uint64_t) && sizeof(std::size_t) == sizeof(std::uint64_t) && std::has_single_bit(Modulus + 1)) {
+    if constexpr(sizeof(accumulator) == sizeof(std::uint64_t) && !target_detail::word32_target && std::has_single_bit(Modulus + 1)) {
       // A constant % of a 64-bit sum is a multiplication on 64-bit targets: no branches, which the fold loop mispredicted on
       // the A72 when the number of folds changed with the input size. 32-bit targets would call a division function.
       sum1 %= Modulus;
@@ -381,8 +381,8 @@ CHECKSUM_NOINLINE State sum_long(State state, std::span<std::byte const> data) n
     }
   }
   std::size_t size = 0;
-  if constexpr(kernel<bits, Isa>::available) {
-    size = sum_chunks<Isa, kernel<bits, Isa>, Value, Modulus>(state, data);
+  if constexpr(block_kernel<bits, Isa>::available) {
+    size = sum_chunks<Isa, block_kernel<bits, Isa>, Value, Modulus>(state, data);
   }
   return sum_portable<Isa, Value, Modulus>(state, data.subspan(size));
 }
@@ -394,11 +394,11 @@ CHECKSUM_NOINLINE State sum_groups(State state, std::span<std::byte const> data)
 }
 
 template <isa Isa, class Value> constexpr bool runs_kernel(std::size_t size) noexcept {
-  return kernel<std::numeric_limits<Value>::digits, Isa>::available && size >= kernel_minimum<Isa, Value>();
+  return block_kernel<std::numeric_limits<Value>::digits, Isa>::available && size >= kernel_minimum<Isa, Value>();
 }
 
 template <isa Isa, class Value> constexpr std::size_t kernel_minimum() noexcept {
-  return kernel<std::numeric_limits<Value>::digits, Isa>::minimum_size;
+  return block_kernel<std::numeric_limits<Value>::digits, Isa>::minimum_size;
 }
 
 template <isa Isa, unsigned Width> sums_of<Width> sum_blocks(fletcher_state<Width> state, std::span<std::byte const> data) noexcept {
@@ -461,7 +461,7 @@ template <isa Isa, unsigned Width> state_word<Width> fletcher_sum_any(state_word
   if constexpr(Width == 64) {
     // Its state passes as it is; out of line, unfinished blocks cost Fletcher-64 3-8 % on the Cortex-A72.
     return sum_mixed<Isa, Width>(word, data);
-  } else if constexpr(sizeof(std::size_t) < sizeof(std::uint64_t)) {
+  } else if constexpr(target_detail::word32_target) {
     // 32-bit targets lost 4-10 % with unfinished blocks out of line.
     return to_word(sum_mixed<Isa, Width>(from_word<Width>(word), data));
   } else {

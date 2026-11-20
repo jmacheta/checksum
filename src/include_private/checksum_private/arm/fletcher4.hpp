@@ -16,12 +16,10 @@
 
 namespace checksum::fletcher4_detail {
 
-template <isa Isa>
-inline constexpr bool neon_kernel =
-    std::endian::native == std::endian::little && (target_detail::arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
+using target_detail::neon_target;
 
 template <isa Isa>
-  requires(neon_kernel<Isa>)
+  requires(neon_target<Isa>)
 struct lane_kernel<Isa> {
   static constexpr bool available = true;
   static constexpr std::size_t minimum_size = 192;
@@ -30,7 +28,7 @@ struct lane_kernel<Isa> {
 
 // Lanes 0 and 1 in the low vectors, 2 and 3 in the high ones.
 template <isa Isa>
-  requires(neon_kernel<Isa>)
+  requires(neon_target<Isa>)
 lane_sums lane_kernel<Isa>::sum(std::byte const *data, std::size_t groups) noexcept {
   uint64x2_t sum1_low = vdupq_n_u64(0);
   uint64x2_t sum1_high = vdupq_n_u64(0);

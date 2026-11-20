@@ -21,9 +21,7 @@
 
 namespace checksum::xxh3_detail {
 
-template <isa Isa>
-inline constexpr bool neon_kernel =
-    std::endian::native == std::endian::little && (target_detail::arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
+using target_detail::neon_target;
 
 #if defined(CHECKSUM_ARM64)
 // On a Cortex-A72 four lanes in NEON and four scalar ones beat six and two, all eight in NEON, and the portable loop.
@@ -33,7 +31,7 @@ inline constexpr std::size_t vector_count = 4;
 #endif
 
 template <isa Isa>
-  requires(neon_kernel<Isa>)
+  requires(neon_target<Isa>)
 struct stripe_kernel<Isa> {
   static constexpr bool available = true;
   // With GCC on a Cortex-A72 the kernel beats or ties the portable loop from 256 bytes, the shortest input that reaches it.
@@ -128,7 +126,7 @@ CHECKSUM_ALWAYS_INLINE inline void scramble_scalar(typename stripe_kernel<Isa>::
 #endif
 
 template <isa Isa>
-  requires(neon_kernel<Isa>)
+  requires(neon_target<Isa>)
 auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
   lanes values{};
   for(std::size_t index = 0; index < vector_count; ++index) {
@@ -143,7 +141,7 @@ auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept ->
 }
 
 template <isa Isa>
-  requires(neon_kernel<Isa>)
+  requires(neon_target<Isa>)
 void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
   for(std::size_t index = 0; index < vector_count; ++index) {
     vst1q_u64(accumulators.data() + (2 * index), values.vectors[index]);
@@ -157,7 +155,7 @@ void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &val
 
 // Spelled out per vector and lane: at -O2, GCC keeps the lanes of a loop that it does not unroll in memory.
 template <isa Isa>
-  requires(neon_kernel<Isa>)
+  requires(neon_target<Isa>)
 void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
   [&]<std::size_t... Pair> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Pair...>) {
     (accumulate_vector_pair<Isa, 2 * Pair>(values, stripe, secret), ...);
@@ -170,7 +168,7 @@ void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std:
 }
 
 template <isa Isa>
-  requires(neon_kernel<Isa>)
+  requires(neon_target<Isa>)
 void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
   [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (scramble_vector<Isa, Index>(values, secret), ...);

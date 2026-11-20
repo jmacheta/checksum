@@ -22,14 +22,13 @@
 namespace checksum::internet_detail {
 
 using target_detail::arm64_target;
+using target_detail::neon_target;
 
-// NEON lanes are read as little-endian words; the presets of 32-bit Arm compile Thumb-2 code.
-template <isa Isa>
-inline constexpr bool neon_kernel = std::endian::native == std::endian::little && (arm64_target || isa_detail::includes(Isa, isa::thumb2_neon));
-template <isa Isa> inline constexpr bool ldm_kernel = !arm64_target && !neon_kernel<Isa> && isa_detail::includes(Isa, isa::thumb2);
+// The presets of 32-bit Arm compile Thumb-2 code.
+template <isa Isa> inline constexpr bool ldm_kernel = !arm64_target && !neon_target<Isa> && isa_detail::includes(Isa, isa::thumb2);
 
 template <isa Isa>
-  requires(neon_kernel<Isa> || ldm_kernel<Isa>)
+  requires(neon_target<Isa> || ldm_kernel<Isa>)
 struct block_kernel<Isa> {
   static constexpr bool available = true;
   // The NEON kernel is above where it overtakes the portable loop on a Cortex-A72, about 370 bytes in AArch64 and 110 in
@@ -133,9 +132,9 @@ template <isa Isa> std::uint64_t first_byte_value(std::byte value) noexcept {
 }
 
 template <isa Isa>
-  requires(neon_kernel<Isa> || ldm_kernel<Isa>)
+  requires(neon_target<Isa> || ldm_kernel<Isa>)
 block_total block_kernel<Isa>::sum(std::span<std::byte const> data) noexcept {
-  if constexpr(neon_kernel<Isa>) {
+  if constexpr(neon_target<Isa>) {
     return neon_sum<Isa>(data);
   } else {
     if((reinterpret_cast<std::uintptr_t>(data.data()) & 1U) == 0) {

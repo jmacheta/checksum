@@ -46,33 +46,33 @@ public:
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
-  [[nodiscard]] static constexpr state_type initial() noexcept;
+  [[nodiscard]] constexpr state_type initial() const noexcept;
 
   /// Folds data into state; data may be split anywhere, including inside a 16-bit word.
-  [[nodiscard]] static constexpr state_type update(state_type state, std::span<std::byte const> data) noexcept;
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data) const noexcept;
 
   /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-  template <byte_range Range> [[nodiscard]] static constexpr state_type update(state_type state, Range &&data) noexcept;
+  template <byte_range Range> [[nodiscard]] constexpr state_type update(state_type state, Range &&data) const noexcept;
 
   /// The checksum of state: the one's complement of the sum, a last odd byte padded with zero. Store it most significant byte first.
-  [[nodiscard]] static constexpr value_type finalize(state_type const &state) noexcept;
+  [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
 
   /// State of a message whose checksum is checksum. That message must have an even number of bytes, since a checksum does not record
   /// an odd last byte.
-  [[nodiscard]] static constexpr state_type resume(value_type checksum) noexcept;
+  [[nodiscard]] constexpr state_type resume(value_type checksum) const noexcept;
 
   /// finalize(update(initial(), data)).
-  [[nodiscard]] static constexpr value_type compute(std::span<std::byte const> data) noexcept;
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
 
   /// finalize(update(initial(), data)) for a byte range.
-  template <byte_range Range> [[nodiscard]] static constexpr value_type compute(Range &&data) noexcept;
+  template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
 };
 
 /// internet_engine<Isa>{}.compute(data).
-template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr std::uint16_t internet_compute(Range &&data) noexcept;
+template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr internet_engine<Isa>::value_type internet_compute(Range &&data) noexcept;
 
 /// An internet_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
-class internet_dispatch_engine : public detail::dispatch_engine<internet_engine> {
+class internet_dispatch_engine : public detail::dispatch_engine<internet_engine<>> {
 public:
   /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
   constexpr explicit internet_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
@@ -137,9 +137,9 @@ namespace checksum {
 
 template <isa Isa> constexpr isa internet_engine<Isa>::preset() noexcept { return Isa; }
 
-template <isa Isa> constexpr internet_state internet_engine<Isa>::initial() noexcept { return {}; }
+template <isa Isa> constexpr internet_state internet_engine<Isa>::initial() const noexcept { return {}; }
 
-template <isa Isa> constexpr internet_state internet_engine<Isa>::update(internet_state state, std::span<std::byte const> data) noexcept {
+template <isa Isa> constexpr internet_state internet_engine<Isa>::update(internet_state state, std::span<std::byte const> data) const noexcept {
   if consteval {
     return internet_detail::combine(state, internet_detail::sum_bytes(data), data.size());
   } else {
@@ -147,28 +147,30 @@ template <isa Isa> constexpr internet_state internet_engine<Isa>::update(interne
   }
 }
 
-template <isa Isa> template <byte_range Range> constexpr internet_state internet_engine<Isa>::update(internet_state state, Range &&data) noexcept {
+template <isa Isa>
+template <byte_range Range>
+constexpr internet_state internet_engine<Isa>::update(internet_state state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-template <isa Isa> constexpr std::uint16_t internet_engine<Isa>::finalize(internet_state const &state) noexcept {
+template <isa Isa> constexpr std::uint16_t internet_engine<Isa>::finalize(internet_state const &state) const noexcept {
   return static_cast<std::uint16_t>(~state.sum);
 }
 
-template <isa Isa> constexpr internet_state internet_engine<Isa>::resume(std::uint16_t checksum) noexcept {
+template <isa Isa> constexpr internet_state internet_engine<Isa>::resume(std::uint16_t checksum) const noexcept {
   return {.sum = static_cast<std::uint16_t>(~checksum)};
 }
 
-template <isa Isa> constexpr std::uint16_t internet_engine<Isa>::compute(std::span<std::byte const> data) noexcept {
+template <isa Isa> constexpr std::uint16_t internet_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
   return finalize(update(initial(), data));
 }
 
-template <isa Isa> template <byte_range Range> constexpr std::uint16_t internet_engine<Isa>::compute(Range &&data) noexcept {
+template <isa Isa> template <byte_range Range> constexpr std::uint16_t internet_engine<Isa>::compute(Range &&data) const noexcept {
   return finalize(update(initial(), std::forward<Range>(data)));
 }
 
-template <isa Isa, byte_range Range> constexpr std::uint16_t internet_compute(Range &&data) noexcept {
+template <isa Isa, byte_range Range> constexpr internet_engine<Isa>::value_type internet_compute(Range &&data) noexcept {
   return internet_engine<Isa>{}.compute(std::forward<Range>(data));
 }
 

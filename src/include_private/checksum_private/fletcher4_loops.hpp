@@ -34,8 +34,7 @@ namespace checksum::fletcher4_detail {
 // Clang's unrolled word loop; on 32-bit targets their 64-bit sums run out of registers, 3 times slower there.
 template <isa Isa>
 inline constexpr std::size_t lanes_minimum_size =
-    lane_kernel<Isa>::available ? lane_kernel<Isa>::minimum_size
-                                : (std::numeric_limits<std::size_t>::digits == 64 ? 256 : std::numeric_limits<std::size_t>::max());
+    lane_kernel<Isa>::available ? lane_kernel<Isa>::minimum_size : (target_detail::word32_target ? std::numeric_limits<std::size_t>::max() : 256);
 
 // The little-endian word at data, from byte loads that compilers merge where unaligned loads are allowed: no memcpy call elsewhere.
 template <isa Isa> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load(std::byte const *data) noexcept;
