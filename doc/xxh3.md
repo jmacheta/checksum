@@ -33,8 +33,8 @@ checksum::accumulator running{xxh3};
 checksum::hash128 value = running.update(header).update(payload).value();
 ```
 
-`examples/xxh3` (asset IDs at compile time, a file read in chunks, deduplication by XXH3-128, a seeded hash table)
-has complete programs.
+`examples/xxh3` has complete programs: asset IDs at compile time, a file read in chunks, deduplication by XXH3-128, and
+a seeded hash table.
 
 ## 2. Definition
 
@@ -43,26 +43,22 @@ the reference's 192-byte default secret, kept in read-only data; a seed other th
 
 ## 3. API
 
-The family has an engine, a state and one `compute` function. The engine holds the seed. The engine's members are
-`initial()` (the empty message), `update(state, data)` (folds `data` into `state` and returns the new state),
-`finalize(state)` (the hash), `compute(data)` (`finalize(update(initial(), data))`) and the static `preset()`; XXH3
-has no `resume`, since its result does not determine the state. `Isa` is an instruction-set preset, `isa::generic` by
-default (section 5). All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any
-range of `std::byte`, `char`, `unsigned char`, `signed char` or `char8_t`; arrays of `char` are rejected so a literal's
-`'\0'` is never hashed (pass `std::string_view`). `compute` hashes contiguous ranges directly, without the state's
-buffer. Every state value is valid, so nothing has preconditions; a state is a plain value, so one prefix can be hashed
-several ways.
-
 `Width` is 64 for XXH3-64 and 128 for XXH3-128.
 
 | Name | What it does |
 | --- | --- |
-| `xxh3_engine<Width, Isa>` | The engine: `xxh3_engine<Width, Isa>{seed}`, seed 0 by default. The seed is a `std::uint64_t`; `value_type`, the hash, is `std::uint64_t` or `hash128`. `finalize` runs the stripe loop of `Isa` for the remaining buffer. |
-| `xxh3_state<Width>` | Eight accumulators, `length` and a 256-byte `buffer`: 328 bytes. The default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
+| `xxh3_engine<Width, Isa>` | The engine, `xxh3_engine<Width, Isa>{seed}`, seed 0 by default. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the hash, `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. There is no `resume`: the hash does not determine the state. The seed is a `std::uint64_t`; `value_type`, the hash, is `std::uint64_t` or `hash128`. `finalize` runs the stripe loop of `Isa` for the remaining buffer. |
+| `xxh3_state<Width>` | Eight accumulators, `length` and a 256-byte `buffer`: 328 bytes. A plain value; the default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
 | `xxh3_compute<Width, Isa>(data, seed = 0)` | `xxh3_engine<Width, Isa>{seed}.compute(data)`. |
 | `hash128` | `low` and `high` 64 bits, as `XXH128_hash_t`; compares with `==`. MurmurHash3_x64_128 returns it too. |
 | `xxh3_dispatch_engine<Width>` | The same members as `xxh3_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
 | `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
+
+`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and `noexcept`.
+`data` is a `std::span<std::byte const>` or any `byte_range`: an input range of non-`volatile` `std::byte`, `char`,
+`unsigned char`, `signed char` or `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer. Arrays of
+`char` and `char8_t` are rejected so a string literal's `'\0'` is never included: pass `std::string_view`. `compute`
+hashes contiguous ranges directly, without the state's buffer. Every state value is valid, so nothing has preconditions.
 
 The state keeps the last 1 to 256 bytes in its buffer, so it can hash the end of the message as the one-shot function
 does; messages up to 240 bytes are hashed from the buffer alone.
@@ -75,9 +71,8 @@ does; messages up to 240 bytes are hashed from the buffer alone.
 - **Byte order:** input words are read little-endian on every target. The result is a number or a pair of numbers;
   the reference's canonical form writes most significant byte first, and `high` before `low`.
 - **Long messages:** the length is a 64-bit count.
-- **Streaming cost:** `xxh3_engine::update` copies its 328-byte state in and out per call. In 64-byte pieces XXH3
-  streams about 4× slower than one call; from 4 KiB pieces the copy is negligible. The `byte_range` overload folds all
-  its chunks into one state.
+- **Streaming cost:** `xxh3_engine::update` copies its 328-byte state in and out per call, which weighs on short
+  pieces. The `byte_range` overload folds all its chunks into one state.
 
 ## 5. CPU acceleration
 
@@ -92,7 +87,7 @@ accumulators, which a kernel keeps in vector registers. Presets are explained in
 | every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | Four lanes in NEON, four scalar |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm (GCC, Clang) | All eight lanes in NEON |
 | `isa::riscv_v` (VLEN ≥ 128) | One register group; tested in QEMU only |
-| everything else: `isa::thumb2`, `thumb2_dsp`, `riscv_zbc`, big-endian targets | Portable loop |
+| everything else: `isa::generic` elsewhere, `thumb2`, `thumb2_dsp`, `riscv_zbc`, big-endian targets | Portable loop |
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#xxh3).
 
@@ -114,8 +109,8 @@ Measured figures: [performance.md](performance.md#xxh3).
   SSE2 kernel of `isa::generic`. On 32-bit cores (Cortex-M, AArch32) XXH32 is about twice the others from 256 bytes on
   a Cortex-M4; XXH64 is slow there, since it needs 64-bit multiplications. See [xxhash.md](xxhash.md) for XXH32 and
   XXH64.
-- **Hash whole messages in one call** when they are in memory, or stream in pieces of 4 KiB or more. A seed other than
-  0 costs about 25 % in 256-byte pieces and 6 % in 4 KiB pieces.
+- **Hash whole messages in one call** when they are in memory, or stream in pieces of 4 KiB or more: each `update`
+  copies the state, and one that folds stripes with a seed other than 0 derives the secret again (section 4).
 
 ## 7. Limitations
 

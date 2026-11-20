@@ -32,7 +32,7 @@ checksum::accumulator running{xxh64};
 std::uint64_t value = running.update(header).update(payload).value();
 ```
 
-`examples/xxhash` (message IDs at compile time, the XXH64 of a file, a cache keyed by a hash) has complete programs.
+`examples/xxhash` has complete programs: message IDs at compile time, the XXH64 of a file, and a cache keyed by a hash.
 
 ## 2. Definition
 
@@ -40,25 +40,21 @@ The hashes of the reference implementation, `xxhash.h` 0.8.4: the values are equ
 
 ## 3. API
 
-The family has an engine, a state and one `compute` function. The engine holds the seed. The engine's members are
-`initial()` (the empty message), `update(state, data)` (folds `data` into `state` and returns the new state),
-`finalize(state)` (the hash), `compute(data)` (`finalize(update(initial(), data))`) and the static `preset()`; the hash
-has no `resume`, since its result does not determine the state. `Isa` is an instruction-set preset, `isa::generic` by
-default (section 5). All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any
-range of `std::byte`, `char`, `unsigned char`, `signed char` or `char8_t`; arrays of `char` are rejected so a literal's
-`'\0'` is never hashed (pass `std::string_view`). `compute` hashes contiguous ranges directly, without the state's
-buffer. Every state value is valid, so nothing has preconditions; a state is a plain value, so one prefix can be hashed
-several ways.
-
 `Width` is 32 for XXH32 and 64 for XXH64.
 
 | Name | What it does |
 | --- | --- |
-| `xxhash_engine<Width, Isa>` | The engine: `xxhash_engine<Width, Isa>{seed}`, seed 0 by default. `value_type`, the hash and the seed, is `std::uint32_t` for XXH32 and `std::uint64_t` for XXH64. |
-| `xxhash_state<Width>` | Four lanes, the byte count (`length`) and an unfinished stripe (`buffer`, 16 or 32 bytes). The default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
+| `xxhash_engine<Width, Isa>` | The engine, `xxhash_engine<Width, Isa>{seed}`, seed 0 by default. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the hash, `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. There is no `resume`: the hash does not determine the state. `value_type`, the hash and the seed, is `std::uint32_t` for XXH32 and `std::uint64_t` for XXH64. |
+| `xxhash_state<Width>` | Four lanes, the byte count (`length`) and an unfinished stripe (`buffer`, 16 or 32 bytes). A plain value; the default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
 | `xxhash_compute<Width, Isa>(data, seed = 0)` | `xxhash_engine<Width, Isa>{seed}.compute(data)`. |
 | `xxhash_dispatch_engine<Width>` | The same members as `xxhash_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, is always `generic` (section 5.1). |
 | `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
+
+`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and `noexcept`.
+`data` is a `std::span<std::byte const>` or any `byte_range`: an input range of non-`volatile` `std::byte`, `char`,
+`unsigned char`, `signed char` or `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer. Arrays of
+`char` and `char8_t` are rejected so a string literal's `'\0'` is never included: pass `std::string_view`. `compute`
+hashes contiguous ranges directly, without the state's buffer. Every state value is valid, so nothing has preconditions.
 
 ## 4. Behavior
 

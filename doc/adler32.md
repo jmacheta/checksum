@@ -51,10 +51,11 @@ adds `sum1` after each byte. The checksum is `(sum2 << 16) | sum1`. It differs f
 | `adler32_dispatch_engine` | The same members as `adler32_engine`, made with `(cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
 | `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
-`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
-`noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
-`signed char` or `char8_t`; arrays of `char` are rejected so a literal's `'\0'` is never summed (pass
-`std::string_view`). Every state value is valid, so nothing has preconditions: sums from 65521 up count modulo 65521.
+`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and `noexcept`.
+`data` is a `std::span<std::byte const>` or any `byte_range`: an input range of non-`volatile` `std::byte`, `char`,
+`unsigned char`, `signed char` or `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer. Arrays of
+`char` and `char8_t` are rejected so a string literal's `'\0'` is never included: pass `std::string_view`. Every state
+value is valid, so nothing has preconditions: sums from 65521 up count modulo 65521.
 
 ## 4. Behavior
 
@@ -67,18 +68,18 @@ adds `sum1` after each byte. The checksum is `(sum2 << 16) | sum1`. It differs f
 ## 5. CPU acceleration
 
 The portable loop adds four bytes per step into native-width sums and reduces only when a sum could overflow, without
-a division. From 64 bytes per call, Adler-32 runs the byte kernel of Fletcher-16 with modulus 65521. Presets are
+a division. From a minimum size per call, Adler-32 runs the byte kernel of Fletcher-16 with modulus 65521. Presets are
 explained in [Instruction-set presets](../README.md#instruction-set-presets).
 
 | Preset | Kernel |
 | --- | --- |
-| `isa::x86_avxvnni` | `vpdpbusd`, 128 bytes per iteration |
-| `isa::x86_avx2`, `x86_vpclmul` | 32-byte vectors |
-| `isa::generic`, `x86_pclmul` on x86-64 | 16-byte vectors |
-| every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | NEON; 64 bytes per iteration from 320 B |
-| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm (GCC, Clang) | NEON |
-| `isa::thumb2_dsp` on little-endian 32-bit Arm (GCC, Clang; for Cortex-M4/M7/M33) | `usada8` + `smlad`, 8 bytes per iteration |
-| everything else: `isa::thumb2`, `riscv_zbc`, `riscv_v`, big-endian targets | portable loop |
+| `isa::x86_avxvnni` | `vpdpbusd`, 128 bytes per iteration, from 64 B |
+| `isa::x86_avx2`, `x86_vpclmul` | 32-byte vectors, from 64 B |
+| `isa::generic`, `x86_pclmul` on x86-64 | 16-byte vectors, from 64 B |
+| every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | NEON from 64 B; 64 bytes per iteration from 320 B |
+| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm (GCC, Clang) | NEON, from 64 B |
+| `isa::thumb2_dsp` on little-endian 32-bit Arm (GCC, Clang; for Cortex-M4/M7/M33) | `usada8` + `smlad`, 8 bytes per iteration, from 64 B |
+| everything else: `isa::generic` elsewhere, `thumb2`, `riscv_zbc`, `riscv_v`, big-endian targets | Portable loop |
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
 

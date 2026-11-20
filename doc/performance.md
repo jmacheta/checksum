@@ -31,15 +31,18 @@ figures refer to.
 
 To measure on your machine: `cmake --preset native-gcc-bench && cmake --build --preset native-gcc-bench`, then run
 `checksum_bench_<algorithm>` from `build/native-gcc-bench/tests/benchmarks/Release/`, filtered with
-`--benchmark_filter=`. Benchmarks are named `<name>/<size>` for `isa::generic`, `<name>_<preset>/<size>` for the other
-presets and `<name>_dispatch/<size>` for the dispatch engine; `<name>` is the algorithm with its width (`fletcher16`,
-`xxh3_64`), or the CRC strategy followed by the CRC (`sliced_x86_vpclmul/crc32c/4096`).
+`--benchmark_filter=`. Benchmarks are named `<name>/<size>[/<offset>]` for `isa::generic`,
+`<name>_<preset>/<size>[/<offset>]` for the other presets and `<name>_dispatch/<size>[/<offset>]` for the dispatch
+engine; `<name>` is the algorithm with its width (`fletcher16`, `xxh3_64`), or the CRC strategy followed by the CRC
+(`sliced_x86_vpclmul/crc32c/4096`). Only Fletcher and Adler-32 have the offset: the message starts 0 or 1 bytes after an
+aligned address (`adler32/20/0`).
 
 ## Platforms
 
 | Name used below | Hardware | Compilers | Measured with |
 | --- | --- | --- | --- |
 | x86-64 | Intel Core Ultra 7 155H (laptop) | GCC 16, Clang 21, `-O2` | Google Benchmark, one pinned core |
+| Core i7-13700K | Intel Core i7-13700K (P-core), CachyOS | GCC 16, Clang 23, `-O2` | Google Benchmark, one pinned core, best of 5 |
 | Cortex-A72 | Raspberry Pi 4, 1.5 GHz, AArch64 and AArch32 | GCC 14.3, Clang 21, `-O2` | Google Benchmark, one core |
 | Cortex-M4 | nRF52840 at 64 MHz and STM32L4A6 at 80 MHz; code in flash, data in RAM | GCC 14.3, `-O2` | cycle counter, best of 5 calls |
 | Cortex-M33 | nRF54L15 at 128 MHz (with DSP and FPU); code in RRAM with the 8 KiB instruction cache on, data in RAM | GCC 14.3, `-O2 -mcpu=cortex-m33` | cycle counter, best of 5 calls |

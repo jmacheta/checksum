@@ -7,7 +7,8 @@ Applies to `src/` and the helper headers of `tests/`; examples follow it where i
 - Include guards (`#ifndef CHECKSUM_CRC_HPP`), never `#pragma once`.
 - A header lists its public API first, then implementation details, then definitions. Every function defined in a
   header is declared first and defined at the end of the file, callee before caller; `= default` and `= delete`
-  stay inline.
+  stay inline, and so do hidden friends (`operator|` of `isa_set`, `operator==` of the xxHash, XXH3 and MurmurHash3
+  states), which have no declaration outside the class.
 - Inlining attributes are `CHECKSUM_ALWAYS_INLINE` and `CHECKSUM_NOINLINE` (`byte_range.hpp`), never `[[gnu::...]]`
   directly: MSVC warns about attributes of another compiler.
 - A branch like `if !consteval { return ...; }` gets an `else` for the rest instead of code after it: MSVC reports

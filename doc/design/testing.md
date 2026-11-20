@@ -31,7 +31,7 @@ with several widths is a typed suite with one instance per width (`fletcher/flet
 
 | File | Suite | Contents |
 | --- | --- | --- |
-| `ut_<algorithm>.cpp` | `<algorithm>` | The canonical cases below, then the algorithm's own cases |
+| `ut_<algorithm>.cpp` | `<algorithm>` | The canonical cases below and the algorithm's own cases |
 | `ut_<algorithm>_presets.cpp` | `<algorithm>_presets` | Every built preset against `isa::generic` |
 | `ut_accumulator.cpp` | `accumulator` | A static and a dispatch engine of every algorithm and width; CRC bit-length updates |
 | `ut_dispatch.cpp` | `dispatch`, `dispatch_presets` | Every dispatch engine and width against `isa::generic`, for the detected set and each preset alone |
@@ -51,6 +51,9 @@ Cases of `ut_<algorithm>.cpp`, the same name for the same check:
 | `constant_evaluation` | Prefixes computed at compile time equal the run-time results |
 | `edge_values` | Extreme states, seeds and parameters: largest sums, block offsets, all-ones seeds, every CRC width |
 | `resume_from_checksum` | Resumable engines only: a stored result continues the message |
+| `equal_states_after_any_split` | Hashes with a buffered state (`xxhash`, `xxh3`, `murmur3`): states of one message split differently compare equal |
+| `long_all_ones` | Sum checksums with deferred reduction (`adler32`, `fletcher`, `fletcher4`): the largest bytes from the largest sums over many reductions |
+| `chunk_boundaries` | `adler32`, `fletcher`: around every kernel's chunk sizes, from every word alignment, all-ones and random bytes |
 
 Cases of `ut_<algorithm>_presets.cpp`, with the checks of `engine_checks.hpp`:
 
@@ -60,12 +63,12 @@ Cases of `ut_<algorithm>_presets.cpp`, with the checks of `engine_checks.hpp`:
 | `match_generic_for_every_size` | Every size up to 2048 bytes (MurmurHash3 and XXH32/64: 1024, CRC: 640) from every start offset modulo 8 |
 | `match_generic_for_large_sizes` | Sizes around 512 and 1024 bytes and up to about 1 MB, four start offsets |
 | `match_generic_through_updates_and_splits` | Three updates split around blocks, buffers and thresholds; resume, empty updates, ranges |
-| `match_generic_for_all_ones` | Checksums only: all-ones runs around every kernel's chunk sizes from the largest sums |
+| `match_generic_for_all_ones` | Sum checksums only (Internet, Adler-32, Fletcher, fletcher4): all-ones runs around every kernel's chunk sizes from the largest sums |
 
 CRC runs these on CRC-32C (`crc_lut_sliced`) and CRC-64/XZ (`crc_lut_braided`), plus
 `match_byte_table_for_common_parameters`; `crc_folding_presets` checks every catalog set on `crc_lut_sliced` and
-`crc_lut_braided` of every preset, `isa::generic` included. An algorithm's own cases, such as `chunk_boundaries` or
-`field_update`, keep descriptive names.
+`crc_lut_braided` of every preset, `isa::generic` included. An algorithm's own cases, such as `field_update` or
+`lanes_continue_state`, keep descriptive names.
 
 ## What to run
 
@@ -89,9 +92,9 @@ finishing run the rows below that apply; the full matrix only for shared code.
 
 Benchmarks and the QEMU matrix are slow: run them only when the change needs them, filtered to what changed.
 
-Test presets build one configuration (Debug) and run `ctest` with 8 jobs; the negative compile tests share a
-resource lock because each runs the build tool on the same tree. Keep a whole run fast: about 2 s of tests natively
-and 20 s in QEMU user mode. Debug test builds use `-Og`; `cross-arm` keeps `-O0` so the inline assembly is
+Test presets build one configuration (Debug) and run `ctest` with 8 jobs; the negative compile tests share a resource
+lock because each runs the build tool on the same tree. Keep a whole run fast: about 2 s of tests natively and 20 s in
+QEMU user mode. Debug test builds use `-Og`; `cross-arm` and `cross-arm-clang` keep `-O0` so the inline assembly is
 built without optimization.
 
 Preset tests run every preset the build has, listed in `isa_detail::built_presets` of `checksum/isa.hpp`, and
@@ -133,11 +136,12 @@ CHECKSUM_EXPECTED_ISA=thumb2_neon qemu-arm -cpu cortex-a9 build/cross-arm/tests/
 CHECKSUM_EXPECTED_ISA=generic qemu-riscv64 -cpu max,zbc=false,v=false build/cross-riscv64/tests/unit_tests/Debug/checksum_ut ...
 ```
 
-What CI never runs: AArch64 without CRC32 or PMULL (no QEMU model or GitHub runner lacks them), 32-bit Arm Linux
-without NEON (bare metal covers the `thumb2` and `thumb2_dsp` builds on Cortex-M and -R), MSVC on ARM64 other than
-GitHub's `windows-11-arm` (Neoverse N2, so `aarch64_pmull` only), the x86-64 presets of MSVC and clang-cl on
-VPCLMULQDQ or AVX-VNNI (SDE runs only the Linux builds), RVV at vector lengths other than 128, 256 and 512 bits, and
-detection on FreeBSD and Apple platforms. Check those on hardware.
+What CI never runs: AArch64 without CRC32 or PMULL (no QEMU model or GitHub runner lacks them), 32-bit Arm Linux without
+NEON (bare metal runs the `thumb2` and `thumb2_dsp` builds on Cortex-M3/M4/M7/M33 and Cortex-A9 in QEMU;
+`bare-cortex-m0`, `bare-cortex-r5` and `bare-cortex-r52` have no QEMU machine and are only built, with their
+`static_assert` checks), MSVC on ARM64 other than GitHub's `windows-11-arm` (Neoverse N2, so `aarch64_pmull` only), the
+x86-64 presets of MSVC and clang-cl on VPCLMULQDQ or AVX-VNNI (SDE runs only the Linux builds), RVV at vector lengths
+other than 128, 256 and 512 bits, and detection on FreeBSD and Apple platforms. Check those on hardware.
 
 ## Coverage expectations
 

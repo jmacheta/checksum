@@ -56,10 +56,11 @@ as `"abc\0"`.
 | `fletcher4_dispatch_engine` | The same members as `fletcher4_engine`, made with `(cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
 | `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
-`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
-`noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
-`signed char` or `char8_t`; arrays of `char` are rejected so a literal's `'\0'` is never summed (pass
-`std::string_view`). Every state value is valid, so nothing has preconditions: `word_offset` is taken modulo 4.
+`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and `noexcept`.
+`data` is a `std::span<std::byte const>` or any `byte_range`: an input range of non-`volatile` `std::byte`, `char`,
+`unsigned char`, `signed char` or `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer. Arrays of
+`char` and `char8_t` are rejected so a string literal's `'\0'` is never included: pass `std::string_view`. Every state
+value is valid, so nothing has preconditions: `word_offset` is taken modulo 4.
 
 ## 4. Behavior
 
@@ -81,7 +82,7 @@ exactly with fixed weights, in vector registers where a kernel exists. Presets a
 | --- | --- |
 | `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | One 256-bit vector per sum, from 128 B |
 | `isa::generic`, `x86_pclmul` on x86-64 | Two 128-bit vectors per sum, from 192 B |
-| every preset of little-endian AArch64, `isa::generic` included (MSVC too) | NEON, from 192 B |
+| every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | NEON, from 192 B |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm (GCC, Clang) | NEON, from 192 B |
 | other 64-bit targets: `riscv_zbc`, `riscv_v`, big-endian AArch64 | Portable lanes, from 256 B |
 | other 32-bit targets: `isa::generic`, `thumb2`, `thumb2_dsp`, big-endian 32-bit Arm | Word loop only, two words per iteration on 32-bit Arm without `thumb2_neon`/`thumb2_crc`, one word per iteration with `thumb2_neon`/`thumb2_crc` |
@@ -112,5 +113,3 @@ Measured figures: [performance.md](performance.md#fletcher4).
   message stay small. Use a CRC where errors must be detected reliably.
 - **Little-endian words only:** the equivalent of `fletcher_4_native` on a big-endian host needs its words swapped
   first.
-- **Continuing from a stored checksum after whole words only:** a checksum does not record an unfinished word; keep the
-  state after a partial word.

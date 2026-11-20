@@ -79,6 +79,9 @@ Every algorithm has the same shape:
   (`checksum/engine.hpp`) describe them.
 - **Accumulator:** `checksum::accumulator running{engine}` keeps an engine pointer and the state together:
   `running.update(header).update(payload).value()`. It works with every engine, dispatch engines included.
+- **Input:** `data` is a `std::span<std::byte const>` or any `checksum::byte_range` (`checksum/byte_range.hpp`), an
+  input range of bytes; pass text as `std::string_view`. Each guide gives the details.
+- **Threads:** a `const` engine, dispatch engines included, can be shared between threads; an accumulator cannot.
 
 [examples/](examples) has small complete programs for every algorithm: files read in chunks, a MODBUS frame, an IPv4
 header and UDP datagram, a zlib trailer, a ZFS block, a Bloom filter, a seeded hash table, and a custom CRC strategy
@@ -202,8 +205,8 @@ Platform differences, by design:
   `engine.update(engine.resume(checksum), data)`. The aliases of each width are gone: write `fletcher_compute<16>`,
   `xxhash_compute<32>`, `xxh3_state<64>`. The CRC accumulator became `checksum::accumulator`, and
   `crc_dispatch_engine` names its strategy.
-- **Explicit template arguments moved:** the preset is now the first template parameter (after the width, where there is
-  one). Results are unchanged everywhere.
+- **Explicit template arguments moved:** the preset is now the last explicit template parameter (after the width, where
+  there is one; for CRC after the strategy). Results are unchanged everywhere.
 
 ## Contributing
 

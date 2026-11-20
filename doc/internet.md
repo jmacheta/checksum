@@ -50,10 +50,11 @@ complement arithmetic (each carry out of bit 15 added back into bit 0), and the 
 | `internet_dispatch_engine` | The same members as `internet_engine`, made with `(cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
 | `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
-`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
-`noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
-`signed char` or `char8_t`; arrays of `char` are rejected so a literal's `'\0'` is never summed (pass
-`std::string_view`). Every `internet_state` value is valid, so nothing has preconditions.
+`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and `noexcept`.
+`data` is a `std::span<std::byte const>` or any `byte_range`: an input range of non-`volatile` `std::byte`, `char`,
+`unsigned char`, `signed char` or `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer. Arrays of
+`char` and `char8_t` are rejected so a string literal's `'\0'` is never included: pass `std::string_view`. Every
+`internet_state` value is valid, so nothing has preconditions.
 
 ## 4. Behavior
 
@@ -72,14 +73,14 @@ complement arithmetic (each carry out of bit 15 added back into bit 0), and the 
 The portable loop adds native words in two add-with-carry chains and needs no tables; it is fast on its own. Kernels
 take over from a minimum size; presets are explained in [Instruction-set presets](../README.md#instruction-set-presets).
 
-| Preset | Kernel | From |
-| --- | --- | --- |
-| `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | 32-bit halves summed into 64-bit vector lanes | 512 B |
-| every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | NEON `uadalp` into 64-bit lanes | 512 B |
-| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm (GCC, Clang) | the same NEON kernel | 192 B |
-| `isa::thumb2`, `thumb2_dsp` (and the NEON presets on big-endian), e.g. Cortex-M3/M4/M7/M33 | `ldm` + `adcs` inline assembly, any start address | 192 B |
-| `isa::riscv_v` | widening vector add into 64-bit lanes, any vector length | 64 B |
-| everything else: `isa::generic` elsewhere, `x86_pclmul`, `riscv_zbc`, big-endian AArch64 | portable loop | |
+| Preset | Kernel |
+| --- | --- |
+| `isa::x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | 32-bit halves summed into 64-bit vector lanes, from 512 B |
+| every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | NEON `uadalp` into 64-bit lanes, from 512 B |
+| `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm (GCC, Clang) | The same NEON kernel, from 192 B |
+| `isa::thumb2`, `thumb2_dsp` (and the NEON presets on big-endian), e.g. Cortex-M3/M4/M7/M33 | `ldm` + `adcs` inline assembly, any start address, from 192 B |
+| `isa::riscv_v` | Widening vector add into 64-bit lanes, any vector length, from 64 B |
+| everything else: `isa::generic` elsewhere, `x86_pclmul`, `riscv_zbc`, big-endian AArch64 | Portable loop |
 
 Decisions per preset: [design/acceleration.md](design/acceleration.md#internet-checksum).
 
@@ -98,7 +99,7 @@ Measured figures: [performance.md](performance.md#internet-checksum).
 
 - **Packet headers run the portable loop**, which is already fast: about 8 000 MB/s for a 20-byte IPv4 header on
   x86-64.
-- **On x86-64 use `isa::x86_avx2`** where the CPU has it: 1.4-1.7× faster from 1500 B. AArch64 gets its kernel with
+- **On x86-64 use `isa::x86_avx2`** where the CPU has it: 1.2-1.7× faster from 1500 B. AArch64 gets its kernel with
   `isa::generic`, Cortex-M3/M4/M7/M33 with `isa::thumb2`.
 - **On Cortex-M the start address matters for the portable loop only:** from an odd or 2-modulo-4 address (an IP header
   behind a 14-byte Ethernet header) it is up to 2.5× slower than the kernel, which runs at the same speed from any

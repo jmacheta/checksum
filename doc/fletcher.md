@@ -62,11 +62,12 @@ which reads words little-endian.
 | `fletcher_dispatch_engine<Width>` | The same members as `fletcher_engine<Width>`, made with `(cpu = detect_isa())`; `preset()`, not static, names the preset chosen at run time (section 5.1). |
 | `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
-`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
-`noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
-`signed char` or `char8_t`; arrays of `char` are rejected so a literal's `'\0'` is never summed (pass
-`std::string_view`). Every state value is valid, so nothing has preconditions: a sum equal to M counts as 0, and
-`block_offset` is taken modulo the block size.
+`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and `noexcept`.
+`data` is a `std::span<std::byte const>` or any `byte_range`: an input range of non-`volatile` `std::byte`, `char`,
+`unsigned char`, `signed char` or `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer. Arrays of
+`char` and `char8_t` are rejected so a string literal's `'\0'` is never included: pass `std::string_view`. Every state
+value is valid, so nothing has preconditions: a sum equal to M counts as 0, and `block_offset` is taken modulo the block
+size.
 
 ## 4. Behavior
 
@@ -94,7 +95,7 @@ overflow. From a minimum size per call, a kernel sums whole vectors of blocks. P
 | every preset of little-endian AArch64 (GCC, Clang, MSVC, clang-cl), `isa::generic` included | NEON from 64 B; 64 bytes per iteration from 320 B | from 128 B | from 256 B |
 | `isa::thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm (GCC, Clang) | NEON, from 64 B | from 128 B | from 256 B |
 | `isa::thumb2_dsp` on little-endian 32-bit Arm (GCC, Clang; for Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B | portable loop | portable loop |
-| everything else: `isa::thumb2`, `riscv_zbc`, `riscv_v`, big-endian targets | portable loop | portable loop | portable loop |
+| everything else: `isa::generic` elsewhere, `thumb2`, `riscv_zbc`, `riscv_v`, big-endian targets | portable loop | portable loop | portable loop |
 
 Adler-32 uses the same byte kernels. Decisions per preset:
 [design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).

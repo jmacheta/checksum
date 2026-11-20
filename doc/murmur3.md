@@ -51,12 +51,12 @@ MurmurHash3_x86_128 is not provided.
 | `murmur3_dispatch_engine<Width>` | The same members as `murmur3_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, is always `generic` (section 5.1). |
 | `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
 
-`value_type` is `std::uint32_t` for Width 32 and `hash128` (shared with XXH3-128) for Width 128, with h1 in `low` and
-h2 in `high`. `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr`
-and `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`, `char`, `unsigned char`,
-`signed char` or `char8_t`; arrays of `char` are rejected so a literal's `'\0'` is never hashed (pass
-`std::string_view`). `compute` hashes contiguous ranges directly. Every state value is valid, so nothing has
-preconditions.
+`value_type` is `std::uint32_t` for Width 32 and `hash128` (shared with XXH3-128) for Width 128, with h1 in `low` and h2
+in `high`. `Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and
+`noexcept`. `data` is a `std::span<std::byte const>` or any `byte_range`: an input range of non-`volatile` `std::byte`,
+`char`, `unsigned char`, `signed char` or `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer.
+Arrays of `char` and `char8_t` are rejected so a string literal's `'\0'` is never included: pass `std::string_view`.
+`compute` hashes contiguous ranges directly. Every state value is valid, so nothing has preconditions.
 
 ## 4. Behavior
 
@@ -87,8 +87,8 @@ list of engines: [Instruction-set presets](../README.md#instruction-set-presets)
 
 Measured figures: [performance.md](performance.md#murmurhash3).
 
-- **Pick the variant for the CPU:** x64_128 on 64-bit CPUs (at least as fast at 20 bytes, faster from 64); x86_32 on
-  32-bit ones, where x64_128 builds 64-bit multiplications from 32-bit ones.
+- **Pick the variant for the CPU:** x64_128 on 64-bit CPUs (faster from 64 bytes; at 20 bytes 5 % faster on x86-64,
+  10 % slower on a Cortex-A72); x86_32 on 32-bit ones, where x64_128 builds 64-bit multiplications from 32-bit ones.
 - **For new designs prefer xxHash** unless you need MurmurHash3 values: XXH3 is about 5× faster on x86-64 at 1 MiB,
   and XXH32 1.6× faster than x86_32 on a Cortex-M4.
 

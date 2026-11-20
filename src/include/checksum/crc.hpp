@@ -137,7 +137,8 @@ public:
   /// else from bit 7 down. Precondition: bit_length <= 8 * data.size() (asserted; clamped when NDEBUG is defined).
   [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data, std::size_t bit_length) const noexcept;
 
-  /// The CRC of state: reflected if exactly one of input and output is reflected, then XORed with the final XOR.
+  /// The CRC of state: reflected if exactly one of input and output is reflected, then XORed with the final XOR. Precondition:
+  /// state < 2^width (asserted; masked when NDEBUG is defined).
   [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
 
   /// State of a message whose CRC is checksum: finalize() undone. Precondition: checksum < 2^width (asserted; masked when NDEBUG is
@@ -239,8 +240,9 @@ struct crc_lut_byte : crc_detail::lookup_strategy<crc_detail::slice_size> {};
 /// engine's instruction-set preset, if it has them.
 struct crc_lut_sliced : crc_detail::lookup_strategy<crc_detail::sliced_table_size> {};
 
-/// crc_lut_sliced plus 8 braid slices (16 x 256 entries): five interleaved streams of 8-byte words from 128 bytes on. Presets with CRC
-/// instructions run the crc_lut_sliced path instead.
+/// crc_lut_sliced plus 8 braid slices (16 x 256 entries): five interleaved streams of 8-byte words from 128 bytes on. Presets with a
+/// folding kernel run the crc_lut_sliced path instead, and so do presets with CRC instructions for the CRC-32 and CRC-32C
+/// polynomials.
 struct crc_lut_braided : crc_detail::lookup_strategy<crc_detail::braided_table_size> {};
 
 /// A crc_engine whose run-time loop is chosen once, when it is created: by default the best preset of this build that the

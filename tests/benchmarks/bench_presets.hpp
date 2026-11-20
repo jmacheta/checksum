@@ -1,8 +1,9 @@
 #ifndef CHECKSUM_TESTS_BENCH_PRESETS_HPP
 #define CHECKSUM_TESTS_BENCH_PRESETS_HPP
 
-// Shared by every benchmark executable. A benchmark is named <name>/<size> for isa::generic, <name>_<preset>/<size> for every
-// other preset this build has and the CPU runs, and <name>_dispatch/<size> for the dispatch engine of the detected presets.
+// Shared by every benchmark executable. A benchmark is named <name>/<size>[/<offset>] for isa::generic, <name>_<preset>/... for every
+// other preset this build has and the CPU runs, and <name>_dispatch/... for the dispatch engine of the detected presets. Only
+// Fletcher and Adler-32 add the offset, 0 or 1 bytes after an aligned address (sizes(..., true)).
 
 #include <checksum/isa.hpp>
 

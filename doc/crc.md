@@ -81,9 +81,10 @@ CRC-64 is ECMA-182, while common usage often means CRC-64/XZ.
 ### 3.1 Engines
 
 `crc_engine<Register, Strategy = crc_lut_none, isa Isa = isa::generic>` holds a strategy's table and the prepared
-parameters. It is immutable, so one engine serves any number of computations; the running CRC is a separate
-`state_type` value. `Register` is `std::uint8_t`, `std::uint16_t`, `std::uint32_t` or `std::uint64_t`; a wider register
-than the CRC needs gives the same results. `Isa` picks the CPU kernel (section 5), independent of the table strategy.
+parameters. It is immutable, so one engine serves any number of computations; the running CRC is a separate `state_type`
+value. `Register` is `std::uint8_t`, `std::uint16_t`, `std::uint32_t` or `std::uint64_t` (the `crc_register` concept); a
+wider register than the CRC needs gives the same results. `Isa` picks the CPU kernel (section 5), independent of the
+table strategy.
 
 | Member | Meaning |
 | --- | --- |
@@ -157,16 +158,17 @@ struct my_strategy {
 peripheral that supports only some polynomials). `update` receives the public state, below 2^width and reflected if the
 input is reflected, and returns the state after the bytes. A strategy needs to support only the registers it names;
 one without `constexpr` members works with `crc_engine::create` at run time only. The engine ignores its `Isa` for a
-custom strategy unless the strategy provides `template update<Register, Isa>(...)`.
+custom strategy unless the strategy provides `template update<Register, Isa>(...)`. `crc_dispatch_engine` chooses among
+the presets for a strategy with that member and `isa::generic` for one without; a `static constexpr bool takes_preset`
+member overrides that choice.
 `examples/crc/hardware_strategy.cpp` drives the CRC unit of STM32 parts this way.
 
 ## 4. Behavior
 
 - **Splits:** `finalize(update(update(initial(), a), b)) == compute(a ++ b)` for any split.
-- **Input:** `std::span<std::byte const>` or any input range of `std::byte`, `char`, `unsigned char`, `signed char` or
-  `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer. Arrays of `char` and `char8_t` are
-  rejected, since a string literal's `'\0'` would be included: pass text as `std::string_view`. Ranges of `volatile`
-  elements are rejected; copy memory-mapped buffers first.
+- **Input:** `data` is a `std::span<std::byte const>` or any `byte_range`: an input range of non-`volatile` `std::byte`,
+  `char`, `unsigned char`, `signed char` or `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer.
+  Arrays of `char` and `char8_t` are rejected so a string literal's `'\0'` is never included: pass `std::string_view`.
 - **Bit-granular messages:** `update(state, data, bit_length)` folds `bit_length / 8` bytes, then `bit_length % 8` bits
   of the next byte, taken in the CRC's message order: from bit 0 up if the input is reflected, from bit 7 down
   otherwise. The 83-bit message of a CAN frame:
@@ -193,8 +195,8 @@ the portable loop for every preset. Presets are explained in
 | `isa::x86_pclmul`, `x86_avx2` | PCLMULQDQ folding for every parameter set from 16 B; CRC-32C uses SSE4.2 `crc32` below 25 B and folding with `crc32` from 25 B. |
 | `isa::x86_vpclmul`, `x86_avxvnni` | As above, plus the 256-bit VPCLMULQDQ loop from 256 B. |
 | `isa::aarch64_crc`, `isa::thumb2_crc` | CRC32/CRC32C instructions for CRC-32 and CRC-32C. |
-| `isa::aarch64_pmull` | CRC32/CRC32C instructions, plus PMULL folding for other parameter sets (little-endian only). |
-| `isa::riscv_zbc` | Zbc `clmul` folding (RV64, little-endian); the build itself needs no Zbc. |
+| `isa::aarch64_pmull` | CRC32/CRC32C instructions, plus PMULL folding for other parameter sets from 16 B (little-endian only). |
+| `isa::riscv_zbc` | Zbc `clmul` folding from 16 B (RV64, little-endian); the build itself needs no Zbc. |
 | every other preset, `isa::generic` included | Portable sliced or braided loop. |
 
 - The CRC instructions apply to any parameter set with the CRC-32 or CRC-32C polynomial and reflected input in a
@@ -234,6 +236,3 @@ Measured figures: [performance.md](performance.md#crc).
 
 - **Widths 1..64** only, and only polynomials with an x^0 term.
 - **Initial values are direct**, never the "augmented" form.
-- **A preset in a template argument is not checked:** on a CPU without its instructions it is undefined behavior.
-  `crc_dispatch_engine` checks the CPU.
-- **Not thread-safe:** a `const` engine can be shared between threads; an accumulator cannot.

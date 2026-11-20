@@ -18,12 +18,12 @@ What every algorithm in this repository has to satisfy.
 - One public namespace, `checksum`. Each algorithm prefixes its names (`crc_`) and keeps its implementation in its
   own detail namespace (`checksum::crc_detail`).
 - Few headers: an algorithm has its main header and, if it has named parameter sets, a catalog header that the main
-  header includes (`checksum/crc.hpp`, `checksum/crc_catalog.hpp`, `checksum/internet.hpp`). What every algorithm needs
-  (the `byte_range` concept, chunking of non-contiguous ranges) is in `checksum/byte_range.hpp`, with its details in
-  `checksum::detail`; `checksum/engine.hpp` holds what every engine shares (the `engine` concept, `accumulator`, the
-  members of the dispatch engines in `checksum::detail`), and `checksum/hash128.hpp` the 128-bit result type of XXH3
-  and MurmurHash3. Every algorithm header includes `engine.hpp`. Headers shared only
-  by `src/` go to `src/include_private/checksum_private/`.
+  header includes (`checksum/crc.hpp` includes `checksum/crc_catalog.hpp`; `checksum/internet.hpp` has none). What every
+  algorithm needs (the `byte_range` concept, chunking of non-contiguous ranges) is in `checksum/byte_range.hpp`, with
+  its details in `checksum::detail`; `checksum/engine.hpp` holds what every engine shares (the `engine` concept,
+  `accumulator`, the members of the dispatch engines in `checksum::detail`), and `checksum/hash128.hpp` the 128-bit
+  result type of XXH3 and MurmurHash3. Every algorithm header includes `engine.hpp`. Headers shared only by `src/` go to
+  `src/include_private/checksum_private/`.
 - One API model for every algorithm: an immutable engine (`<algorithm>_engine`, with its `Isa` preset, CRC parameters
   or a seed) folds data into a plain state value; a dispatch engine has the same members and chooses the preset at run
   time. The only free function of an algorithm is its one-shot `<algorithm>_compute`.
