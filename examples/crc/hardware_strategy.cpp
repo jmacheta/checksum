@@ -1,8 +1,8 @@
-// A user-defined strategy driving the CRC unit of STM32 F0/F3/F7/G0/G4/H7/L4 parts. The library prepares and
-// finalizes the CRC; the strategy only feeds whole bytes.
+// A custom strategy that drives the CRC unit of STM32 F0/F3/F7/G0/G4/H7/L4 parts. The strategy only feeds whole bytes;
+// the library handles everything else.
 //
-// A software model stands in for the peripheral so the example runs on any host. On the device,
-// stm32_crc_registers is the volatile register block at the peripheral's address.
+// A software model stands in for the peripheral, so the example runs on any host. On the device, stm32_crc_registers
+// is the volatile register block at the peripheral's address.
 
 #include <checksum/crc.hpp>
 
@@ -42,8 +42,8 @@ namespace {
 stm32_crc_registers crc_peripheral;
 } // namespace
 
-// A strategy provides table_type, make_table and update. The state passes in and out of each update, so one unit
-// serves any number of engines, one computation at a time; not constexpr, so engines come from crc_engine::create.
+// The state passes in and out of each update, so one unit serves any number of engines, one computation at a time.
+// The members are not constexpr, so engines come from crc_engine::create.
 struct stm32_crc_unit {
   // make_table's result: the parameters as register values instead of a lookup table.
   struct configuration {
@@ -119,7 +119,7 @@ template <class Register> Register stm32_crc_unit::update(configuration const &t
 int main() {
   std::array<std::byte, 9> const message{std::byte{'1'}, std::byte{'2'}, std::byte{'3'}, std::byte{'4'}, std::byte{'5'},
                                          std::byte{'6'}, std::byte{'7'}, std::byte{'8'}, std::byte{'9'}};
-  // Each supported parameter set must match the library's default strategy.
+  // Every supported CRC must match the library's default strategy.
   bool all_match = true;
   auto const check = [&](char const *name, crc_parameters const &parameters, std::uint32_t expected) {
     auto const engine = crc_engine<std::uint32_t, stm32_crc_unit>::create(parameters);

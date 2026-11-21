@@ -1,5 +1,4 @@
-// Computes the Adler-32 of built-in default settings at compile time; at run time a copy of the settings is checked against
-// that constant.
+// Checks settings loaded at run time against an Adler-32 computed at compile time.
 
 #include <checksum/adler32.hpp>
 

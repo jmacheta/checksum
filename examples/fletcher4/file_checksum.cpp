@@ -4,7 +4,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdio> // stderr
 #include <fstream>
 #include <iostream>
 #include <span>

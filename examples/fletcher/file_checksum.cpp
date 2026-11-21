@@ -5,7 +5,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdio> // stderr
 #include <fstream>
 #include <iomanip>
 #include <iostream>

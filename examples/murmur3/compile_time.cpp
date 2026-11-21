@@ -16,8 +16,8 @@ namespace {
 
 constexpr std::uint32_t key(std::string_view command) { return checksum::murmur3_compute<32>(command); }
 
-// Two commands with the same hash would be duplicate case labels, a compile error. Unknown text that collides with a label runs
-// that command; compare the text too where this matters.
+// Two commands with the same hash would be duplicate case labels, which fail to compile. Unknown text that collides with a
+// label runs that command, so compare the text too where this matters.
 std::string_view execute(std::string_view command) {
   switch(key(command)) {
   case key("start"):

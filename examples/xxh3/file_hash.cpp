@@ -4,7 +4,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdio> // stderr
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -21,8 +20,9 @@ int main(int argument_count, char **arguments) {
     return 1;
   }
 
-  // The state is a 328-byte value passed in and out of each update: large chunks keep that copy negligible.
-  constexpr checksum::xxh3_engine<64> xxh3;
+  // The dispatch engine runs the best stripe kernel for this CPU, e.g. AVX2. The state is a 328-byte value passed in
+  // and out of each update: large chunks keep that copy negligible.
+  checksum::xxh3_dispatch_engine<64> const xxh3;
   auto state = xxh3.initial();
   std::array<char, std::size_t{64} * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {

@@ -5,7 +5,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdio> // stderr
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -22,7 +21,8 @@ int main(int argument_count, char **arguments) {
     return 1;
   }
 
-  // The accumulator references the engine and keeps the running state across chunks.
+  // The accumulator keeps the running CRC across chunks. This engine runs the portable sliced loop; for the CPU's
+  // CRC instructions, use a crc_dispatch_engine (see doc/crc.md).
   checksum::accumulator crc{checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_sliced>};
   std::array<char, std::size_t{64} * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {

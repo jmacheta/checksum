@@ -1,4 +1,4 @@
-// Verifies a 4 KiB block against its stored fletcher4 checksum, as ZFS does when it reads a block, and detects a flipped bit.
+// Verifies a 4 KiB block against its stored fletcher4 checksum, as ZFS does on every read, and detects a flipped bit.
 
 #include <checksum/fletcher4.hpp>
 

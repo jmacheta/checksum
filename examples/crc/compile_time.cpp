@@ -8,7 +8,7 @@
 
 using namespace std::literals;
 
-// crc_engine_for<Parameters, Strategy> is a constexpr engine; compute() runs in a constant expression.
+// A constant in read-only data: no code computes it at run time.
 constexpr auto version_crc = checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_byte>.compute("firmware 1.4.2"sv);
 
 // The compiler verifies the CRC-32 check value.

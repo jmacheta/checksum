@@ -1,4 +1,4 @@
-// Computes Fletcher checksums at compile time: the results are constants.
+// Computes Fletcher checksums at compile time and checks them against the run-time result.
 
 #include <checksum/fletcher.hpp>
 
@@ -19,7 +19,6 @@ static_assert(checksum::fletcher_compute<64>("abcde"sv) == 0xC8C6C527646362C6);
 constexpr std::uint32_t version_checksum = checksum::fletcher_compute<32>("firmware 1.4.2"sv);
 
 int main() {
-  // The same text at run time gives the same checksum.
   std::string const version = "firmware 1.4.2";
   std::uint32_t const value = checksum::fletcher_compute<32>(version);
   std::cout << "Fletcher-32 of \"" << version << "\" 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << value

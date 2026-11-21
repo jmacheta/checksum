@@ -1,5 +1,4 @@
-// Hashes asset paths into 64-bit IDs at compile time, so that the program refers to assets by ID; the compiler rejects colliding
-// IDs.
+// Hashes asset paths into 64-bit IDs at compile time, so the program refers to assets by ID. Colliding IDs fail to compile.
 
 #include <checksum/xxh3.hpp>
 
@@ -34,7 +33,7 @@ static_assert(std::ranges::adjacent_find(assets, {}, &asset::id) == assets.end()
 
 // The path of an ID, or an empty view for an unknown ID.
 std::string_view find_path(std::uint64_t id) {
-  // NOLINTNEXTLINE(readability-qualified-auto): an iterator, a pointer only in some standard libraries.
+  // NOLINTNEXTLINE(readability-qualified-auto)
   auto const found = std::ranges::lower_bound(assets, id, {}, &asset::id);
   return found != assets.end() && found->id == id ? found->path : std::string_view{};
 }

@@ -1,95 +1,79 @@
-# xxHash user guide
+# XXH32 and XXH64
 
-The non-cryptographic hashes XXH32 and XXH64 with a seed, at compile time or at run time. One header,
-`checksum/xxhash.hpp`. For XXH3-64 and XXH3-128, see [xxh3.md](xxh3.md).
+The seeded hashes XXH32 and XXH64, with values equal to the reference `xxhash.h` 0.8.4 on every target. They are in
+`checksum/xxhash.hpp`, and every function is `constexpr` and `noexcept`. XXH3 has its own guide, [xxh3.md](xxh3.md).
 
-## 1. Quick start
-
-The three ways to compute, the same in every guide: in a constant expression, with an instruction-set preset named in
-the program (section 5), and with the preset chosen for the running CPU (section 5.1). `data`, `header` and `payload`
-are spans or other ranges of bytes.
+## The simplest way
 
 ```cpp
 #include <checksum/xxhash.hpp>
 using namespace std::literals;
 
-// Compile time.
 static_assert(checksum::xxhash_compute<32>("abc"sv) == 0x32D153FF);
 static_assert(checksum::xxhash_compute<64>("abc"sv) == 0x44BC2CF5AD770999);
 
-// Explicit preset and seed: AVX2 where this build has it (x86-64), isa::generic elsewhere.
-constexpr auto avx2 = checksum::isa_available(checksum::isa::x86_avx2) ? checksum::isa::x86_avx2 : checksum::isa::generic;
-if(checksum::detect_isa().contains(avx2)) {  // a preset is a promise: check the CPU, or know it
-  std::uint64_t hash = checksum::xxhash_compute<64, avx2>(data, 1234);
-  constexpr checksum::xxhash_engine<64, avx2> xxh64(1234);  // the engine holds the seed, the state only the message
-  std::uint64_t value = xxh64.finalize(xxh64.update(xxh64.update(xxh64.initial(), header), payload));
-}
-
-// Run-time dispatch: the same interface as every algorithm; xxHash runs isa::generic on every CPU.
-static checksum::xxhash_dispatch_engine<64> const xxh64(1234);
-checksum::isa chosen = xxh64.preset();
-checksum::accumulator running{xxh64};
-std::uint64_t value = running.update(header).update(payload).value();
+std::uint64_t hash = checksum::xxhash_compute<64>(data);
+std::uint64_t seeded = checksum::xxhash_compute<64>(data, 1234);
 ```
 
-`examples/xxhash` has complete programs: message IDs at compile time, the XXH64 of a file, and a cache keyed by a hash.
+`data` is a `std::span<std::byte const>` or any range of bytes. Pass text as `std::string_view`: character arrays are
+rejected so that a literal's `'\0'` is never hashed.
 
-## 2. Definition
+## Choosing a variant for your CPU
 
-The hashes of the reference implementation, `xxhash.h` 0.8.4: the values are equal on every target.
+XXH32 and XXH64 have no CPU kernels, because each lane is a serial multiply-rotate chain that vector units cannot speed
+up. Every preset runs the same portable loop, so the choice that matters is the width. On 32-bit cores, XXH32 is about
+twice as fast as the alternatives, while XXH64 is slow there because it needs 64-bit multiplications. On 64-bit CPUs,
+[XXH3](xxh3.md) is faster than both.
 
-## 3. API
+```cpp
+// Data in pieces. The engine holds the seed; the state holds only the message.
+constexpr checksum::xxhash_engine<32> xxh32(1234);
+checksum::accumulator running{xxh32};
+std::uint32_t value = running.update(header).update(payload).value();
+```
 
-`Width` is 32 for XXH32 and 64 for XXH64.
+## You don't know the CPU, or you need broad compatibility
 
-| Name | What it does |
+You need nothing extra: the portable loop is the fastest code on every CPU. The dispatch engine exists only so that
+code that dispatches all its algorithms can treat xxHash alike; it always runs the `generic` loop.
+
+```cpp
+static checksum::xxhash_dispatch_engine<64> const xxh64(1234);
+std::uint64_t hash = xxh64.compute(data);
+```
+
+## Reference
+
+### API
+
+`Width` is 32 or 64; the result and the seed are a `std::uint32_t` or a `std::uint64_t`.
+
+| Name | Description |
 | --- | --- |
-| `xxhash_engine<Width, Isa>` | The engine, `xxhash_engine<Width, Isa>{seed}`, seed 0 by default. `initial()` is the empty message, `update(state, data)` folds `data` into `state` and returns the new state, `finalize(state)` is the hash, `compute(data)` is `finalize(update(initial(), data))`, and the static `preset()` is `Isa`. There is no `resume`: the hash does not determine the state. `value_type`, the hash and the seed, is `std::uint32_t` for XXH32 and `std::uint64_t` for XXH64. |
-| `xxhash_state<Width>` | Four lanes, the byte count (`length`) and an unfinished stripe (`buffer`, 16 or 32 bytes). A plain value; the default is the empty message. `==` compares what the hash depends on, so one message split differently gives equal states. |
-| `xxhash_compute<Width, Isa>(data, seed = 0)` | `xxhash_engine<Width, Isa>{seed}.compute(data)`. |
-| `xxhash_dispatch_engine<Width>` | The same members as `xxhash_engine<Width>`, made with `(seed = 0, cpu = detect_isa())`; `preset()`, not static, is always `generic` (section 5.1). |
-| `accumulator<Engine>` | `checksum::accumulator running{engine}` (`checksum/engine.hpp`, shared by every algorithm): a pointer to the engine and a state, with `update(data)` (chainable), `value()`, `state()` and `reset()`. The engine must outlive it. |
+| `xxhash_compute<Width, Isa>(data, seed = 0)` | The hash of `data`. |
+| `xxhash_engine<Width, Isa>` | An engine holding the seed, `xxhash_engine<Width>{seed}`, with `initial()`, `update(state, data)`, `finalize(state)`, `compute(data)` and the static `preset()`. |
+| `xxhash_state<Width>` | Four lanes, the byte count and an unfinished stripe. A plain value; `==` compares what the hash depends on. |
+| `xxhash_dispatch_engine<Width>` | The same members, with the constructor `(seed = 0, isa_set cpu = detect_isa())`. |
 
-`Isa` is an instruction-set preset, `isa::generic` by default (section 5). All functions are `constexpr` and `noexcept`.
-`data` is a `std::span<std::byte const>` or any `byte_range`: an input range of non-`volatile` `std::byte`, `char`,
-`unsigned char`, `signed char` or `char8_t`; non-contiguous ranges are copied through a 64-byte stack buffer. Arrays of
-`char` and `char8_t` are rejected so a string literal's `'\0'` is never included: pass `std::string_view`. `compute`
-hashes contiguous ranges directly, without the state's buffer. Every state value is valid, so nothing has preconditions.
+`Isa` defaults to `isa::generic`, and no function has preconditions. `accumulator` works with every engine.
 
-## 4. Behavior
+- A message may be split anywhere and gives the same hash.
+- Input is read little-endian on every target. The reference's canonical form writes the hash most significant byte
+  first.
+- There is no `resume`, because a hash does not determine the state.
 
-- **Splits:** a message may be split anywhere; the result is the same as for one call.
-- **Seed:** different seeds give unrelated hashes.
-- **Byte order:** input words are read little-endian on every target. The result is a number; the reference's canonical
-  form writes most significant byte first.
-- **Long messages:** the length is a 64-bit count; XXH32 mixes it in modulo 2^32, as the reference does.
+### Performance
 
-## 5. CPU acceleration
+- XXH32 runs about 50 MB/s on an 80 MHz Cortex-M4 and 100 MB/s on a 128 MHz Cortex-M33, at 4 KiB.
+- Hash whole messages in one call when they are in memory, or stream pieces of 4 KiB or more.
 
-XXH32 and XXH64 have no kernel on any target: each lane is a serial multiply-rotate chain, and the scalar loop already
-runs the four lanes side by side. Every preset runs the one loop of `isa::generic`: copies compiled per preset were
-the same code or no faster, and Clang's AVX2 copy of XXH32 was a third slower from 1500 bytes. Presets are explained
-in [Instruction-set presets](../README.md#instruction-set-presets).
+Full figures, including the measurements behind dropping per-preset loops, are in
+[performance.md](performance.md#xxhash).
 
-### 5.1 Choosing the preset at run time
+### Limitations
 
-The dispatch engine of section 1 has the members of every dispatch engine, so code that dispatches all its algorithms
-treats xxHash alike, but it always runs the `isa::generic` loop and `preset()` is `generic`, on every architecture and
-compiler; the `cpu` argument changes nothing and a call costs nothing on top of the static engine. Detection does not
-run in constant expressions: there, call `xxhash_compute<32>` / `xxhash_compute<64>` or give the engine an explicit
-set. Details and the list of engines: [Instruction-set presets](../README.md#instruction-set-presets).
-
-## 6. Performance guidelines
-
-Measured figures: [performance.md](performance.md#xxhash).
-
-- **Pick the hash for the CPU.** On 32-bit cores (Cortex-M, AArch32) XXH32 is about twice the others from 256 bytes on
-  a Cortex-M4; XXH64 is slow there, since it needs 64-bit multiplications. On 64-bit CPUs XXH3 is fastest; see
-  [xxh3.md](xxh3.md).
-- **Hash whole messages in one call** when they are in memory, or stream in pieces of 4 KiB or more.
-
-## 7. Limitations
-
-- **Not cryptographic:** XXH32 and XXH64 do not resist inputs crafted to collide, even with a secret seed. Do not use
-  them for message authentication or to protect hash tables from hostile keys.
-- **Not an error check:** unlike a CRC, they guarantee the detection of no class of errors.
+- The hashes are not cryptographic: even with a secret seed they do not resist inputs crafted to collide. Do not use
+  them for authentication or to protect hash tables from hostile keys.
+- They are not error checks: unlike a CRC, they do not guarantee detecting any kind of error, not even a single flipped
+  bit.

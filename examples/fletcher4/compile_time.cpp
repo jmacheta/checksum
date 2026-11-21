@@ -1,5 +1,4 @@
-// Computes the fletcher4 checksum of a constant 4 KiB block at compile time, the expected value a run-time check compares
-// with.
+// Computes the expected fletcher4 of a 4 KiB test pattern at compile time, and checks the block read back at run time.
 
 #include <checksum/fletcher4.hpp>
 
