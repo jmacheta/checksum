@@ -1,11 +1,10 @@
-// Computes the fletcher4 checksum of a constant 4 KiB block at compile time, the expected value a run-time check compares
-// with.
+// Computes the expected fletcher4 of a 4 KiB test pattern at compile time, and checks the block read back at run time.
 
 #include <checksum/fletcher4.hpp>
 
 #include <array>
 #include <cstddef>
-#include <print>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
@@ -34,6 +33,6 @@ int main() {
   // The block as read back at run time.
   std::array<std::byte, 4096> const block = make_pattern();
   checksum::fletcher4_value const value = checksum::fletcher4_compute(block);
-  std::println("{:x}:{:x}:{:x}:{:x}", value[0], value[1], value[2], value[3]);
+  std::cout << std::hex << value[0] << ':' << value[1] << ':' << value[2] << ':' << value[3] << '\n';
   return value == pattern_checksum ? 0 : 1;
 }

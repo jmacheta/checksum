@@ -5,28 +5,29 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdio> // stderr
 #include <fstream>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <span>
 
 int main(int argument_count, char **arguments) {
   if(argument_count != 2) {
-    std::println(stderr, "usage: {} <file>", arguments[0]);
+    std::cerr << "usage: " << arguments[0] << " <file>\n";
     return 1;
   }
   std::ifstream file(arguments[1], std::ios::binary);
   if(!file) {
-    std::println(stderr, "cannot open {}", arguments[1]);
+    std::cerr << "cannot open " << arguments[1] << '\n';
     return 1;
   }
 
-  checksum::fletcher32_state state;
-  std::array<char, 64 * 1024> buffer{};
+  constexpr checksum::fletcher_engine<32> fletcher32;
+  auto state = fletcher32.initial();
+  std::array<char, std::size_t{64} * 1024> buffer{};
   while(file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
-    state = checksum::fletcher_update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
+    state = fletcher32.update(state, std::span{buffer}.first(static_cast<std::size_t>(file.gcount())));
   }
 
-  std::println("{:08x}  {}", checksum::fletcher_finalize(state), arguments[1]);
+  std::cout << std::hex << std::setfill('0') << std::setw(8) << fletcher32.finalize(state) << "  " << arguments[1] << '\n';
   return 0;
 }

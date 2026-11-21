@@ -2,6 +2,8 @@
 #define CHECKSUM_INTERNET_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/engine.hpp>
+#include <checksum/isa.hpp>
 
 #include <bit>
 #include <concepts>
@@ -30,29 +32,61 @@ struct internet_state {
   friend constexpr bool operator==(internet_state, internet_state) noexcept = default;
 };
 
-/// Folds data into state; data may be split anywhere, including inside a 16-bit word.
-[[nodiscard]] constexpr internet_state internet_update(internet_state state, std::span<std::byte const> data) noexcept;
+/// The Internet checksum with the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp). Empty: make one
+/// wherever it is needed.
+template <isa Isa = isa::generic>
+  requires(isa_available(Isa))
+class internet_engine {
+public:
+  using state_type = internet_state; ///< Running checksum.
+  using value_type = std::uint16_t;  ///< The checksum.
 
-/// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <byte_range Range> [[nodiscard]] constexpr internet_state internet_update(internet_state state, Range &&data) noexcept;
+  /// The preset whose loop the engine runs: Isa.
+  [[nodiscard]] static constexpr isa preset() noexcept;
 
-/// Folds data into the message whose checksum is checksum and returns the new checksum. That message must have an even number of
-/// bytes, since a checksum does not record an odd last byte.
-template <std::same_as<std::uint16_t> Checksum>
-[[nodiscard]] constexpr std::uint16_t internet_update(Checksum checksum, std::span<std::byte const> data) noexcept;
+  /// State of an empty message.
+  [[nodiscard]] constexpr state_type initial() const noexcept;
 
-/// Folds a byte range into the message whose checksum is checksum and returns the new checksum; that message has an even length.
-template <std::same_as<std::uint16_t> Checksum, byte_range Range>
-[[nodiscard]] constexpr std::uint16_t internet_update(Checksum checksum, Range &&data) noexcept;
+  /// Folds data into state; data may be split anywhere, including inside a 16-bit word.
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data) const noexcept;
 
-/// The checksum of state: the one's complement of the sum, a last odd byte padded with zero. Store it most significant byte first.
-[[nodiscard]] constexpr std::uint16_t internet_finalize(internet_state state) noexcept;
+  /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
+  template <byte_range Range> [[nodiscard]] constexpr state_type update(state_type state, Range &&data) const noexcept;
 
-/// internet_finalize(internet_update(internet_state{}, data)).
-[[nodiscard]] constexpr std::uint16_t internet_compute(std::span<std::byte const> data) noexcept;
+  /// The checksum of state: the one's complement of the sum, a last odd byte padded with zero. Store it most significant byte first.
+  [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
 
-/// internet_finalize(internet_update(internet_state{}, data)) for a byte range.
-template <byte_range Range> [[nodiscard]] constexpr std::uint16_t internet_compute(Range &&data) noexcept;
+  /// State of a message whose checksum is checksum. That message must have an even number of bytes, since a checksum does not record
+  /// an odd last byte.
+  [[nodiscard]] constexpr state_type resume(value_type checksum) const noexcept;
+
+  /// finalize(update(initial(), data)).
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
+
+  /// finalize(update(initial(), data)) for a byte range.
+  template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
+};
+
+/// internet_engine<Isa>{}.compute(data).
+template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr internet_engine<Isa>::value_type internet_compute(Range &&data) noexcept;
+
+} // namespace checksum
+
+namespace checksum::internet_detail {
+
+// The presets a dispatch engine chooses from: generic, those with target options, and riscv_v, the one without them with a kernel.
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options() | isa::riscv_v;
+
+} // namespace checksum::internet_detail
+
+namespace checksum {
+
+/// An internet_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
+class internet_dispatch_engine : public detail::dispatch_engine<internet_engine<>, internet_detail::own_loops> {
+public:
+  /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
+  constexpr explicit internet_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
+};
 
 } // namespace checksum
 
@@ -65,8 +99,11 @@ template <std::unsigned_integral Value> constexpr std::uint16_t fold(Value sum) 
 // Sum of data as 16-bit big-endian words, a last odd byte padded with zero; the constant-evaluation loop.
 constexpr std::uint16_t sum_bytes(std::span<std::byte const> data) noexcept;
 
-// The same sum at run time, defined in src/internet/sum_loop.cpp.
-std::uint16_t sum_loop(std::span<std::byte const> data) noexcept;
+// The same sum at run time, compiled for the preset Isa: src/internet/ defines it for every preset isa_available() accepts.
+template <isa Isa> std::uint16_t sum_loop(std::span<std::byte const> data) noexcept;
+
+// Folds a chunk's sum, from sum_bytes() or any loop, into state; size is the chunk's length.
+constexpr internet_state combine(internet_state state, std::uint16_t sum, std::size_t size) noexcept;
 
 } // namespace checksum::internet_detail
 
@@ -96,46 +133,78 @@ constexpr std::uint16_t sum_bytes(std::span<std::byte const> data) noexcept {
   return fold(sum);
 }
 
-} // namespace checksum::internet_detail
-
-namespace checksum {
-
-constexpr internet_state internet_update(internet_state state, std::span<std::byte const> data) noexcept {
-  std::uint16_t sum = 0;
-  if consteval {
-    sum = internet_detail::sum_bytes(data);
-  } else {
-    sum = internet_detail::sum_loop(data);
-  }
+constexpr internet_state combine(internet_state state, std::uint16_t sum, std::size_t size) noexcept {
   // Swapping the bytes of a one's complement sum shifts the message by one byte.
   if(state.odd) {
     sum = std::byteswap(sum);
   }
-  return {.sum = internet_detail::fold(std::uint32_t{state.sum} + sum), .odd = state.odd != (data.size() % 2 == 1)};
+  return {.sum = fold(std::uint32_t{state.sum} + sum), .odd = state.odd != (size % 2 == 1)};
 }
 
-template <byte_range Range> constexpr internet_state internet_update(internet_state state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = internet_update(state, chunk); });
+} // namespace checksum::internet_detail
+
+namespace checksum {
+
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr isa internet_engine<Isa>::preset() noexcept {
+  return Isa;
+}
+
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr internet_state internet_engine<Isa>::initial() const noexcept {
+  return {};
+}
+
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr internet_state internet_engine<Isa>::update(internet_state state, std::span<std::byte const> data) const noexcept {
+  if consteval {
+    return internet_detail::combine(state, internet_detail::sum_bytes(data), data.size());
+  } else {
+    return internet_detail::combine(state, internet_detail::sum_loop<Isa>(data), data.size());
+  }
+}
+
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr internet_state internet_engine<Isa>::update(internet_state state, Range &&data) const noexcept {
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-constexpr std::uint16_t internet_finalize(internet_state state) noexcept { return static_cast<std::uint16_t>(~state.sum); }
-
-template <std::same_as<std::uint16_t> Checksum> constexpr std::uint16_t internet_update(Checksum checksum, std::span<std::byte const> data) noexcept {
-  return internet_finalize(internet_update(internet_state{.sum = static_cast<std::uint16_t>(~checksum)}, data));
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr std::uint16_t internet_engine<Isa>::finalize(internet_state const &state) const noexcept {
+  return static_cast<std::uint16_t>(~state.sum);
 }
 
-template <std::same_as<std::uint16_t> Checksum, byte_range Range> constexpr std::uint16_t internet_update(Checksum checksum, Range &&data) noexcept {
-  return internet_finalize(internet_update(internet_state{.sum = static_cast<std::uint16_t>(~checksum)}, std::forward<Range>(data)));
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr internet_state internet_engine<Isa>::resume(std::uint16_t checksum) const noexcept {
+  return {.sum = static_cast<std::uint16_t>(~checksum)};
 }
 
-constexpr std::uint16_t internet_compute(std::span<std::byte const> data) noexcept {
-  return internet_finalize(internet_update(internet_state{}, data));
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr std::uint16_t internet_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
+  return finalize(update(initial(), data));
 }
 
-template <byte_range Range> constexpr std::uint16_t internet_compute(Range &&data) noexcept {
-  return internet_finalize(internet_update(internet_state{}, std::forward<Range>(data)));
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr std::uint16_t internet_engine<Isa>::compute(Range &&data) const noexcept {
+  return finalize(update(initial(), std::forward<Range>(data)));
 }
+
+template <isa Isa, byte_range Range> constexpr internet_engine<Isa>::value_type internet_compute(Range &&data) noexcept {
+  return internet_engine<Isa>{}.compute(std::forward<Range>(data));
+}
+
+constexpr internet_dispatch_engine::internet_dispatch_engine(isa_set cpu) noexcept : dispatch_engine(cpu) {}
 
 } // namespace checksum
 

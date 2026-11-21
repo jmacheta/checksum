@@ -1,14 +1,11 @@
 #ifndef CHECKSUM_PRIVATE_RISCV64_CRC_HPP
 #define CHECKSUM_PRIVATE_RISCV64_CRC_HPP
 
-// RISC-V kernel: folding with the Zbc scalar carry-less multiplication (clmul, clmulh) on little-endian RV64, e.g.
-// -march=rv64gc_zbc; RISC-V has no CRC instruction. Included only by crc_arch.hpp.
+// RISC-V kernel: folding with Zbc carry-less multiplication from isa::riscv_zbc on little-endian RV64; RISC-V has no
+// CRC instruction. Included only by crc_arch.hpp.
 
-#if !defined(__riscv_zbc)
-#include <checksum_private/generic/crc.hpp>
-#else
-
-#include <riscv_bitmanip.h>
+#include <checksum/isa.hpp>
+#include <checksum_private/target.hpp>
 
 #include <bit>
 #include <cstddef>
@@ -17,17 +14,21 @@
 #include <span>
 
 namespace checksum::crc_detail {
+// NOLINTNEXTLINE(misc-anonymous-namespace-in-header): a private header, included only by src/crc/*.cpp.
+namespace {
 
-inline constexpr bool folding_available = true;
-
-template <std::uint32_t Polynomial> inline constexpr bool crc32_instructions_available = false;
-
-inline constexpr std::size_t crc32_folding_minimum_size = std::numeric_limits<std::size_t>::max();
-
-inline constexpr std::size_t wide_folding_minimum_size = std::numeric_limits<std::size_t>::max();
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_zbc))
+struct folding_kernel<Isa> {
+  static constexpr bool available = true;
+  static constexpr std::size_t minimum_size = folding_minimum_size;
+  static constexpr std::size_t wide_minimum_size = std::numeric_limits<std::size_t>::max();
+  template <bool Reflected>
+  static std::uint64_t fold(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
+};
 
 // Fold kernel of fold_blocks_with(): 128-bit polynomials in an unsigned __int128, low lane in the low half.
-struct clmul_kernel {
+template <isa Isa> struct clmul_kernel {
   __extension__ using vector = unsigned __int128;
 
   static constexpr bool wide = false;
@@ -56,7 +57,9 @@ struct clmul_kernel {
   template <bool Reflected> static std::uint64_t reduce(vector accumulator, folding_constants const &constants) noexcept;
 };
 
-template <bool Reflected> [[gnu::always_inline]] inline clmul_kernel::vector clmul_kernel::load(std::span<std::byte const> data) noexcept {
+template <isa Isa>
+template <bool Reflected>
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::load(std::span<std::byte const> data) noexcept {
   constexpr std::size_t half = 8;
   std::uint64_t const first = load_little_endian<half>(data);
   std::uint64_t const second = load_little_endian<half>(data.subspan(half));
@@ -67,22 +70,26 @@ template <bool Reflected> [[gnu::always_inline]] inline clmul_kernel::vector clm
   }
 }
 
-[[gnu::always_inline]] inline clmul_kernel::vector clmul_kernel::pair(folding_pair const &constants) noexcept {
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::pair(folding_pair const &constants) noexcept {
   return (vector{constants[1]} << 64U) | constants[0];
 }
 
+template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline clmul_kernel::vector clmul_kernel::first_block(std::span<std::byte const> data, std::uint64_t remainder) noexcept {
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::first_block(std::span<std::byte const> data,
+                                                                                       std::uint64_t remainder) noexcept {
   return load<Reflected>(data) ^ (Reflected ? vector{remainder} : vector{remainder} << 64U);
 }
 
-[[gnu::always_inline]] inline clmul_kernel::vector clmul_kernel::fold(vector accumulator, vector constants, vector next) noexcept {
+template <isa Isa>
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::fold(vector accumulator, vector constants, vector next) noexcept {
   return multiply(lane<0>(accumulator), lane<0>(constants)) ^ multiply(lane<1>(accumulator), lane<1>(constants)) ^ next;
 }
 
+template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline clmul_kernel::vector clmul_kernel::partial(vector accumulator, vector by_one, std::span<std::byte const> last,
-                                                                         std::size_t size) noexcept {
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::partial(vector accumulator, vector by_one, std::span<std::byte const> last,
+                                                                                   std::size_t size) noexcept {
   // Reflected, byte i is bits 8i..8i+7, so moving bytes towards the message end shifts left; in normal order byte i is
   // bits 120-8i..127-8i and the shift directions swap.
   unsigned const tail_bits = 8U * static_cast<unsigned>(size);
@@ -97,16 +104,23 @@ template <bool Reflected>
   }
 }
 
-[[gnu::always_inline]] inline clmul_kernel::vector clmul_kernel::multiply(std::uint64_t first, std::uint64_t second) noexcept {
-  return (vector{__riscv_clmulh_64(first, second)} << 64U) | __riscv_clmul_64(first, second);
+template <isa Isa>
+CHECKSUM_ALWAYS_INLINE inline clmul_kernel<Isa>::vector clmul_kernel<Isa>::multiply(std::uint64_t first, std::uint64_t second) noexcept {
+  // The build may lack Zbc and GCC has no target pragma on RISC-V, so enable it locally in the asm.
+  std::uint64_t low = 0;
+  std::uint64_t high = 0;
+  asm(".option push\n.option arch, +zbc\nclmul %0, %1, %2\n.option pop" : "=r"(low) : "r"(first), "r"(second));
+  asm(".option push\n.option arch, +zbc\nclmulh %0, %1, %2\n.option pop" : "=r"(high) : "r"(first), "r"(second));
+  return (vector{high} << 64U) | low;
 }
 
-template <int Lane> [[gnu::always_inline]] inline std::uint64_t clmul_kernel::lane(vector value) noexcept {
+template <isa Isa> template <int Lane> CHECKSUM_ALWAYS_INLINE inline std::uint64_t clmul_kernel<Isa>::lane(vector value) noexcept {
   return static_cast<std::uint64_t>(value >> (64U * Lane));
 }
 
+template <isa Isa>
 template <bool Reflected>
-[[gnu::always_inline]] inline std::uint64_t clmul_kernel::reduce(vector accumulator, folding_constants const &constants) noexcept {
+CHECKSUM_ALWAYS_INLINE inline std::uint64_t clmul_kernel<Isa>::reduce(vector accumulator, folding_constants const &constants) noexcept {
   constexpr unsigned top_bit = 63;
   std::uint64_t const low = lane<0>(accumulator);
   std::uint64_t const high = lane<1>(accumulator);
@@ -124,14 +138,15 @@ template <bool Reflected>
   }
 }
 
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::riscv_zbc))
 template <bool Reflected>
-[[gnu::always_inline]] inline std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder,
-                                                        std::span<std::byte const> data) noexcept {
-  return clmul_kernel::reduce<Reflected>(fold_blocks_with<Reflected, clmul_kernel>(constants, remainder, data), constants);
+CHECKSUM_ALWAYS_INLINE inline std::uint64_t folding_kernel<Isa>::fold(folding_constants const &constants, std::uint64_t remainder,
+                                                                      std::span<std::byte const> data) noexcept {
+  return clmul_kernel<Isa>::template reduce<Reflected>(fold_blocks_with<Reflected, clmul_kernel<Isa>>(constants, remainder, data), constants);
 }
 
+} // namespace
 } // namespace checksum::crc_detail
-
-#endif
 
 #endif // CHECKSUM_PRIVATE_RISCV64_CRC_HPP

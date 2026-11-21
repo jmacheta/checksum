@@ -3,20 +3,21 @@
 #include <checksum/murmur3.hpp>
 
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
 
 // The compiler verifies a reference value of MurmurHash3_x86_32.
-static_assert(checksum::murmur3_32_compute("Hello, world!"sv, 1234) == 0xFAF6CDB3);
+static_assert(checksum::murmur3_compute<32>("Hello, world!"sv, 1234) == 0xFAF6CDB3);
 
 namespace {
 
-constexpr std::uint32_t key(std::string_view command) { return checksum::murmur3_32_compute(command); }
+constexpr std::uint32_t key(std::string_view command) { return checksum::murmur3_compute<32>(command); }
 
-// Two commands with the same hash would be duplicate case labels, a compile error. Unknown text that collides with a label runs
-// that command; compare the text too where this matters.
+// Two commands with the same hash would be duplicate case labels, which fail to compile. Unknown text that collides with a
+// label runs that command, so compare the text too where this matters.
 std::string_view execute(std::string_view command) {
   switch(key(command)) {
   case key("start"):
@@ -34,7 +35,8 @@ std::string_view execute(std::string_view command) {
 
 int main() {
   for(std::string_view const command : {"status"sv, "stop"sv, "reboot"sv}) {
-    std::println("{:8} 0x{:08X} -> {}", command, key(command), execute(command));
+    std::cout << std::left << std::setfill(' ') << std::setw(8) << command << " 0x" << std::right << std::hex << std::uppercase << std::setfill('0')
+              << std::setw(8) << key(command) << " -> " << execute(command) << '\n';
   }
   return execute("stop") == "stopping" && execute("reboot") == "unknown command" ? 0 : 1;
 }

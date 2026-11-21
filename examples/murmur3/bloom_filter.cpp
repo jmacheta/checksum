@@ -4,8 +4,8 @@
 
 #include <bitset>
 #include <cstddef>
-#include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
@@ -15,7 +15,7 @@ namespace {
 class bloom_filter {
 public:
   void insert(std::string_view key) {
-    auto const hash = checksum::murmur3_128_compute(key);
+    auto const hash = checksum::murmur3_compute<128>(key);
     for(std::size_t index = 0; index < hash_count; ++index) {
       bits.set(position(hash, index));
     }
@@ -23,7 +23,7 @@ public:
 
   // False means the key was never inserted; true means it probably was.
   [[nodiscard]] bool may_contain(std::string_view key) const {
-    auto const hash = checksum::murmur3_128_compute(key);
+    auto const hash = checksum::murmur3_compute<128>(key);
     for(std::size_t index = 0; index < hash_count; ++index) {
       if(!bits.test(position(hash, index))) {
         return false;
@@ -56,7 +56,7 @@ int main() {
     all_found = all_found && users.may_contain(name);
   }
   for(std::string_view const name : {"alice"sv, "mallory"sv, "trent"sv}) {
-    std::println("{:8} {}", name, users.may_contain(name) ? "probably present" : "absent");
+    std::cout << std::left << std::setw(8) << name << ' ' << (users.may_contain(name) ? "probably present" : "absent") << '\n';
   }
   // A filter never reports an inserted key as absent.
   return all_found ? 0 : 1;

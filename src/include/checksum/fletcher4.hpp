@@ -2,6 +2,8 @@
 #define CHECKSUM_FLETCHER4_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/engine.hpp>
+#include <checksum/isa.hpp>
 
 #include <algorithm>
 #include <array>
@@ -40,20 +42,62 @@ struct fletcher4_state {
   friend constexpr bool operator==(fletcher4_state, fletcher4_state) noexcept = default;
 };
 
-/// Folds data into state; data may be split anywhere, including inside a word.
-[[nodiscard]] constexpr fletcher4_state fletcher4_update(fletcher4_state state, std::span<std::byte const> data) noexcept;
+/// fletcher4 with the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp). Empty: make one wherever it
+/// is needed.
+template <isa Isa = isa::generic>
+  requires(isa_available(Isa))
+class fletcher4_engine {
+public:
+  using state_type = fletcher4_state; ///< Running checksum.
+  using value_type = fletcher4_value; ///< The checksum.
 
-/// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <byte_range Range> [[nodiscard]] constexpr fletcher4_state fletcher4_update(fletcher4_state state, Range &&data) noexcept;
+  /// The preset whose loop the engine runs: Isa.
+  [[nodiscard]] static constexpr isa preset() noexcept;
 
-/// The checksum of state, an unfinished word padded with zero bytes.
-[[nodiscard]] constexpr fletcher4_value fletcher4_finalize(fletcher4_state state) noexcept;
+  /// State of an empty message.
+  [[nodiscard]] constexpr state_type initial() const noexcept;
 
-/// fletcher4_finalize(fletcher4_update(fletcher4_state{}, data)).
-[[nodiscard]] constexpr fletcher4_value fletcher4_compute(std::span<std::byte const> data) noexcept;
+  /// Folds data into state; data may be split anywhere, including inside a word.
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data) const noexcept;
 
-/// fletcher4_finalize(fletcher4_update(fletcher4_state{}, data)) for a byte range. A std::span<std::byte const> takes the overload above.
-template <byte_range Range> [[nodiscard]] constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept;
+  /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
+  template <byte_range Range> [[nodiscard]] constexpr state_type update(state_type state, Range &&data) const noexcept;
+
+  /// The checksum of state, an unfinished word padded with zero bytes.
+  [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
+
+  /// State of a message whose checksum is checksum. That message must end on a whole word, since a checksum does not record an
+  /// unfinished word.
+  [[nodiscard]] constexpr state_type resume(value_type checksum) const noexcept;
+
+  /// finalize(update(initial(), data)).
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
+
+  /// finalize(update(initial(), data)) for a byte range.
+  template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
+};
+
+/// fletcher4_engine<Isa>{}.compute(data).
+template <isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr fletcher4_engine<Isa>::value_type fletcher4_compute(Range &&data) noexcept;
+
+} // namespace checksum
+
+namespace checksum::fletcher4_detail {
+
+// The presets a dispatch engine chooses from: generic and those with target options.
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options();
+
+} // namespace checksum::fletcher4_detail
+
+namespace checksum {
+
+/// A fletcher4_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
+class fletcher4_dispatch_engine : public detail::dispatch_engine<fletcher4_engine<>, fletcher4_detail::own_loops> {
+public:
+  /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
+  constexpr explicit fletcher4_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
+};
 
 } // namespace checksum
 
@@ -63,18 +107,28 @@ namespace checksum::fletcher4_detail {
 // Bytes per word.
 inline constexpr unsigned word_size = 4;
 
+// Interleaved lanes: lane j folds the words j, j + 4, j + 8, ... as a message of its own.
+inline constexpr std::size_t lane_count = 4;
+
+// lane_sums[source][lane], starting at 0: the sum1 to sum4 of each lane, so that one sum of all lanes is contiguous.
+using lane_sums = std::array<std::array<std::uint64_t, lane_count>, 4>;
+
 // Adds sum1 to sum2, sum2 to sum3 and sum3 to sum4, as at the end of a word.
 constexpr void finish_word(fletcher4_state &state) noexcept;
+
+// The checksum of state, an unfinished word padded with zero bytes.
+constexpr fletcher4_value finish(fletcher4_state state) noexcept;
 
 // Folds data byte by byte; the constant-evaluation loop, also used to finish an unfinished word at run time.
 constexpr fletcher4_state update_bytes(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
-// The same fold at run time for a state at a word boundary, defined in src/fletcher4/sum_loop.cpp.
-fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data) noexcept;
+// The same fold at run time for a state at a word boundary, compiled for the preset Isa: src/fletcher4/ defines it for every
+// preset isa_available() accepts.
+template <isa Isa> fletcher4_state sum_loop(fletcher4_state state, std::span<std::byte const> data) noexcept;
 
-// fletcher4_compute() at run time, defined in src/fletcher4/sum_loop.cpp. Built there, the empty state stays in registers; GCC zeroes
-// one built by the caller with memset calls.
-fletcher4_value compute_loop(std::span<std::byte const> data) noexcept;
+// fletcher4_compute() at run time, compiled for the preset Isa: src/fletcher4/ defines it for every preset isa_available() accepts.
+// Built there, the empty state stays in registers; GCC zeroes one built by the caller with memset calls.
+template <isa Isa> fletcher4_value compute_loop(std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::fletcher4_detail
 
@@ -87,6 +141,14 @@ constexpr void finish_word(fletcher4_state &state) noexcept {
   state.sum2 += state.sum1;
   state.sum3 += state.sum2;
   state.sum4 += state.sum3;
+}
+
+constexpr fletcher4_value finish(fletcher4_state state) noexcept {
+  // The zero padding adds nothing to sum1, but the padded word still adds to sum2, sum3 and sum4.
+  if(state.word_offset % word_size != 0) {
+    finish_word(state);
+  }
+  return {state.sum1, state.sum2, state.sum3, state.sum4};
 }
 
 constexpr fletcher4_state update_bytes(fletcher4_state state, std::span<std::byte const> data) noexcept {
@@ -106,7 +168,21 @@ constexpr fletcher4_state update_bytes(fletcher4_state state, std::span<std::byt
 
 namespace checksum {
 
-constexpr fletcher4_state fletcher4_update(fletcher4_state state, std::span<std::byte const> data) noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr isa fletcher4_engine<Isa>::preset() noexcept {
+  return Isa;
+}
+
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_state fletcher4_engine<Isa>::initial() const noexcept {
+  return {};
+}
+
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_state fletcher4_engine<Isa>::update(fletcher4_state state, std::span<std::byte const> data) const noexcept {
   if consteval {
     return fletcher4_detail::update_bytes(state, data);
   } else {
@@ -117,40 +193,61 @@ constexpr fletcher4_state fletcher4_update(fletcher4_state state, std::span<std:
     if(head == data.size()) {
       return state;
     }
-    return fletcher4_detail::sum_loop(state, data.subspan(head));
+    return fletcher4_detail::sum_loop<Isa>(state, data.subspan(head));
   }
 }
 
-template <byte_range Range> constexpr fletcher4_state fletcher4_update(fletcher4_state state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = fletcher4_update(state, chunk); });
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr fletcher4_state fletcher4_engine<Isa>::update(fletcher4_state state, Range &&data) const noexcept {
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-constexpr fletcher4_value fletcher4_finalize(fletcher4_state state) noexcept {
-  // The zero padding adds nothing to sum1, but the padded word still adds to sum2, sum3 and sum4.
-  if(state.word_offset % fletcher4_detail::word_size != 0) {
-    fletcher4_detail::finish_word(state);
-  }
-  return {state.sum1, state.sum2, state.sum3, state.sum4};
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_value fletcher4_engine<Isa>::finalize(fletcher4_state const &state) const noexcept {
+  return fletcher4_detail::finish(state);
 }
 
-constexpr fletcher4_value fletcher4_compute(std::span<std::byte const> data) noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_state fletcher4_engine<Isa>::resume(fletcher4_value checksum) const noexcept {
+  return {.sum1 = checksum[0], .sum2 = checksum[1], .sum3 = checksum[2], .sum4 = checksum[3]};
+}
+
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr fletcher4_value fletcher4_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
   if consteval {
-    return fletcher4_finalize(fletcher4_update(fletcher4_state{}, data));
+    return finalize(update(initial(), data));
   } else {
-    return fletcher4_detail::compute_loop(data);
+    return fletcher4_detail::compute_loop<Isa>(data);
   }
 }
 
-template <byte_range Range> constexpr fletcher4_value fletcher4_compute(Range &&data) noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr fletcher4_value fletcher4_engine<Isa>::compute(Range &&data) const noexcept {
   // Contiguous ranges take compute_loop() too.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
-      return fletcher4_compute(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
+      return compute(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
+    } else {
+      return finalize(update(initial(), std::forward<Range>(data)));
     }
+  } else {
+    return finalize(update(initial(), std::forward<Range>(data)));
   }
-  return fletcher4_finalize(fletcher4_update(fletcher4_state{}, std::forward<Range>(data)));
 }
+
+template <isa Isa, byte_range Range> constexpr fletcher4_engine<Isa>::value_type fletcher4_compute(Range &&data) noexcept {
+  return fletcher4_engine<Isa>{}.compute(std::forward<Range>(data));
+}
+
+constexpr fletcher4_dispatch_engine::fletcher4_dispatch_engine(isa_set cpu) noexcept : dispatch_engine(cpu) {}
 
 } // namespace checksum
 

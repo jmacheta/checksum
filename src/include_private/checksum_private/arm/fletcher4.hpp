@@ -1,27 +1,35 @@
 #ifndef CHECKSUM_PRIVATE_ARM_FLETCHER4_HPP
 #define CHECKSUM_PRIVATE_ARM_FLETCHER4_HPP
 
-// NEON kernel of the fletcher4 lanes on little-endian AArch64 and AArch32: the four lanes of each sum in two 128-bit
-// vectors. Included only by fletcher4_arch.hpp.
+// NEON kernel of the fletcher4 lanes on little-endian AArch64 for every preset and on little-endian 32-bit Arm from
+// thumb2_neon: the four lanes of each sum in two 128-bit vectors. Included only by fletcher4_arch.hpp.
 
-#if !(defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-#include <checksum_private/generic/fletcher4.hpp>
-#else
-
-#include <arm_neon.h>
+#include <checksum/isa.hpp>
+#include <checksum_private/target.hpp>
 
 #include <cstddef>
 #include <cstdint>
 
+#if defined(CHECKSUM_ARM64) || CHECKSUM_PRESET_HAS(NEON)
+
+#include <arm_neon.h>
+
 namespace checksum::fletcher4_detail {
 
-inline constexpr bool lane_kernel_available = true;
+using target_detail::neon_target;
 
-// Where the kernel overtakes the word loop on a Cortex-A72 with Clang, on AArch64 and AArch32; with GCC it wins from 80 bytes on AArch64.
-inline constexpr std::size_t lane_kernel_minimum_size = 192;
+template <isa Isa>
+  requires(neon_target<Isa>)
+struct lane_kernel<Isa> {
+  static constexpr bool available = true;
+  static constexpr std::size_t minimum_size = 192;
+  static lane_sums sum(std::byte const *data, std::size_t groups) noexcept;
+};
 
 // Lanes 0 and 1 in the low vectors, 2 and 3 in the high ones.
-inline lane_sums lane_kernel(std::byte const *data, std::size_t groups) noexcept {
+template <isa Isa>
+  requires(neon_target<Isa>)
+lane_sums lane_kernel<Isa>::sum(std::byte const *data, std::size_t groups) noexcept {
   uint64x2_t sum1_low = vdupq_n_u64(0);
   uint64x2_t sum1_high = vdupq_n_u64(0);
   uint64x2_t sum2_low = vdupq_n_u64(0);

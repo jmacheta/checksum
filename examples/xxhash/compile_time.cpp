@@ -3,18 +3,19 @@
 #include <checksum/xxhash.hpp>
 
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
 
 // The compiler verifies the reference value of XXH32("abc").
-static_assert(checksum::xxh32_compute("abc"sv) == 0x32D153FF);
+static_assert(checksum::xxhash_compute<32>("abc"sv) == 0x32D153FF);
 
 namespace {
 
 // The seed keeps these IDs apart from hashes of the same names elsewhere.
-constexpr std::uint32_t message_id(std::string_view name) { return checksum::xxh32_compute(name, 0x4D534731); }
+constexpr std::uint32_t message_id(std::string_view name) { return checksum::xxhash_compute<32>(name, 0x4D534731); }
 
 constexpr std::uint32_t temperature_id = message_id("sensor/temperature");
 constexpr std::uint32_t humidity_id = message_id("sensor/humidity");
@@ -36,7 +37,8 @@ std::string_view handler(std::string_view name) {
 
 int main() {
   for(std::string_view const name : {"sensor/temperature"sv, "sensor/humidity"sv, "sensor/pressure"sv}) {
-    std::println("{:18} 0x{:08X} -> {}", name, message_id(name), handler(name));
+    std::cout << std::left << std::setfill(' ') << std::setw(18) << name << " 0x" << std::right << std::hex << std::uppercase << std::setfill('0')
+              << std::setw(8) << message_id(name) << " -> " << handler(name) << '\n';
   }
   return handler("sensor/humidity") == "humidity handler" && handler("sensor/pressure") == "unknown message" ? 0 : 1;
 }

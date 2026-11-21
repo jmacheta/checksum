@@ -5,7 +5,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
@@ -37,7 +38,8 @@ static_assert(header_template[10] == std::byte{0xB8} && header_template[11] == s
 int main() {
   // A receiver sums the header with its checksum at run time and gets 0.
   bool const valid = checksum::internet_compute(header_template) == 0;
-  std::println("IPv4 header checksum = 0x{:02X}{:02X}, header valid: {}", std::to_integer<unsigned>(header_template[10]),
-               std::to_integer<unsigned>(header_template[11]), valid ? "yes" : "no");
+  std::cout << "IPv4 header checksum = 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
+            << std::to_integer<unsigned>(header_template[10]) << std::setw(2) << std::to_integer<unsigned>(header_template[11])
+            << ", header valid: " << (valid ? "yes" : "no") << '\n';
   return valid ? 0 : 1;
 }

@@ -1,27 +1,37 @@
 #ifndef CHECKSUM_PRIVATE_CRC_ARCH_HPP
 #define CHECKSUM_PRIVATE_CRC_ARCH_HPP
 
-// CPU kernels of crc_lut_sliced and crc_lut_braided, from the directory of the target architecture; without the instruction-set
-// extensions, or with CHECKSUM_ACCELERATION defined to 0, no kernel is used. Each architecture header defines:
-// - folding_available; if true, fold_blocks() via fold_blocks_with() and its fold kernel
-// - crc32_instructions_available<Polynomial>; where true, crc32_word<Polynomial>() and crc32_instructions<Polynomial>()
-// - crc32_folding_minimum_size: shortest CRC-32/CRC-32C input folded before the CRC32 reduction (max: never)
-// - wide_folding_minimum_size: shortest input for a loop wider than four 128-bit accumulators (max: none)
+// CPU kernels of crc_lut_sliced and crc_lut_braided, from the directory of the target architecture. The primary templates
+// mean no kernel; an architecture header specializes them for the presets with one, with:
+// - folding_kernel<Isa>: available = true; minimum_size; wide_minimum_size, the shortest input for a loop wider than four
+//   128-bit accumulators (max: none); fold<Reflected>(), at least 16 bytes folded via fold_blocks_with() and its fold kernel
+// - crc32_kernel<Isa, Polynomial>, the CRC32/CRC32C instructions: available = true; word(), update(); folding_minimum_size,
+//   the shortest input folded before a CRC32 reduction, which fold() runs (max: never)
+// Everything has internal linkage, so each preset source keeps its own copies, compiled for its preset.
 
 #include <checksum/crc.hpp>
+#include <checksum/isa.hpp>
+#include <checksum_private/target.hpp>
+#include <checksum_private/vector_array.hpp>
 
 #include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <utility>
 
-// std::array of __m128i or uint64x2_t drops their __may_alias__ attribute, which arrays of accumulators do not need.
+// As template arguments (std::conditional_t, isa_detail::vector_array), __m128i, __m256i and uint64x2_t drop their __may_alias__
+// attribute, which kernel vectors do not need.
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-attributes"
+#endif
 
 namespace checksum::crc_detail {
+// NOLINTNEXTLINE(misc-anonymous-namespace-in-header,cert-dcl59-cpp): a private header, included only by src/crc/*.cpp.
+namespace {
 
 inline constexpr std::size_t folding_block_size = 16;
 
@@ -29,6 +39,17 @@ inline constexpr std::size_t folding_four_blocks_size = 4 * folding_block_size;
 
 // One block: on x86-64 the folding kernel is at least as fast as slicing-by-8 from 16 bytes.
 inline constexpr std::size_t folding_minimum_size = folding_block_size;
+
+template <isa Isa> struct folding_kernel {
+  static constexpr bool available = false;
+  static constexpr std::size_t minimum_size = std::numeric_limits<std::size_t>::max();
+};
+
+// Updates a reflected 32-bit register with the CRC32 instructions of Polynomial, for any parameter set with that polynomial,
+// reflected input and a std::uint32_t register, whatever its initial value and final XOR.
+template <isa Isa, std::uint32_t Polynomial> struct crc32_kernel {
+  static constexpr bool available = false;
+};
 
 // Shuffle indices (pshufb, tbl; 0x80 gives a zero byte): the 16 at offset r move the first r bytes to the end, the 16
 // at offset 16 + r move the last 16 - r bytes to the start and mark the last r positions with 0x80.
@@ -53,23 +74,6 @@ template <std::size_t Size> std::uint64_t load_little_endian(std::span<std::byte
 // every compiler folds a direct big-endian assembly into one load.
 template <bool Reflected> std::uint64_t load_word(std::span<std::byte const> data) noexcept;
 
-// Folds at least 16 bytes into the register in 64-bit form (low-aligned if reflected, top-aligned otherwise). Inlined
-// into every loop: one shared copy per bit order is up to 31 % (GCC) / 43 % (Clang) slower below 256 B on x86-64.
-template <bool Reflected>
-std::uint64_t fold_blocks(folding_constants const &constants, std::uint64_t remainder, std::span<std::byte const> data) noexcept;
-
-// Updates a reflected 32-bit register with the target's CRC32/CRC32C instructions. Used for any parameter set with that
-// polynomial, reflected input and a std::uint32_t register, whatever its initial value and final XOR.
-template <std::uint32_t Polynomial> std::uint32_t crc32_instructions(std::uint32_t remainder, std::span<std::byte const> data) noexcept;
-
-// One CRC32/CRC32C instruction over 8 message bytes, first byte lowest.
-template <std::uint32_t Polynomial> std::uint32_t crc32_word(std::uint32_t remainder, std::uint64_t word) noexcept;
-
-// Folds at least 16 bytes, then reduces the last 128 bits with two CRC32 instructions, shorter than a Barrett
-// reduction. Defined where folding and the instructions exist and crc32_folding_minimum_size is finite.
-template <std::uint32_t Polynomial>
-std::uint32_t fold_crc32(folding_constants const &constants, std::uint32_t remainder, std::span<std::byte const> data) noexcept;
-
 // Folding after Intel's "Fast CRC Computation for Generic Polynomials Using PCLMULQDQ" (2009): four accumulators over
 // 64-byte steps, then single and partial blocks; returns a block whose CRC from zero is the new register. Kernel:
 // - vector: 128-bit type; in normal bit order a block holds the first message bit highest
@@ -87,7 +91,7 @@ typename Kernel::vector fold_blocks_with(folding_constants const &constants, std
 
 // Folds the remaining 64-byte groups into four accumulators (first block first), merges them, then fold_tail_with().
 template <bool Reflected, class Kernel>
-typename Kernel::vector fold_four_with(std::array<typename Kernel::vector, 4> accumulators, folding_constants const &constants,
+typename Kernel::vector fold_four_with(isa_detail::vector_array<typename Kernel::vector, 4> accumulators, folding_constants const &constants,
                                        std::span<std::byte const> data, std::span<std::byte const> last) noexcept;
 
 // Folds the remaining 16-byte blocks and the partial block into one accumulator; last is the final 16 message bytes.
@@ -95,29 +99,29 @@ template <bool Reflected, class Kernel>
 typename Kernel::vector fold_tail_with(typename Kernel::vector accumulator, folding_constants const &constants, std::span<std::byte const> data,
                                        std::span<std::byte const> last) noexcept;
 
-// fold_crc32() over a kernel: the last accumulator's CRC from zero, low 64 bits first, in two crc32_word() steps.
-template <std::uint32_t Polynomial, class Kernel>
+// crc32_kernel::fold() over a kernel: the last accumulator's CRC from zero, low 64 bits first, in two crc32_kernel::word() steps.
+template <isa Isa, std::uint32_t Polynomial, class Kernel>
 std::uint32_t fold_crc32_with(folding_constants const &constants, std::uint32_t remainder, std::span<std::byte const> data) noexcept;
 
-template <std::size_t Count, class Body> [[gnu::always_inline]] inline void unrolled(Body body) noexcept {
-  [&]<std::size_t... Index> [[gnu::always_inline]] (std::index_sequence<Index...>) {
+template <std::size_t Count, class Body> CHECKSUM_ALWAYS_INLINE inline void unrolled(Body body) noexcept {
+  [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (body(std::integral_constant<std::size_t, Index>{}), ...);
   }(std::make_index_sequence<Count>{});
 }
 
-template <std::size_t Size> [[gnu::always_inline]] inline std::uint64_t load_little_endian(std::span<std::byte const> data) noexcept {
-  return [&]<std::size_t... Index> [[gnu::always_inline]] (std::index_sequence<Index...>) {
+template <std::size_t Size> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load_little_endian(std::span<std::byte const> data) noexcept {
+  return [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     return ((std::uint64_t{std::to_integer<std::uint8_t>(data[Index])} << (byte_bits * Index)) | ...);
   }(std::make_index_sequence<Size>{});
 }
 
-template <bool Reflected> [[gnu::always_inline]] inline std::uint64_t load_word(std::span<std::byte const> data) noexcept {
+template <bool Reflected> CHECKSUM_ALWAYS_INLINE inline std::uint64_t load_word(std::span<std::byte const> data) noexcept {
   std::uint64_t const word = load_little_endian<word_size>(data);
   return Reflected ? word : std::byteswap(word);
 }
 
 template <bool Reflected, class Kernel>
-[[gnu::always_inline]] inline typename Kernel::vector fold_tail_with(typename Kernel::vector accumulator, folding_constants const &constants,
+CHECKSUM_ALWAYS_INLINE inline typename Kernel::vector fold_tail_with(typename Kernel::vector accumulator, folding_constants const &constants,
                                                                      std::span<std::byte const> data, std::span<std::byte const> last) noexcept {
   typename Kernel::vector const by_one = Kernel::pair(constants.by_one);
   for(; data.size() >= folding_block_size; data = data.subspan(folding_block_size)) {
@@ -130,7 +134,7 @@ template <bool Reflected, class Kernel>
 }
 
 template <bool Reflected, class Kernel>
-[[gnu::always_inline]] inline typename Kernel::vector fold_four_with(std::array<typename Kernel::vector, 4> accumulators,
+CHECKSUM_ALWAYS_INLINE inline typename Kernel::vector fold_four_with(isa_detail::vector_array<typename Kernel::vector, 4> accumulators,
                                                                      folding_constants const &constants, std::span<std::byte const> data,
                                                                      std::span<std::byte const> last) noexcept {
   typename Kernel::vector const by_four = Kernel::pair(constants.by_four);
@@ -146,7 +150,7 @@ template <bool Reflected, class Kernel>
 }
 
 template <bool Reflected, class Kernel>
-[[gnu::always_inline]] inline typename Kernel::vector fold_blocks_with(folding_constants const &constants, std::uint64_t remainder,
+CHECKSUM_ALWAYS_INLINE inline typename Kernel::vector fold_blocks_with(folding_constants const &constants, std::uint64_t remainder,
                                                                        std::span<std::byte const> data) noexcept {
   constexpr std::size_t block = folding_block_size;
   if constexpr(Kernel::wide) {
@@ -164,27 +168,27 @@ template <bool Reflected, class Kernel>
                                            data.last(block));
 }
 
-template <std::uint32_t Polynomial, class Kernel>
-[[gnu::always_inline]] inline std::uint32_t fold_crc32_with(folding_constants const &constants, std::uint32_t remainder,
+template <isa Isa, std::uint32_t Polynomial, class Kernel>
+CHECKSUM_ALWAYS_INLINE inline std::uint32_t fold_crc32_with(folding_constants const &constants, std::uint32_t remainder,
                                                             std::span<std::byte const> data) noexcept {
   typename Kernel::vector const accumulator = fold_blocks_with<true, Kernel>(constants, remainder, data);
-  return crc32_word<Polynomial>(crc32_word<Polynomial>(0, Kernel::template lane<0>(accumulator)), Kernel::template lane<1>(accumulator));
+  using instructions = crc32_kernel<Isa, Polynomial>;
+  return instructions::word(instructions::word(0, Kernel::template lane<0>(accumulator)), Kernel::template lane<1>(accumulator));
 }
 
+} // namespace
 } // namespace checksum::crc_detail
 
-#if defined(CHECKSUM_ACCELERATION) && !CHECKSUM_ACCELERATION
-#include <checksum_private/generic/crc.hpp>
-#elif defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_X64)
 #include <checksum_private/x86_64/crc.hpp>
-#elif defined(__aarch64__) || defined(__arm__)
+#elif defined(CHECKSUM_ARM64) || defined(__arm__)
 #include <checksum_private/arm/crc.hpp>
 #elif defined(__riscv) && __riscv_xlen == 64 && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #include <checksum_private/riscv64/crc.hpp>
-#else
-#include <checksum_private/generic/crc.hpp>
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
 
 #endif // CHECKSUM_PRIVATE_CRC_ARCH_HPP

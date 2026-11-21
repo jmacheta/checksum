@@ -1,108 +1,90 @@
-# Adler-32 user guide
+# Adler-32
 
-`checksum` computes Adler-32, the checksum of the zlib format (RFC 1950), at compile time or at run time. Its values
-are those of zlib's `adler32()`. Everything is in one header, `checksum/adler32.hpp`.
+Adler-32 as defined by zlib (RFC 1950), with values equal to zlib's `adler32()`. It is in `checksum/adler32.hpp`, needs
+no tables, and every function is `constexpr` and `noexcept`.
 
-The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, or Clang ≥ 18. It has no tables,
-allocates no memory and has no global state.
-
-## 1. Quick start
+## The simplest way
 
 ```cpp
 #include <checksum/adler32.hpp>
 using namespace std::literals;
 
-// One call.
-std::uint32_t value = checksum::adler32_compute(std::span(buffer));
-
-// Incremental: a message may be split anywhere.
-checksum::adler32_state state;
-state = checksum::adler32_update(state, first_part);
-state = checksum::adler32_update(state, second_part);
-std::uint32_t stream_checksum = checksum::adler32_finalize(state);
-
-// Continue from a stored checksum.
-std::uint32_t extended = checksum::adler32_update(stream_checksum, third_part);
-
-// Compile time.
-static_assert(checksum::adler32_compute("123456789"sv) == 0x091E01DE);
 static_assert(checksum::adler32_compute("Wikipedia"sv) == 0x11E60398);
+
+std::uint32_t value = checksum::adler32_compute(data);
 ```
 
-`examples/adler32` has complete programs: the checksum of default settings computed at compile time, checking the
-Adler-32 trailer of a zlib stream, and extending a stored checksum when data is appended.
+`data` is a `std::span<std::byte const>` or any range of bytes. Pass text as `std::string_view`: character arrays are
+rejected so that a literal's `'\0'` is never hashed.
 
-## 2. Definition
+## You know your target platform
 
-Adler-32 keeps two sums modulo 65521, the largest prime below 2^16: `sum1` starts at 1 and adds each byte, `sum2`
-starts at 0 and adds `sum1` after each byte. The checksum is `(sum2 << 16) | sum1`. It differs from Fletcher-32
-([fletcher.md](fletcher.md)) in the prime modulus, the start value 1 and the 8-bit blocks.
+When you build for a known CPU, name its preset as a template argument. The program then runs that preset's kernel
+directly, with no detection and no compiler flags. At 4 KiB on x86-64, `isa::x86_avx2` is 2.5× faster than the SSE2
+kernel of the default, and `isa::x86_avxvnni` 4×. On Cortex-M4/M7/M33, `isa::thumb2_dsp` nearly doubles the speed.
 
-## 3. API
+```cpp
+std::uint32_t value = checksum::adler32_compute<checksum::isa::x86_avx2>(data);
 
-| Name | What it does |
+// Data in pieces.
+constexpr checksum::adler32_engine<checksum::isa::x86_avx2> adler32;
+checksum::accumulator running{adler32};
+std::uint32_t stream_checksum = running.update(header).update(payload).value();
+```
+
+The CPU must support a named preset: running it on one that does not is undefined behavior. See
+[Hardware acceleration](../README.md#hardware-acceleration).
+
+## You don't know the CPU, or you need broad compatibility
+
+A dispatch engine detects the CPU once and then runs the best preset of the build.
+Make it once, as a `static` or global object.
+
+```cpp
+static checksum::adler32_dispatch_engine const adler32;
+std::uint32_t value = adler32.compute(data);
+checksum::isa chosen = adler32.preset();
+```
+
+## Reference
+
+### API
+
+| Name | Description |
 | --- | --- |
-| `adler32_state` | The two sums, `sum1` and `sum2`. A plain value: copy it, compare it, store it. The default (`sum1 = 1`, `sum2 = 0`) is the empty message. |
-| `adler32_update(state, data)` | Folds `data` into `state` and returns the new state. |
-| `adler32_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum`, a `std::uint32_t`, and returns the new checksum. |
-| `adler32_finalize(state)` | The checksum. |
-| `adler32_compute(data)` | `adler32_finalize(adler32_update({}, data))`. |
+| `adler32_compute<Isa>(data)` | The checksum of `data`, a `std::uint32_t`. |
+| `adler32_engine<Isa>` | An empty engine with `initial()`, `update(state, data)`, `finalize(state)`, `compute(data)`, `resume(checksum)` and the static `preset()`. |
+| `adler32_state` | The two sums, `sum1` and `sum2`. A plain value. |
+| `adler32_dispatch_engine` | The same members, with the constructor `(isa_set cpu = detect_isa())`. Passing a preset as `cpu` runs it, or the next lower one the build has, without checking the CPU. |
 
-All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`,
-`char`, `unsigned char`, `signed char` or `char8_t`, as for the other algorithms. Contiguous ranges are passed on as
-one span and other ranges in 64-byte chunks. Arrays of `char` are rejected, so the `'\0'` of a string literal is never
-summed: pass text as `std::string_view`.
+`Isa` defaults to `isa::generic`, and no function has preconditions. `accumulator` works with every engine.
 
-Every state value is valid, so nothing has preconditions: sums from 65521 up count modulo 65521.
+- A message may be split anywhere and gives the same checksum. The empty message gives 1.
+- The result is a number; zlib stores it most significant byte first.
+- `adler32.update(adler32.resume(stored), data)` continues from any stored checksum, zlib's included, after any length.
 
-## 4. Behavior
+### Presets and kernels
 
-- **Splits:** a message may be split anywhere; the result is the same as for one call.
-- **Empty message:** gives 1.
-- **Byte order:** the result is a number; zlib stores it most significant byte first.
-
-**Continuing from a stored checksum.** The checksum holds both sums, so `adler32_update(value, data)` continues a
-message whose checksum is `value`, for example one computed by zlib, after any number of bytes, and returns the new
-checksum, as zlib's `adler32(adler, buf, len)` does. `value` must be a `std::uint32_t`: another integer type does not
-compile, so that `adler32_update({}, data)` still starts from the empty state, not from checksum 0.
-
-## 5. CPU acceleration
-
-The portable loop adds bytes into `std::size_t` sums and reduces them only when an overflow could otherwise happen:
-after 380 million bytes on 64-bit targets, after 5 552 bytes on 32-bit targets. It adds four bytes per step, so
-`sum1` has one addition per four bytes in its dependency chain, and it reduces without a division, since 2^16 is 15
-modulo 65521.
-
-From 64 bytes, Adler-32 runs the byte kernel of Fletcher-16 with modulus 65521:
-
-| Target and flags | Kernel |
+| Preset | Kernel |
 | --- | --- |
-| x86-64 with AVX-VNNI (`-mavxvnni`, or a `-march` that includes it, e.g. Alder Lake, Meteor Lake) | `vpdpbusd`, 128 bytes per iteration |
-| x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | 32-byte vectors |
-| x86-64 without AVX2 (SSE2 is always there; SSSE3 used if enabled) | 16-byte vectors |
-| AArch64 with NEON, little-endian | NEON, 16-byte vectors; from 320 bytes 64 bytes per iteration |
-| 32-bit Arm with NEON, little-endian | NEON, 16-byte vectors |
-| Little-endian M-profile Arm with the DSP extension (Cortex-M4/M7/M33) | `usada8` + `smlad`, 8 bytes per iteration |
-| everything else, or `CHECKSUM_ACCELERATION=OFF` | portable loop |
+| `x86_avxvnni` | `vpdpbusd`, 128 bytes per iteration, from 64 B |
+| `x86_avx2`, `x86_vpclmul` | 32-byte vectors, from 64 B |
+| `generic`, `x86_pclmul` on x86-64 | 16-byte SSE2 vectors, from 64 B |
+| every preset on little-endian AArch64, `generic` included | NEON from 64 B, 64 bytes per iteration from 320 B |
+| `thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 64 B |
+| `thumb2_dsp` on little-endian 32-bit Arm (Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B, at any alignment |
+| all others, RISC-V and big-endian included | Portable loop |
 
-The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. Constant
-evaluation always runs a byte-by-byte loop with the same result. The measurements behind each choice are in
-[design/acceleration.md](design/acceleration.md#fletcher-and-adler-32).
+The kernels are shared with Fletcher-16, with the modulus 65521.
 
-## 6. Performance guidelines
+### Performance
 
-Measured figures are in [performance.md](performance.md#adler-32).
+- At 4 KiB on x86-64, the default runs about 13 000 MB/s, `x86_avx2` 68 000 and `x86_avxvnni` 110 000.
+- Pass at least 64 bytes per `update` call, and preferably a few KiB, so that the kernels run.
 
-- **Kernels start at 64 bytes** of one `adler32_update` call; shorter pieces run the portable loop. Pass data in
-  chunks of at least 64 bytes, and preferably a few KiB.
-- **On x86-64, compile for the CPU.** At 4 KiB the default SSE2 build runs about 23 000 MB/s, AVX2 about 58 000, and
-  AVX-VNNI (`-march=native` on Alder Lake, Meteor Lake and later) about 85 000, 1.13-1.17× zlib-ng.
-- **On AArch64**, the NEON kernel switches to 64 bytes per iteration from 320 B, and
-  from 1500 B reaches 0.96-0.99× of zlib-ng and ISA-L.
-- **On Cortex-M4/M7/M33**, the DSP kernel comes with the usual `-mcpu` flags and is 2× faster than the portable loop
-  at 4 KiB, from any start address.
+Full figures are in [performance.md](performance.md#adler-32).
 
-## 7. Limitations
+### Limitations
 
-- **Weak on short messages:** with few bytes `sum1` stays far below 65521, so most of the 32 bits are unused. Use a CRC
-  for short messages where errors must be detected reliably.
+- Adler-32 is weak on short messages, where `sum1` stays far below the modulus. Use a CRC where errors must be detected
+  reliably.

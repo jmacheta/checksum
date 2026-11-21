@@ -1,13 +1,16 @@
 #ifndef CHECKSUM_PRIVATE_X86_64_INTERNET_HPP
 #define CHECKSUM_PRIVATE_X86_64_INTERNET_HPP
 
-// AVX2 kernel of the Internet checksum. Included only by internet_arch.hpp.
+// AVX2 kernel of the Internet checksum, for the presets from x86_avx2 on, and the add-with-carry chain of the portable loop.
+// Included only by internet_arch.hpp.
 
-#if !defined(__AVX2__)
-#include <checksum_private/generic/internet.hpp>
-#else
+#include <checksum/isa.hpp>
+#include <checksum_private/target.hpp>
 
 #include <immintrin.h>
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
 
 #include <algorithm>
 #include <cstddef>
@@ -16,10 +19,22 @@
 
 namespace checksum::internet_detail {
 
-inline constexpr bool block_sum_available = true;
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::x86_avx2))
+struct block_kernel<Isa> {
+  static constexpr bool available = true;
+  // Below about 350 bytes the portable loop is faster on a Core Ultra 7 155H: the kernel pays for the call and the reduction.
+  static constexpr std::size_t minimum_size = 512;
+  static block_total sum(std::span<std::byte const> data) noexcept;
+};
 
-// Below about 350 bytes the portable loop is faster on a Core Ultra 7 155H: the kernel pays for the call and the reduction.
-inline constexpr std::size_t block_sum_minimum_size = 512;
+// GCC and Clang turn __builtin_addcll into an adc chain, MSVC _addcarry_u64; GCC 14 on Arm materializes every carry instead.
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+struct carry_chain<Isa> {
+  static constexpr bool available = true;
+  static word add(word left, word right, word &carry) noexcept;
+};
 
 inline constexpr std::size_t vector_block_size = 64;
 
@@ -27,7 +42,9 @@ inline constexpr std::size_t vector_block_size = 64;
 inline constexpr std::size_t vector_pass_blocks = std::size_t{1} << 26U;
 
 // 64-byte blocks of 32-bit words, each split into the halves of a 64-bit lane.
-inline block_total block_sum(std::span<std::byte const> data) noexcept {
+template <isa Isa>
+  requires(isa_detail::includes(Isa, isa::x86_avx2))
+block_total block_kernel<Isa>::sum(std::span<std::byte const> data) noexcept {
   std::size_t const message_size = data.size();
   __m256i const low_halves = _mm256_set1_epi64x(0xFFFFFFFF);
   std::uint64_t total = 0;
@@ -39,8 +56,10 @@ inline block_total block_sum(std::span<std::byte const> data) noexcept {
     __m256i sum3 = sum0;
     std::byte const *position = data.data();
     for(std::size_t block = 0; block < blocks; ++block, position += vector_block_size) {
+      // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector loads, the intrinsic's interface.
       __m256i const first = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(position));
       __m256i const second = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(position + 32));
+      // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
       sum0 = _mm256_add_epi64(sum0, _mm256_and_si256(first, low_halves));
       sum1 = _mm256_add_epi64(sum1, _mm256_srli_epi64(first, 32));
       sum2 = _mm256_add_epi64(sum2, _mm256_and_si256(second, low_halves));
@@ -55,8 +74,20 @@ inline block_total block_sum(std::span<std::byte const> data) noexcept {
   return {.sum = total, .size = message_size - data.size()};
 }
 
-} // namespace checksum::internet_detail
-
+template <isa Isa>
+  requires(target_detail::any_preset<Isa>)
+word carry_chain<Isa>::add(word left, word right, word &carry) noexcept {
+  word sum = 0;
+#if defined(_MSC_VER) && !defined(__clang__)
+  carry = _addcarry_u64(static_cast<unsigned char>(carry), left, right, &sum);
+#else
+  unsigned long long carry_out = 0;
+  sum = static_cast<word>(__builtin_addcll(left, right, carry, &carry_out));
+  carry = static_cast<word>(carry_out);
 #endif
+  return sum;
+}
+
+} // namespace checksum::internet_detail
 
 #endif // CHECKSUM_PRIVATE_X86_64_INTERNET_HPP

@@ -1,9 +1,13 @@
-// Run-time loops of crc_lut_byte, for every register type and bit order.
+// Run-time loops of crc_lut_byte, for every register type and bit order; every preset runs them.
 
 #include <checksum/crc.hpp>
-#include <checksum_private/crc_table_loops.hpp>
 
+#include <cstddef>
+#include <cstdint> // IWYU pragma: keep
 #include <span>
+
+#define CHECKSUM_PRESET generic
+#include <checksum_private/crc_table_loops.hpp> // IWYU pragma: keep
 
 namespace checksum::crc_detail {
 

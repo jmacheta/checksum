@@ -6,14 +6,15 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <span>
 
 namespace {
 
 // frame is the message followed by two bytes that receive its checksum.
 void append_checksum(std::span<std::byte> frame) {
-  std::uint16_t const value = checksum::fletcher16_compute(std::span<std::byte const>{frame}.first(frame.size() - 2));
+  std::uint16_t const value = checksum::fletcher_compute<16>(std::span<std::byte const>{frame}.first(frame.size() - 2));
   frame[frame.size() - 2] = static_cast<std::byte>(value >> 8U);
   frame[frame.size() - 1] = static_cast<std::byte>(value & 0xFFU);
 }
@@ -25,7 +26,7 @@ bool is_valid(std::span<std::byte const> frame) {
   }
   auto const received =
       static_cast<std::uint16_t>((std::to_integer<unsigned>(frame[frame.size() - 2]) << 8U) | std::to_integer<unsigned>(frame[frame.size() - 1]));
-  return checksum::fletcher16_compute(frame.first(frame.size() - 2)) == received;
+  return checksum::fletcher_compute<16>(frame.first(frame.size() - 2)) == received;
 }
 
 } // namespace
@@ -34,12 +35,13 @@ int main() {
   // The message "abcde", whose Fletcher-16 is 0xC8F0, then two checksum bytes.
   std::array<std::byte, 7> frame{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}, std::byte{'d'}, std::byte{'e'}, std::byte{0}, std::byte{0}};
   append_checksum(frame);
-  std::println("checksum bytes on the wire: {:02X} {:02X}", std::to_integer<unsigned>(frame[5]), std::to_integer<unsigned>(frame[6]));
+  std::cout << "checksum bytes on the wire: " << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
+            << std::to_integer<unsigned>(frame[5]) << ' ' << std::setw(2) << std::to_integer<unsigned>(frame[6]) << '\n';
 
   bool const expected = frame[5] == std::byte{0xC8} && frame[6] == std::byte{0xF0};
   bool const intact = is_valid(frame);
   frame[2] ^= std::byte{0x01}; // a transmission error
   bool const corrupted = is_valid(frame);
-  std::println("intact frame valid: {}, corrupted frame valid: {}", intact ? "yes" : "no", corrupted ? "yes" : "no");
+  std::cout << "intact frame valid: " << (intact ? "yes" : "no") << ", corrupted frame valid: " << (corrupted ? "yes" : "no") << '\n';
   return expected && intact && !corrupted ? 0 : 1;
 }

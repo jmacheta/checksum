@@ -1,8 +1,10 @@
 // Every reference vector through every built-in strategy, on the smallest register and on std::uint64_t. Engines are
 // created at run time, so the test instantiates once per strategy and register type, not once per vector.
 #include <checksum/crc.hpp>
+#include <checksum/engine.hpp>
 
 #include "crc_reference_vectors.hpp"
+#include "crc_test_support.hpp"
 
 #include <gtest/gtest.h>
 
@@ -36,9 +38,9 @@ template <class Strategy, class Register> void check_set(vector_set const &set) 
     std::uint64_t const expected = set.byte_crcs[index];
     auto const data = message(length);
     EXPECT_EQ((*engine)->compute(data), expected) << set.name << ", " << length << " bytes";
-    crc_accumulator accumulator{**engine};
-    accumulator.update(data.first(length / 2)).update(data.subspan(length / 2));
-    EXPECT_EQ(accumulator.value(), expected) << set.name << ", " << length << " bytes, accumulator";
+    accumulator running{**engine};
+    running.update(data.first(length / 2)).update(data.subspan(length / 2));
+    EXPECT_EQ(running.value(), expected) << set.name << ", " << length << " bytes, accumulator";
   }
   for(std::size_t index = 0; index < bit_lengths.size(); ++index) {
     std::size_t const length = bit_lengths[index];
@@ -60,11 +62,10 @@ template <class Strategy> void check_all_sets() {
   }
 }
 
-template <class Strategy> struct crc_vectors_typed : ::testing::Test {};
+template <class Strategy> struct crc_vectors : ::testing::Test {};
 
-using all_strategies = ::testing::Types<crc_lut_none, crc_lut_nibble, crc_lut_byte, crc_lut_sliced, crc_lut_braided>;
-TYPED_TEST_SUITE(crc_vectors_typed, all_strategies);
+TYPED_TEST_SUITE(crc_vectors, crc_test::strategies, crc_test::strategy_names);
 
-TYPED_TEST(crc_vectors_typed, ReferenceVectors) { check_all_sets<TypeParam>(); }
+TYPED_TEST(crc_vectors, reference_values) { check_all_sets<TypeParam>(); }
 
 } // namespace

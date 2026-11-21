@@ -1,18 +1,18 @@
-// Hashes asset paths into 64-bit IDs at compile time, so that the program refers to assets by ID; the compiler rejects colliding
-// IDs.
+// Hashes asset paths into 64-bit IDs at compile time, so the program refers to assets by ID. Colliding IDs fail to compile.
 
 #include <checksum/xxh3.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <string_view>
 
 using namespace std::literals;
 
 // The compiler verifies the XXH3-64 check value of "abc".
-static_assert(checksum::xxh3_64_compute("abc"sv) == 0x78AF5F94892F3950);
+static_assert(checksum::xxh3_compute<64>("abc"sv) == 0x78AF5F94892F3950);
 
 namespace {
 
@@ -21,7 +21,7 @@ struct asset {
   std::uint64_t id;
 };
 
-constexpr asset make_asset(std::string_view path) { return {.path = path, .id = checksum::xxh3_64_compute(path)}; }
+constexpr asset make_asset(std::string_view path) { return {.path = path, .id = checksum::xxh3_compute<64>(path)}; }
 
 // The table is a constant in read-only data, sorted by ID for a binary search.
 constexpr auto assets = [] {
@@ -33,6 +33,7 @@ static_assert(std::ranges::adjacent_find(assets, {}, &asset::id) == assets.end()
 
 // The path of an ID, or an empty view for an unknown ID.
 std::string_view find_path(std::uint64_t id) {
+  // NOLINTNEXTLINE(readability-qualified-auto)
   auto const found = std::ranges::lower_bound(assets, id, {}, &asset::id);
   return found != assets.end() && found->id == id ? found->path : std::string_view{};
 }
@@ -41,8 +42,8 @@ std::string_view find_path(std::uint64_t id) {
 
 int main() {
   // A path read at run time, e.g. from a level file, hashes to the same ID.
-  std::uint64_t const id = checksum::xxh3_64_compute("sounds/step.wav"sv);
+  std::uint64_t const id = checksum::xxh3_compute<64>("sounds/step.wav"sv);
   std::string_view const path = find_path(id);
-  std::println("ID 0x{:016X} -> {}", id, path);
+  std::cout << "ID 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(16) << id << " -> " << path << '\n';
   return path == "sounds/step.wav" ? 0 : 1;
 }

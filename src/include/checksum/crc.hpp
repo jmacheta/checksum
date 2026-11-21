@@ -2,7 +2,10 @@
 #define CHECKSUM_CRC_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/engine.hpp>
+#include <checksum/isa.hpp>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cassert>
@@ -31,7 +34,7 @@ struct crc_polynomial {
   std::uint64_t value; ///< Koopman notation.
 
   /// Makes a polynomial from Koopman notation, e.g. CRC-16/CCITT: 0x8810. Implicit, so `.polynomial = 0x8810` works.
-  constexpr explicit(false) crc_polynomial(std::uint64_t value) noexcept;
+  constexpr explicit(false) crc_polynomial(std::uint64_t koopman) noexcept;
 
   /// Makes a polynomial from its normal form (the x^width term omitted), e.g. CRC-16/CCITT: create(0x1021, 16).
   /// @return std::nullopt if width > 64, normal_form >= 2^width, or the x^0 term is missing
@@ -47,6 +50,7 @@ struct crc_polynomial {
 };
 
 /// A CRC model. A plain aggregate, usable as a template argument; crc_engine::create() validates it.
+// NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init): no default constructor, crc_polynomial has none.
 struct crc_parameters {
   crc_polynomial polynomial;       ///< Generator polynomial; its degree is the CRC width.
   std::uint64_t initial_value = 0; ///< Register value before the first message bit, unreflected.
@@ -92,17 +96,33 @@ template <class Register> struct register_form;
 
 } // namespace checksum::crc_detail
 
+// The padding around the 16-byte aligned folding constants of a table, and of every class that holds one, is intended; MSVC warns
+// about it (C4324).
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
+
 namespace checksum {
 
-/// An immutable CRC engine: the strategy's table and the prepared parameters. The running CRC is a separate state_type value, so one engine
-/// serves any number of computations.
-template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_none> class crc_engine {
+template <crc_register Register, crc_strategy_for<Register> Strategy> class crc_dispatch_engine;
+
+/// An immutable CRC engine: the strategy's table and the prepared parameters; the running CRC is a separate state_type value, so one engine
+/// serves any number of computations. Isa selects the run-time loop of the built-in strategies, the variant compiled for that
+/// instruction-set preset (checksum/isa.hpp); other strategies ignore it.
+template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_none, isa Isa = isa::generic>
+  requires(isa_available(Isa))
+class crc_engine {
 public:
   using state_type = Register; ///< Running CRC, below 2^width.
+  using value_type = Register; ///< The CRC, below 2^width.
 
   /// Validates parameters and builds the engine.
   /// @return std::nullopt if the width is 0 or exceeds Register, initial_value or final_xor is not below 2^width, or the strategy rejects them
   [[nodiscard]] static constexpr std::optional<crc_engine> create(crc_parameters const &parameters) noexcept;
+
+  /// The preset whose loop the built-in strategies run: Isa.
+  [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
   [[nodiscard]] constexpr state_type initial() const noexcept;
@@ -117,20 +137,27 @@ public:
   /// else from bit 7 down. Precondition: bit_length <= 8 * data.size() (asserted; clamped when NDEBUG is defined).
   [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data, std::size_t bit_length) const noexcept;
 
-  /// The CRC of state: reflected if exactly one of input and output is reflected, then XORed with the final XOR.
-  [[nodiscard]] constexpr state_type finalize(state_type state) const noexcept;
+  /// The CRC of state: reflected if exactly one of input and output is reflected, then XORed with the final XOR. Precondition:
+  /// state < 2^width (asserted; masked when NDEBUG is defined).
+  [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
+
+  /// State of a message whose CRC is checksum: finalize() undone. Precondition: checksum < 2^width (asserted; masked when NDEBUG is
+  /// defined).
+  [[nodiscard]] constexpr state_type resume(value_type checksum) const noexcept;
 
   /// finalize(update(initial(), data)).
-  [[nodiscard]] constexpr state_type compute(std::span<std::byte const> data) const noexcept;
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
 
   /// finalize(update(initial(), data)) for a byte range.
-  template <byte_range Range> [[nodiscard]] constexpr state_type compute(Range &&data) const noexcept;
+  template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
 
   /// finalize(update(initial(), data, bit_length)).
-  [[nodiscard]] constexpr state_type compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept;
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept;
 
 private:
-  constexpr crc_engine(crc_parameters const &parameters, typename Strategy::template table_type<Register> const &table) noexcept;
+  template <crc_register Other, crc_strategy_for<Other> OtherStrategy> friend class crc_dispatch_engine;
+
+  constexpr crc_engine(crc_parameters const &parameters, typename Strategy::template table_type<Register> const &strategy_table) noexcept;
 
   // Asserts the state precondition and masks state to the width.
   [[nodiscard]] constexpr state_type checked_state(state_type state) const noexcept;
@@ -145,42 +172,14 @@ private:
 };
 
 /// Engine for Parameters with the smallest register, built at compile time and stored in read-only data, e.g.
-/// crc_engine_for<checksum::crc32, checksum::crc_lut_byte>. Ill-formed (std::bad_optional_access) if create() rejects the parameters.
-template <crc_parameters Parameters, class Strategy = crc_lut_none>
-inline constexpr crc_engine<crc_register_for<Parameters.polynomial.width()>, Strategy> crc_engine_for =
-    crc_engine<crc_register_for<Parameters.polynomial.width()>, Strategy>::create(Parameters).value();
+/// crc_engine_for<checksum::crc32, checksum::crc_lut_byte> or crc_engine_for<checksum::crc32, checksum::crc_lut_sliced, checksum::isa::x86_pclmul>.
+/// Ill-formed (std::bad_optional_access) if create() rejects the parameters.
+template <crc_parameters Parameters, class Strategy = crc_lut_none, isa Isa = isa::generic>
+inline constexpr auto crc_engine_for = crc_engine<crc_register_for<Parameters.polynomial.width()>, Strategy, Isa>::create(Parameters).value();
 
-/// An engine pointer plus a running state, for incremental computations. The engine must outlive the accumulator.
-template <crc_register Register, crc_strategy_for<Register> Strategy = crc_lut_none> class crc_accumulator {
-public:
-  /// Starts a computation at engine.initial().
-  constexpr explicit crc_accumulator(crc_engine<Register, Strategy> const &engine) noexcept;
-
-  /// Temporary engines would dangle.
-  crc_accumulator(crc_engine<Register, Strategy> const &&) = delete;
-
-  /// Folds data.
-  constexpr crc_accumulator &update(std::span<std::byte const> data) noexcept;
-
-  /// Folds a byte range.
-  template <byte_range Range> constexpr crc_accumulator &update(Range &&data) noexcept;
-
-  /// Folds the first bit_length bits of data, as crc_engine::update().
-  constexpr crc_accumulator &update(std::span<std::byte const> data, std::size_t bit_length) noexcept;
-
-  /// The CRC of everything folded so far; the state is unchanged.
-  [[nodiscard]] constexpr Register value() const noexcept;
-
-  /// The running state.
-  [[nodiscard]] constexpr Register state() const noexcept;
-
-  /// Restarts at engine.initial().
-  constexpr void reset() noexcept;
-
-private:
-  crc_engine<Register, Strategy> const *engine; // never null
-  Register running_state;
-};
+/// crc_engine_for<Parameters, Strategy, Isa>.compute(data).
+template <crc_parameters Parameters, class Strategy = crc_lut_none, isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr crc_engine<crc_register_for<Parameters.polynomial.width()>, Strategy, Isa>::value_type crc_compute(Range &&data) noexcept;
 
 } // namespace checksum
 
@@ -200,16 +199,27 @@ inline constexpr std::size_t braided_table_size = (slice_count + word_size) * sl
 
 template <class Register, std::size_t Size> struct lookup_table;
 
+// Whether strategy_update() of Strategy runs a different loop for some preset.
+template <class Strategy, class Register> consteval bool takes_preset() noexcept;
+
+// The presets a dispatch engine of Strategy chooses from: generic, those with target options and riscv_zbc, the one without them
+// with a kernel; generic alone for a strategy whose loop is the same for every preset.
+template <class Strategy, class Register>
+inline constexpr isa_set own_loops = takes_preset<Strategy, Register>() ? isa_detail::built_with_target_options() | isa::riscv_zbc : isa_set{};
+
 // The built-in strategies differ only in the size of their table.
 template <std::size_t Size> struct lookup_strategy {
   template <crc_register Register> using table_type = lookup_table<Register, Size>;
+
+  // Whether the run-time loop depends on the preset: only the tables with folding constants have kernels.
+  static constexpr bool takes_preset = Size >= sliced_table_size;
 
   // std::nullopt if the width does not fit Register.
   template <crc_register Register>
   [[nodiscard]] static constexpr std::optional<table_type<Register>> make_table(crc_parameters const &parameters) noexcept;
 
-  // Constant evaluation runs the bitwise, nibble or byte-table loop, run time the out-of-line update_loop().
-  template <crc_register Register>
+  // Constant evaluation runs the bitwise, nibble or byte-table loop, run time the out-of-line update_loop() of the preset Isa.
+  template <crc_register Register, isa Isa = isa::generic>
   [[nodiscard]] static constexpr Register update(table_type<Register> const &table, Register state, std::span<std::byte const> data) noexcept;
 };
 
@@ -226,13 +236,64 @@ struct crc_lut_nibble : crc_detail::lookup_strategy<crc_detail::nibble_size> {};
 /// 256-entry table, one lookup per byte.
 struct crc_lut_byte : crc_detail::lookup_strategy<crc_detail::slice_size> {};
 
-/// Slicing-by-8: 8 x 256 entries, one 8-byte word per iteration. Uses the CPU's CRC and carry-less multiplication instructions where the
-/// compiler flags enable them.
+/// Slicing-by-8: 8 x 256 entries, one 8-byte word per iteration. Uses the CPU's CRC and carry-less multiplication instructions of the
+/// engine's instruction-set preset, if it has them.
 struct crc_lut_sliced : crc_detail::lookup_strategy<crc_detail::sliced_table_size> {};
 
-/// crc_lut_sliced plus 8 braid slices (16 x 256 entries): five interleaved streams of 8-byte words from 128 bytes on. Builds with
-/// acceleration run the crc_lut_sliced path instead.
+/// crc_lut_sliced plus 8 braid slices (16 x 256 entries): five interleaved streams of 8-byte words from 128 bytes on. Presets with a
+/// folding kernel run the crc_lut_sliced path instead, and so do presets with CRC instructions for the CRC-32 and CRC-32C
+/// polynomials.
 struct crc_lut_braided : crc_detail::lookup_strategy<crc_detail::braided_table_size> {};
+
+/// A crc_engine whose run-time loop is chosen once, when it is created: by default the best preset of this build that the
+/// running CPU executes (checksum/isa.hpp). One table serves every preset; constant evaluation runs the portable loop.
+/// Strategies whose loop is the same for every preset (crc_lut_none, crc_lut_nibble, crc_lut_byte, a custom strategy
+/// without update<Register, Isa>()) choose generic, so that preset() names the loop that runs.
+template <crc_register Register, crc_strategy_for<Register> Strategy> class crc_dispatch_engine {
+public:
+  using state_type = Register; ///< Running CRC, below 2^width.
+  using value_type = Register; ///< The CRC, below 2^width.
+
+  /// Validates parameters as crc_engine::create() does and chooses the best preset of this build in cpu: by default the
+  /// presets the running CPU executes.
+  [[nodiscard]] static constexpr std::optional<crc_dispatch_engine> create(crc_parameters const &parameters, isa_set cpu = detect_isa()) noexcept;
+
+  /// The preset whose loop update() runs.
+  [[nodiscard]] constexpr isa preset() const noexcept;
+
+  /// As crc_engine::initial().
+  [[nodiscard]] constexpr state_type initial() const noexcept;
+
+  /// As crc_engine::update(), with the chosen preset's loop.
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data) const noexcept;
+
+  /// As crc_engine::update() for a byte range.
+  template <byte_range Range> [[nodiscard]] constexpr state_type update(state_type state, Range &&data) const noexcept;
+
+  /// As crc_engine::update() for the first bit_length bits of data.
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data, std::size_t bit_length) const noexcept;
+
+  /// As crc_engine::finalize().
+  [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
+
+  /// As crc_engine::resume().
+  [[nodiscard]] constexpr state_type resume(value_type checksum) const noexcept;
+
+  /// finalize(update(initial(), data)).
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
+
+  /// finalize(update(initial(), data)) for a byte range.
+  template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
+
+  /// finalize(update(initial(), data, bit_length)).
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept;
+
+private:
+  constexpr crc_dispatch_engine(crc_engine<Register, Strategy> const &static_engine, isa preset) noexcept;
+
+  crc_engine<Register, Strategy> engine; // the table and parameters, shared by every preset
+  isa chosen;
+};
 
 } // namespace checksum
 
@@ -299,6 +360,9 @@ struct lookup_table<Register, Size> {
   std::array<Register, Size> entries{};
   folding_constants folding{};
 };
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma warning(pop)
+#endif
 
 // True if the width is 1..register_bits<Register>.
 template <class Register> constexpr bool fits_register(crc_parameters const &parameters) noexcept;
@@ -327,6 +391,9 @@ constexpr Register loop_nibble(Register const *table, Register remainder, std::s
 template <bool Reflected, class Register>
 constexpr Register loop_byte(Register const *table, Register remainder, std::span<std::byte const> data) noexcept;
 
+// Fills the braid slices of a crc_lut_braided table whose slicing-by-8 slices are filled.
+template <bool Reflected, class Register> constexpr void add_braid_slices(std::array<Register, braided_table_size> &table) noexcept;
+
 // Slice k of the slicing-by-8 table folds a byte followed by k zero bytes; braid slice 8 + k a byte followed by
 // braid_count * word_size - 1 - k zero bytes.
 template <std::size_t Size, bool Reflected, class Register> constexpr std::array<Register, Size> table_entries(Register polynomial) noexcept;
@@ -345,17 +412,22 @@ template <class Register, class Fold> constexpr Register fold_internal(register_
 template <class Register>
 constexpr Register update_tail(register_form<Register> const &form, Register state, std::byte tail, unsigned count) noexcept;
 
+// Strategy::update<Register, Isa>() for the built-in strategies, which take the preset; Strategy::update<Register>() for the others.
+template <class Strategy, isa Isa, class Register>
+constexpr Register strategy_update(typename Strategy::template table_type<Register> const &table, Register state,
+                                   std::span<std::byte const> data) noexcept;
+
 // Run-time loops, one per built-in strategy, defined and explicitly instantiated for every register type and bit order in
-// src/crc/lut_*.cpp. They take and return the internal register.
+// src/crc/lut_*.cpp; those of crc_lut_sliced and crc_lut_braided once per preset. They take and return the internal register.
 template <bool Reflected, class Register>
 Register update_loop(lookup_table<Register, no_table_size> const &table, Register remainder, std::span<std::byte const> data) noexcept;
 template <bool Reflected, class Register>
 Register update_loop(lookup_table<Register, nibble_size> const &table, Register remainder, std::span<std::byte const> data) noexcept;
 template <bool Reflected, class Register>
 Register update_loop(lookup_table<Register, slice_size> const &table, Register remainder, std::span<std::byte const> data) noexcept;
-template <bool Reflected, class Register>
+template <isa Isa, bool Reflected, class Register>
 Register update_loop(lookup_table<Register, sliced_table_size> const &table, Register remainder, std::span<std::byte const> data) noexcept;
-template <bool Reflected, class Register>
+template <isa Isa, bool Reflected, class Register>
 Register update_loop(lookup_table<Register, braided_table_size> const &table, Register remainder, std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::crc_detail
@@ -380,7 +452,7 @@ constexpr std::uint64_t reflect(std::uint64_t value, unsigned width) noexcept {
 
 namespace checksum {
 
-constexpr crc_polynomial::crc_polynomial(std::uint64_t value) noexcept : value(value) {}
+constexpr crc_polynomial::crc_polynomial(std::uint64_t koopman) noexcept : value(koopman) {}
 
 constexpr std::optional<crc_polynomial> crc_polynomial::create(std::uint64_t normal_form, unsigned width) noexcept {
   if(width > 64 || std::cmp_greater(std::bit_width(normal_form), width) || (width != 0 && (normal_form & 1U) == 0)) {
@@ -413,6 +485,7 @@ template <class Register> constexpr register_form<Register> make_register_form(c
       .polynomial = static_cast<Register>(reflected ? reflect(normal_form, width) : normal_form << shift), .shift = shift, .reflected = reflected};
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): both are register values by nature.
 template <bool Reflected, class Register> constexpr Register bitwise_step(Register remainder, Register polynomial) noexcept {
   promoted_register<Register> const value = remainder;
   promoted_register<Register> const feedback = Reflected ? value & 1U : value >> (register_bits<Register> - 1U);
@@ -475,6 +548,26 @@ constexpr Register loop_byte(Register const *table, Register remainder, std::spa
   return remainder;
 }
 
+template <bool Reflected, class Register> constexpr void add_braid_slices(std::array<Register, braided_table_size> &table) noexcept {
+  // advanced[n]: byte n followed by `zeros` zero bytes, starting from slice 7 (7 zero bytes); braid slice k
+  // (slice 8 + k) needs braid_count * word_size - 1 - k of them.
+  std::array<Register, slice_size> advanced{};
+  for(std::size_t index = 0; index < slice_size; ++index) {
+    advanced[index] = table[sliced_table_size - slice_size + index];
+  }
+  constexpr std::size_t block_size = braid_count * word_size;
+  for(std::size_t zeros = slice_count; zeros < block_size; ++zeros) {
+    for(Register &entry : advanced) {
+      entry = table_step<Reflected, byte_bits>(table.data(), entry, 0U);
+    }
+    if(zeros >= block_size - word_size) {
+      for(std::size_t index = 0; index < slice_size; ++index) {
+        table[((slice_count + block_size - 1 - zeros) * slice_size) + index] = advanced[index];
+      }
+    }
+  }
+}
+
 template <std::size_t Size, bool Reflected, class Register> constexpr std::array<Register, Size> table_entries(Register polynomial) noexcept {
   std::array<Register, Size> table{};
   if constexpr(Size == nibble_size) {
@@ -495,28 +588,13 @@ template <std::size_t Size, bool Reflected, class Register> constexpr std::array
       }
     }
     if constexpr(Size == braided_table_size) {
-      // advanced[n]: byte n followed by `zeros` zero bytes, starting from slice 7 (7 zero bytes); braid slice k
-      // (slice 8 + k) needs braid_count * word_size - 1 - k of them.
-      std::array<Register, slice_size> advanced{};
-      for(std::size_t index = 0; index < slice_size; ++index) {
-        advanced[index] = table[sliced_table_size - slice_size + index];
-      }
-      constexpr std::size_t block_size = braid_count * word_size;
-      for(std::size_t zeros = slice_count; zeros < block_size; ++zeros) {
-        for(Register &entry : advanced) {
-          entry = table_step<Reflected, byte_bits>(table.data(), entry, 0U);
-        }
-        if(zeros >= block_size - word_size) {
-          for(std::size_t index = 0; index < slice_size; ++index) {
-            table[((slice_count + block_size - 1 - zeros) * slice_size) + index] = advanced[index];
-          }
-        }
-      }
+      add_braid_slices<Reflected>(table);
     }
   }
   return table;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): a polynomial and a power, distinct by name.
 constexpr std::uint64_t power_modulo(std::uint64_t polynomial, unsigned exponent) noexcept {
   constexpr unsigned top_bit = 63;
   std::uint64_t remainder = 1;
@@ -550,6 +628,7 @@ constexpr folding_constants make_folding_constants(crc_parameters const &paramet
     return {reflect(power_modulo(polynomial, distance + register_width - 1), register_width),
             reflect(power_modulo(polynomial, distance - 1), register_width)};
   };
+  // NOLINTBEGIN(readability-magic-numbers): the block counts that the field names spell out.
   return {.by_sixteen = fold_pair(16 * block_bits),
           .by_eight = fold_pair(8 * block_bits),
           .by_seven = fold_pair(7 * block_bits),
@@ -561,6 +640,7 @@ constexpr folding_constants make_folding_constants(crc_parameters const &paramet
           .by_one = fold_pair(block_bits),
           .quotient = parameters.reflect_input ? reflect(quotient, register_width) : quotient,
           .polynomial = parameters.reflect_input ? reflect(polynomial, register_width) : polynomial};
+  // NOLINTEND(readability-magic-numbers)
 }
 
 template <class Register, class Fold> constexpr Register fold_internal(register_form<Register> const &form, Register state, Fold fold) noexcept {
@@ -610,7 +690,7 @@ crc_detail::lookup_strategy<Size>::make_table(crc_parameters const &parameters) 
 }
 
 template <std::size_t Size>
-template <crc_register Register>
+template <crc_register Register, isa Isa>
 constexpr Register crc_detail::lookup_strategy<Size>::update(table_type<Register> const &table, Register state,
                                                              std::span<std::byte const> data) noexcept {
   return crc_detail::fold_internal(table.form, state, [&](auto reflected, Register remainder) -> Register {
@@ -623,28 +703,57 @@ constexpr Register crc_detail::lookup_strategy<Size>::update(table_type<Register
         return crc_detail::loop_byte<decltype(reflected)::value>(table.entries.data(), remainder, data);
       }
     } else {
-      return crc_detail::update_loop<decltype(reflected)::value>(table, remainder, data);
+      if constexpr(crc_detail::has_folding<Size>) {
+        return crc_detail::update_loop<Isa, decltype(reflected)::value>(table, remainder, data);
+      } else {
+        // No kernel: every preset runs the one loop of the build.
+        return crc_detail::update_loop<decltype(reflected)::value>(table, remainder, data);
+      }
     }
   });
 }
 
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr crc_engine<Register, Strategy>::crc_engine(crc_parameters const &parameters,
-                                                     typename Strategy::template table_type<Register> const &table) noexcept
-    : table(table), form(crc_detail::make_register_form<Register>(parameters)),
+template <class Strategy, isa Isa, class Register>
+constexpr Register crc_detail::strategy_update(typename Strategy::template table_type<Register> const &table, Register state,
+                                               std::span<std::byte const> data) noexcept {
+  if constexpr(requires { Strategy::template update<Register, Isa>(table, state, data); }) {
+    return Strategy::template update<Register, Isa>(table, state, data);
+  } else {
+    return Strategy::template update<Register>(table, state, data);
+  }
+}
+
+template <class Strategy, class Register> consteval bool crc_detail::takes_preset() noexcept {
+  if constexpr(requires { Strategy::takes_preset; }) {
+    return Strategy::takes_preset;
+  } else {
+    return requires(typename Strategy::template table_type<Register> const &table, Register state, std::span<std::byte const> data) {
+      Strategy::template update<Register, isa::generic>(table, state, data);
+    };
+  }
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr crc_engine<Register, Strategy, Isa>::crc_engine(crc_parameters const &parameters,
+                                                          typename Strategy::template table_type<Register> const &strategy_table) noexcept
+    : table(strategy_table), form(crc_detail::make_register_form<Register>(parameters)),
       initial_state(static_cast<Register>(form.reflected ? crc_detail::reflect(parameters.initial_value, parameters.polynomial.width())
                                                          : parameters.initial_value)),
       final_xor(static_cast<Register>(parameters.final_xor)), mask(static_cast<Register>(~std::uint64_t{0} >> (64U - parameters.polynomial.width()))),
       width(static_cast<std::uint8_t>(parameters.polynomial.width())), reflect_result(form.reflected != parameters.reflect_output) {}
 
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr typename crc_engine<Register, Strategy>::state_type crc_engine<Register, Strategy>::checked_state(state_type state) const noexcept {
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr typename crc_engine<Register, Strategy, Isa>::state_type
+crc_engine<Register, Strategy, Isa>::checked_state(state_type state) const noexcept {
   assert(state <= mask);
   return static_cast<Register>(state & mask);
 }
 
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr std::optional<crc_engine<Register, Strategy>> crc_engine<Register, Strategy>::create(crc_parameters const &parameters) noexcept {
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr std::optional<crc_engine<Register, Strategy, Isa>> crc_engine<Register, Strategy, Isa>::create(crc_parameters const &parameters) noexcept {
   if(!crc_detail::fits_register<Register>(parameters)) {
     return std::nullopt;
   }
@@ -659,29 +768,40 @@ constexpr std::optional<crc_engine<Register, Strategy>> crc_engine<Register, Str
   return crc_engine(parameters, *table);
 }
 
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr typename crc_engine<Register, Strategy>::state_type crc_engine<Register, Strategy>::initial() const noexcept {
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr isa crc_engine<Register, Strategy, Isa>::preset() noexcept {
+  return Isa;
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr typename crc_engine<Register, Strategy, Isa>::state_type crc_engine<Register, Strategy, Isa>::initial() const noexcept {
   return initial_state;
 }
 
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr typename crc_engine<Register, Strategy>::state_type crc_engine<Register, Strategy>::update(state_type state,
-                                                                                                     std::span<std::byte const> data) const noexcept {
-  return Strategy::template update<Register>(table, checked_state(state), data);
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr typename crc_engine<Register, Strategy, Isa>::state_type
+crc_engine<Register, Strategy, Isa>::update(state_type state, std::span<std::byte const> data) const noexcept {
+  return crc_detail::strategy_update<Strategy, Isa>(table, checked_state(state), data);
 }
 
-template <crc_register Register, crc_strategy_for<Register> Strategy>
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
 template <byte_range Range>
-constexpr typename crc_engine<Register, Strategy>::state_type crc_engine<Register, Strategy>::update(state_type state, Range &&data) const noexcept {
+constexpr typename crc_engine<Register, Strategy, Isa>::state_type crc_engine<Register, Strategy, Isa>::update(state_type state,
+                                                                                                               Range &&data) const noexcept {
   state = checked_state(state);
   detail::for_each_chunk(std::forward<Range>(data),
-                         [&](std::span<std::byte const> chunk) { state = Strategy::template update<Register>(table, state, chunk); });
+                         [&](std::span<std::byte const> chunk) { state = crc_detail::strategy_update<Strategy, Isa>(table, state, chunk); });
   return state;
 }
 
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr typename crc_engine<Register, Strategy>::state_type
-crc_engine<Register, Strategy>::update(state_type state, std::span<std::byte const> data, std::size_t bit_length) const noexcept {
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr typename crc_engine<Register, Strategy, Isa>::state_type
+crc_engine<Register, Strategy, Isa>::update(state_type state, std::span<std::byte const> data, std::size_t bit_length) const noexcept {
   std::size_t bytes = bit_length / 8;
   auto bits = static_cast<unsigned>(bit_length % 8);
   bool const in_range = bytes < data.size() || (bytes == data.size() && bits == 0);
@@ -694,69 +814,131 @@ crc_engine<Register, Strategy>::update(state_type state, std::span<std::byte con
   return bits == 0 ? state : crc_detail::update_tail(form, state, data[bytes], bits);
 }
 
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr typename crc_engine<Register, Strategy>::state_type crc_engine<Register, Strategy>::finalize(state_type state) const noexcept {
-  state = checked_state(state);
-  if(reflect_result) {
-    state = static_cast<Register>(crc_detail::reflect(state, width));
-  }
-  return static_cast<Register>(state ^ final_xor);
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr typename crc_engine<Register, Strategy, Isa>::value_type
+crc_engine<Register, Strategy, Isa>::finalize(state_type const &state) const noexcept {
+  Register const checked = checked_state(state);
+  return static_cast<Register>((reflect_result ? static_cast<Register>(crc_detail::reflect(checked, width)) : checked) ^ final_xor);
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr typename crc_engine<Register, Strategy, Isa>::state_type crc_engine<Register, Strategy, Isa>::resume(value_type checksum) const noexcept {
+  auto const state = static_cast<Register>(checked_state(checksum) ^ final_xor);
+  return reflect_result ? static_cast<Register>(crc_detail::reflect(state, width)) : state;
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr typename crc_engine<Register, Strategy, Isa>::value_type
+crc_engine<Register, Strategy, Isa>::compute(std::span<std::byte const> data) const noexcept {
+  return finalize(update(initial(), data));
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr typename crc_engine<Register, Strategy, Isa>::value_type crc_engine<Register, Strategy, Isa>::compute(Range &&data) const noexcept {
+  return finalize(update(initial(), std::forward<Range>(data)));
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
+  requires(isa_available(Isa))
+constexpr typename crc_engine<Register, Strategy, Isa>::value_type
+crc_engine<Register, Strategy, Isa>::compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept {
+  return finalize(update(initial(), data, bit_length));
+}
+
+template <crc_parameters Parameters, class Strategy, isa Isa, byte_range Range>
+constexpr crc_engine<crc_register_for<Parameters.polynomial.width()>, Strategy, Isa>::value_type crc_compute(Range &&data) noexcept {
+  return crc_engine_for<Parameters, Strategy, Isa>.compute(std::forward<Range>(data));
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr typename crc_engine<Register, Strategy>::state_type
-crc_engine<Register, Strategy>::compute(std::span<std::byte const> data) const noexcept {
+constexpr crc_dispatch_engine<Register, Strategy>::crc_dispatch_engine(crc_engine<Register, Strategy> const &static_engine, isa preset) noexcept
+    : engine(static_engine), chosen(preset) {}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr std::optional<crc_dispatch_engine<Register, Strategy>> crc_dispatch_engine<Register, Strategy>::create(crc_parameters const &parameters,
+                                                                                                                 isa_set cpu) noexcept {
+  auto const engine = crc_engine<Register, Strategy>::create(parameters);
+  if(!engine) {
+    return std::nullopt;
+  }
+  return crc_dispatch_engine(*engine, isa_detail::select(cpu, crc_detail::own_loops<Strategy, Register>));
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy> constexpr isa crc_dispatch_engine<Register, Strategy>::preset() const noexcept {
+  return chosen;
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type crc_dispatch_engine<Register, Strategy>::initial() const noexcept {
+  return engine.initial();
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
+crc_dispatch_engine<Register, Strategy>::update(state_type state, std::span<std::byte const> data) const noexcept {
+  state = engine.checked_state(state);
+  return isa_detail::dispatch<crc_detail::own_loops<Strategy, Register>>(
+      chosen, [&]<isa Isa>() { return crc_detail::strategy_update<Strategy, Isa>(engine.table, state, data); });
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+template <byte_range Range>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type crc_dispatch_engine<Register, Strategy>::update(state_type state,
+                                                                                                                       Range &&data) const noexcept {
+  state = engine.checked_state(state);
+  return isa_detail::dispatch<crc_detail::own_loops<Strategy, Register>>(chosen, [&]<isa Isa>() {
+    detail::for_each_chunk(std::forward<Range>(data),
+                           [&](std::span<std::byte const> chunk) { state = crc_detail::strategy_update<Strategy, Isa>(engine.table, state, chunk); });
+    return state;
+  });
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
+crc_dispatch_engine<Register, Strategy>::update(state_type state, std::span<std::byte const> data, std::size_t bit_length) const noexcept {
+  // The whole bytes with the chosen loop, the rest (and the precondition) as crc_engine does.
+  std::size_t const whole = std::min(bit_length / 8, data.size());
+  return engine.update(update(state, data.first(whole)), data.subspan(whole), bit_length - (8 * whole));
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::value_type
+crc_dispatch_engine<Register, Strategy>::finalize(state_type const &state) const noexcept {
+  return engine.finalize(state);
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::state_type
+crc_dispatch_engine<Register, Strategy>::resume(value_type checksum) const noexcept {
+  return engine.resume(checksum);
+}
+
+template <crc_register Register, crc_strategy_for<Register> Strategy>
+constexpr typename crc_dispatch_engine<Register, Strategy>::value_type
+crc_dispatch_engine<Register, Strategy>::compute(std::span<std::byte const> data) const noexcept {
   return finalize(update(initial(), data));
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy>
 template <byte_range Range>
-constexpr typename crc_engine<Register, Strategy>::state_type crc_engine<Register, Strategy>::compute(Range &&data) const noexcept {
+constexpr typename crc_dispatch_engine<Register, Strategy>::value_type crc_dispatch_engine<Register, Strategy>::compute(Range &&data) const noexcept {
   return finalize(update(initial(), std::forward<Range>(data)));
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr typename crc_engine<Register, Strategy>::state_type crc_engine<Register, Strategy>::compute(std::span<std::byte const> data,
-                                                                                                      std::size_t bit_length) const noexcept {
+constexpr typename crc_dispatch_engine<Register, Strategy>::value_type
+crc_dispatch_engine<Register, Strategy>::compute(std::span<std::byte const> data, std::size_t bit_length) const noexcept {
   return finalize(update(initial(), data, bit_length));
 }
 
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr crc_accumulator<Register, Strategy>::crc_accumulator(crc_engine<Register, Strategy> const &engine) noexcept
-    : engine(&engine), running_state(engine.initial()) {}
-
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr crc_accumulator<Register, Strategy> &crc_accumulator<Register, Strategy>::update(std::span<std::byte const> data) noexcept {
-  running_state = engine->update(running_state, data);
-  return *this;
-}
-
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-template <byte_range Range>
-constexpr crc_accumulator<Register, Strategy> &crc_accumulator<Register, Strategy>::update(Range &&data) noexcept {
-  running_state = engine->update(running_state, std::forward<Range>(data));
-  return *this;
-}
-
-template <crc_register Register, crc_strategy_for<Register> Strategy>
-constexpr crc_accumulator<Register, Strategy> &crc_accumulator<Register, Strategy>::update(std::span<std::byte const> data,
-                                                                                           std::size_t bit_length) noexcept {
-  running_state = engine->update(running_state, data, bit_length);
-  return *this;
-}
-
-template <crc_register Register, crc_strategy_for<Register> Strategy> constexpr Register crc_accumulator<Register, Strategy>::value() const noexcept {
-  return engine->finalize(running_state);
-}
-
-template <crc_register Register, crc_strategy_for<Register> Strategy> constexpr Register crc_accumulator<Register, Strategy>::state() const noexcept {
-  return running_state;
-}
-
-template <crc_register Register, crc_strategy_for<Register> Strategy> constexpr void crc_accumulator<Register, Strategy>::reset() noexcept {
-  running_state = engine->initial();
-}
-
 } // namespace checksum
+
+// The named parameter sets, so that this header alone gives the whole CRC API like every other algorithm's.
+#include <checksum/crc_catalog.hpp> // IWYU pragma: export
 
 #endif // CHECKSUM_CRC_HPP

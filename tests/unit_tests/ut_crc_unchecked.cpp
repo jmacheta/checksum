@@ -10,13 +10,13 @@
 #include <cstddef>
 #include <span>
 
-#if !defined(NDEBUG)
+#ifndef NDEBUG
 #error "ut_crc_unchecked.cpp must be compiled with NDEBUG"
 #endif
 
 namespace {
 
-TEST(CrcUnchecked, ViolationsAreClampedOrMasked) {
+TEST(crc_unchecked, violations_are_clamped_or_masked) {
   auto const &engine = checksum::crc_engine_for<crc_test::model_parameters<6>>; // CRC-15/CAN
   std::array<std::byte, 2> const data{std::byte{0x12}, std::byte{0x34}};
   auto const initial = engine.initial();
