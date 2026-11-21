@@ -1,8 +1,8 @@
 # Fletcher-16, -32 and -64
 
-Fletcher checksums of three widths, with values equal to those of the Wikipedia article "Fletcher's checksum". They
-are in `checksum/fletcher.hpp`, need no tables, and every function is `constexpr` and `noexcept`. Adler-32 and ZFS
-fletcher4 have their own guides.
+Fletcher checksums of three widths, in `checksum/fletcher.hpp`. They need no tables, and every function is `constexpr`
+and `noexcept`. Adler-32 and ZFS fletcher4 have their own guides. Despite its name, fletcher4 is a different algorithm:
+four sums modulo 2^64, where Fletcher-16, -32 and -64 keep two sums modulo 2^(n/2)−1.
 
 ## The simplest way
 
