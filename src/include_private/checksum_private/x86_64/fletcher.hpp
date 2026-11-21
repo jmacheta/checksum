@@ -12,7 +12,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <type_traits>
 
@@ -36,6 +35,10 @@ template <isa Isa> x86_vector<Isa> byte_sums(x86_vector<Isa> value) noexcept;
 template <isa Isa> x86_vector<Isa> add_lanes32(x86_vector<Isa> first, x86_vector<Isa> second) noexcept;
 template <isa Isa> x86_vector<Isa> add_lanes64(x86_vector<Isa> first, x86_vector<Isa> second) noexcept;
 template <isa Isa> x86_vector<Isa> load_vector(std::byte const *data) noexcept;
+
+// The lanes of a vector, stored with an intrinsic: GCC keeps an accumulator whose address reaches memcpy in memory, with a
+// store and a load per block.
+template <isa Isa, class Lane> std::array<Lane, x86_vector_size<Isa> / sizeof(Lane)> vector_lanes(x86_vector<Isa> value) noexcept;
 
 // Sum of the lanes of Lane bits.
 template <isa Isa, class Lane> std::uint64_t lane_total(x86_vector<Isa> value) noexcept;
@@ -162,6 +165,16 @@ template <isa Isa> x86_vector<Isa> load_vector(std::byte const *data) noexcept {
     return _mm_loadu_si128(reinterpret_cast<x86_vector<Isa> const *>(data));
   }
 }
+
+template <isa Isa, class Lane> std::array<Lane, x86_vector_size<Isa> / sizeof(Lane)> vector_lanes(x86_vector<Isa> value) noexcept {
+  std::array<Lane, x86_vector_size<Isa> / sizeof(Lane)> lanes{};
+  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+    _mm256_storeu_si256(reinterpret_cast<x86_vector<Isa> *>(lanes.data()), value);
+  } else {
+    _mm_storeu_si128(reinterpret_cast<x86_vector<Isa> *>(lanes.data()), value);
+  }
+  return lanes;
+}
 // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 
 template <isa Isa> x86_vector<Isa> byte_sums(x86_vector<Isa> value) noexcept {
@@ -173,10 +186,8 @@ template <isa Isa> x86_vector<Isa> byte_sums(x86_vector<Isa> value) noexcept {
 }
 
 template <isa Isa, class Lane> std::uint64_t lane_total(x86_vector<Isa> value) noexcept {
-  std::array<Lane, x86_vector_size<Isa> / sizeof(Lane)> lanes{};
-  std::memcpy(lanes.data(), &value, x86_vector_size<Isa>);
   std::uint64_t total = 0;
-  for(Lane const lane : lanes) {
+  for(Lane const lane : vector_lanes<Isa, Lane>(value)) {
     total += lane;
   }
   return total;
@@ -186,10 +197,8 @@ template <isa Isa, class Lane> std::uint64_t lane_total(x86_vector<Isa> value) n
 template <isa Isa, class Lane> std::uint64_t column_total(x86_vector<Isa> low, x86_vector<Isa> high, std::uint64_t values_per_block) noexcept {
   constexpr std::size_t lanes = x86_vector_size<Isa> / sizeof(Lane);
   constexpr std::size_t per_half = 16 / sizeof(Lane);
-  std::array<Lane, lanes> low_lanes{};
-  std::array<Lane, lanes> high_lanes{};
-  std::memcpy(low_lanes.data(), &low, x86_vector_size<Isa>);
-  std::memcpy(high_lanes.data(), &high, x86_vector_size<Isa>);
+  auto const low_lanes = vector_lanes<Isa, Lane>(low);
+  auto const high_lanes = vector_lanes<Isa, Lane>(high);
   std::uint64_t total = 0;
   for(std::size_t lane = 0; lane < lanes; ++lane) {
     std::uint64_t const index = ((lane / per_half) * 2 * per_half) + (lane % per_half);
