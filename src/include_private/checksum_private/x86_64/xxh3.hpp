@@ -35,7 +35,7 @@ struct stripe_kernel<Isa> {
 
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
-auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
+CHECKSUM_ALWAYS_INLINE inline auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return {_mm256_loadu_si256(reinterpret_cast<__m256i const *>(accumulators.data())),
             _mm256_loadu_si256(reinterpret_cast<__m256i const *>(accumulators.data() + 4))};
@@ -50,7 +50,7 @@ auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept ->
 
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
-void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(accumulators.data()), values[0]);
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(accumulators.data() + 4), values[1]);
@@ -66,7 +66,7 @@ void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &val
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the stripe and the secret are both bytes.
-void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     for(std::size_t index = 0; index < values.size(); ++index) {
       __m256i const data = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(stripe) + index);
@@ -88,7 +88,7 @@ void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std:
 // The 64-bit product with the 32-bit prime, from the products of both halves.
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
-void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
   if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     __m256i const prime = _mm256_set1_epi32(static_cast<int>(primes_32::prime_1));
     for(std::size_t index = 0; index < values.size(); ++index) {

@@ -3,7 +3,7 @@
 
 // CPU kernels of the XXH3 stripe loop, from the directory of the target architecture. The primary template of
 // stripe_kernel<Isa> means no kernel; an architecture header specializes it for the presets with one, with:
-// - available = true and the members of portable_kernel
+// - available = true and the members of portable_kernel, defined CHECKSUM_ALWAYS_INLINE: the stripe loop calls them per stripe
 // - minimum_size: shortest input for the kernel
 
 #include <checksum/isa.hpp>

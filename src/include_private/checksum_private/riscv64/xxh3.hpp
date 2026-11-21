@@ -46,20 +46,20 @@ template <isa Isa> [[gnu::target(CHECKSUM_TARGET_RISCV_V)]] vuint64m4_t load_str
 
 template <isa Isa>
   requires(isa_detail::includes(Isa, isa::riscv_v))
-auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
+CHECKSUM_ALWAYS_INLINE inline auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
   return __riscv_vle64_v_u64m4(lanes_of(accumulators), rvv_lanes);
 }
 
 template <isa Isa>
   requires(isa_detail::includes(Isa, isa::riscv_v))
-void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
   __riscv_vse64_v_u64m4(lanes_of(accumulators), values, rvv_lanes);
 }
 
 // Each lane adds the product of the 32-bit halves of data ^ secret (vmacc), and the data of its neighbor (vrgather).
 template <isa Isa>
   requires(isa_detail::includes(Isa, isa::riscv_v))
-void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
   vuint64m4_t const data = load_stripe<Isa>(stripe);
   vuint64m4_t const key = __riscv_vxor_vv_u64m4(data, load_stripe<Isa>(secret), rvv_lanes);
   vuint64m4_t const neighbors = __riscv_vxor_vx_u64m4(__riscv_vid_v_u64m4(rvv_lanes), 1, rvv_lanes);
@@ -69,7 +69,7 @@ void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std:
 
 template <isa Isa>
   requires(isa_detail::includes(Isa, isa::riscv_v))
-void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
   vuint64m4_t const mixed = __riscv_vxor_vv_u64m4(values, __riscv_vsrl_vx_u64m4(values, scramble_shift, rvv_lanes), rvv_lanes);
   values = __riscv_vmul_vx_u64m4(__riscv_vxor_vv_u64m4(mixed, load_stripe<Isa>(secret), rvv_lanes), primes_32::prime_1, rvv_lanes);
 }

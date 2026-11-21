@@ -49,7 +49,7 @@ struct stripe_kernel<Isa> {
 };
 
 // The 16 bytes at data as two little-endian 64-bit lanes.
-template <isa Isa> uint64x2_t load_vector(std::byte const *data) noexcept;
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline uint64x2_t load_vector(std::byte const *data) noexcept;
 
 // Mixes the vectors Index and Index + 1 of one stripe into their lanes: one unzip gives the low and the high 32-bit halves of
 // data ^ secret for four lanes.
@@ -73,7 +73,7 @@ template <isa Isa, std::size_t Index>
 CHECKSUM_ALWAYS_INLINE inline void scramble_scalar(typename stripe_kernel<Isa>::lanes &values, std::byte const *secret) noexcept;
 #endif
 
-template <isa Isa> uint64x2_t load_vector(std::byte const *data) noexcept {
+template <isa Isa> CHECKSUM_ALWAYS_INLINE inline uint64x2_t load_vector(std::byte const *data) noexcept {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): byte view for the vector load.
   return vreinterpretq_u64_u8(vld1q_u8(reinterpret_cast<std::uint8_t const *>(data)));
 }
@@ -127,7 +127,7 @@ CHECKSUM_ALWAYS_INLINE inline void scramble_scalar(typename stripe_kernel<Isa>::
 
 template <isa Isa>
   requires(neon_target<Isa>)
-auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
+CHECKSUM_ALWAYS_INLINE inline auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
   lanes values{};
   for(std::size_t index = 0; index < vector_count; ++index) {
     values.vectors[index] = vld1q_u64(accumulators.data() + (2 * index));
@@ -142,7 +142,7 @@ auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept ->
 
 template <isa Isa>
   requires(neon_target<Isa>)
-void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
   for(std::size_t index = 0; index < vector_count; ++index) {
     vst1q_u64(accumulators.data() + (2 * index), values.vectors[index]);
   }
@@ -156,7 +156,7 @@ void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &val
 // Spelled out per vector and lane: at -O2, GCC keeps the lanes of a loop that it does not unroll in memory.
 template <isa Isa>
   requires(neon_target<Isa>)
-void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
   [&]<std::size_t... Pair> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Pair...>) {
     (accumulate_vector_pair<Isa, 2 * Pair>(values, stripe, secret), ...);
   }(std::make_index_sequence<vector_count / 2>{});
@@ -169,7 +169,7 @@ void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std:
 
 template <isa Isa>
   requires(neon_target<Isa>)
-void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
+CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
   [&]<std::size_t... Index> CHECKSUM_ALWAYS_INLINE(std::index_sequence<Index...>) {
     (scramble_vector<Isa, Index>(values, secret), ...);
   }(std::make_index_sequence<vector_count>{});
