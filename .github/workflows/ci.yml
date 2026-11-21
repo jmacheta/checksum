@@ -189,7 +189,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sde" && tar -xJf "$RUNNER_TEMP/sde.tar.xz" -C "$RUNNER_TEMP/sde" --strip-components=1
           "$RUNNER_TEMP/sde/sde64" ${{ matrix.sde }} -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
 
-  # The library and its bare-metal check (tests/bare_metal) for Cortex-M, -R and -A with the Arm GNU Toolchain; the check runs
+  # The library and the benchmarks with their checks for Cortex-M, -R and -A with the Arm GNU Toolchain; the smoke tests run
   # in QEMU system mode where the preset names a machine (cmake/bare_metal_presets.json).
   bare-metal:
     name: bare-metal (arm-none-eabi, QEMU system mode)

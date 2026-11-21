@@ -10,10 +10,7 @@ target_sources(
             include/isa_cpu.hpp
 )
 
-# Bare metal has no Google Test: one program checks the instruction-set layer there.
-if (CHECKSUM_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Generic")
-  add_subdirectory(bare_metal)
-elseif (CHECKSUM_TESTS)
+if (CHECKSUM_TESTS)
   add_subdirectory(unit_tests)
   add_subdirectory(compile_fail)
 endif ()

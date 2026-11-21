@@ -29,7 +29,7 @@ memory for speed through a [strategy](#strategies): `crc_lut_byte` needs 1 KiB f
 `crc_lut_sliced` needs 8 KiB and is faster again.
 
 On top of that, `crc_lut_sliced` uses CPU instructions when you name a preset after the strategy. On x86-64,
-`isa::x86_vpclmul` computes CRC-32 at about 75 000 MB/s from 4 KiB, against about 3 000 MB/s for the portable loop. The
+`isa::x86_vpclmul` computes CRC-32 at about 86 000 MB/s from 4 KiB, against about 3 400 MB/s for the portable loop. The
 program runs that kernel directly, with no detection and no compiler flags.
 
 ```cpp
@@ -191,7 +191,6 @@ register, whatever its initial value and final XOR.
 ### Performance
 
 - Each step from `crc_lut_none` to `crc_lut_sliced` is 1.5× to several times faster.
-- Against Intel ISA-L's assembly, CRC-32, CRC-32C and CRC-64/XZ run at 0.89-1.45× from 20 B to 1 MiB.
 - A compile-time CRC of a large input is slow, because constant evaluation runs the byte-table loop at best.
 
 Full figures, including Cortex-M flash and RAM footprints, are in [performance.md](performance.md#crc).

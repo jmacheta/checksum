@@ -16,13 +16,13 @@ time.
 - **Embedded-friendly:** no heap, no global state, no exceptions or RTTI needed. A table-free CRC-32 costs about
   100 bytes of code and a 32-byte engine on Cortex-M4.
 - **Fast:** kernels for PCLMULQDQ, AVX2, AVX-VNNI, Arm CRC32, PMULL, NEON, the Cortex-M DSP instructions, and RISC-V
-  Zbc and V. On long x86-64 inputs it matches xxHash, OpenZFS and Intel ISA-L, and beats zlib-ng by up to 1.17× and
-  Linux and DPDK by up to 1.76×.
+  Zbc and V. On long x86-64 inputs it is on par with xxHash, OpenZFS and Intel ISA-L, and faster than
+  zlib-ng, Linux and DPDK.
 - **Run-time dispatch:** name the instruction set at compile time, or let the library pick the best for the running CPU.
 - **Portable:** GCC 14+, Clang 18+, MSVC and clang-cl, on x86-64, AArch64, 32-bit Arm, RISC-V and bare metal.
 - **Tested in CI:** unit tests run natively on Linux and Windows (x64, ARM64) and in QEMU for 32-bit Arm, RISC-V and
-  big-endian AArch64. On bare-metal Cortex-M3/M4/M7/M33 and A9, QEMU runs `detect_isa()` and checks that every dispatch
-  engine agrees with the generic one.
+  big-endian AArch64. On bare-metal Cortex-M3/M4/M7/M33 and A9, QEMU runs the benchmarks' checks of `detect_isa()` and
+  of every preset and dispatch engine against the generic one.
 
 ## Quick start
 
@@ -34,10 +34,10 @@ using namespace std::literals;
 // At compile time.
 static_assert(checksum::crc_compute<checksum::crc32>("123456789"sv) == 0xCBF43926);
 
-// The default CRC engine is bitwise and table-free: small, but about 140 MB/s on x86-64.
+// The default CRC engine is bitwise and table-free: small, but about 160 MB/s on x86-64.
 std::uint32_t crc = checksum::crc_compute<checksum::crc32>(data);
 
-// 8 KiB of tables and the best kernel for the running CPU: up to about 75 000 MB/s.
+// 8 KiB of tables and the best kernel for the running CPU: up to about 86 000 MB/s.
 using sliced_dispatch = checksum::crc_dispatch_engine<std::uint32_t, checksum::crc_lut_sliced>;
 static auto const fast_crc = sliced_dispatch::create(checksum::crc32).value();
 std::uint32_t crc_fast = fast_crc.compute(data);

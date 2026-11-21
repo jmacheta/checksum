@@ -11,15 +11,16 @@
   without the error. `accumulator_from_temporary`, `string_literal_update` and `unavailable_preset` build once per
   algorithm (`compile_fail.<algorithm>_<source>`; `test_engine.hpp` picks the engine from `CHECKSUM_TEST_<ALGORITHM>`);
   the rejected-parameter and precondition tests exist for CRC only, the one algorithm with parameters and asserts.
-- Bare metal: `tests/bare_metal/isa_check.cpp`, one program without Google Test, built instead of the unit tests when
-  `CMAKE_SYSTEM_NAME` is `Generic` (`cmake/bare_metal_presets.json`, Arm GNU Toolchain `arm-none-eabi` on PATH). Its
-  `static_assert`s check the presets that the flags promise and build against the preset's `CHECKSUM_EXPECTED_ISA` and
-  `CHECKSUM_EXPECTED_BUILT`; at run time it checks `detect_isa()` and every dispatch engine against `isa::generic`.
-  `startup.S` enables the FPU (and on Cortex-A a flat MMU map, without which unaligned accesses fault) and ends QEMU
-  through semihosting, also on a fault.
 - Benchmarks: Google Benchmark, `tests/benchmarks`, configured only with `CHECKSUM_BENCHMARKS` (the `native-*-bench`
-  presets). The test presets and CI neither build nor run them; in a bench build `ctest` runs one smoke test per
-  benchmark executable. Calls are independent, so short-input figures are throughput, not latency.
+  and `bare-cortex-*` presets). In a bench build `ctest` runs one smoke test per benchmark executable. Before it
+  measures, each benchmark of a preset or a dispatch engine checks its results against `isa::generic` and exits with an
+  error on a mismatch. Calls are independent, so short-input figures are throughput, not latency.
+- Bare metal: the `bare-cortex-*` presets (`cmake/bare_metal_presets.json`, Arm GNU Toolchain `arm-none-eabi` on
+  PATH) build the benchmarks and no unit tests, with `bare_metal_benchmark.cpp` standing in for Google Benchmark and
+  `startup.S`; their smoke tests run in QEMU system mode with semihosting. The stand-in's `static_assert`s check the
+  presets that the flags promise against `CHECKSUM_EXPECTED_ISA` and `CHECKSUM_EXPECTED_BUILT`, and at start-up it
+  checks `detect_isa()` and dispatch selection. `startup.S` enables the FPU (and on Cortex-A a flat MMU map, without
+  which unaligned accesses fault) and ends QEMU through semihosting, also on a fault.
 - Write tests alongside the component they exercise.
 
 ## Unit test layout
@@ -108,7 +109,7 @@ exits with an error, and `isa_test_support.required_presets_run` fails if a requ
 run. Every CI job sets it (`required` in `ci.yml`) to what its CPU guarantees: `x86_avx2` on GitHub's x86-64 runners
 (VPCLMULQDQ and AVX-VNNI vary between their CPUs), `aarch64_pmull` on its Arm runners (Neoverse N2) and in QEMU,
 `thumb2_crc` and `riscv_zbc,riscv_v` in QEMU `-cpu max` (`riscv_zbc` alone with Clang 18, which builds no `riscv_v`
-in an rv64gc build). The bare-metal check asserts its presets by itself.
+in an rv64gc build). The bare-metal benchmarks assert their presets by themselves.
 QEMU reports Zbc in `riscv_hwprobe` from 9.0 on, so the RISC-V jobs take QEMU 10.2 (Ubuntu 26.04's statically linked
 `qemu-user`, pinned by sha256 in `ci.yml`) instead of Ubuntu 24.04's 8.2, where `detect_isa()` misses `riscv_zbc`.
 

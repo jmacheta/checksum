@@ -65,7 +65,7 @@ std::uint64_t hash = xxh64.compute(data);
 
 ### Performance
 
-- XXH32 runs about 50 MB/s on an 80 MHz Cortex-M4 and 100 MB/s on a 128 MHz Cortex-M33, at 4 KiB.
+- XXH32 runs about 50 MB/s on an 80 MHz Cortex-M4 at 4 KiB.
 - Hash whole messages in one call when they are in memory, or stream pieces of 4 KiB or more.
 
 Full figures, including the measurements behind dropping per-preset loops, are in

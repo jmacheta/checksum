@@ -14,7 +14,7 @@ by instruction-set presets. Read [README.md](README.md) first for the user-facin
 | `src/isa/detect.cpp` | `detect_isa()`, the only CPU query |
 | `src/CMakeLists.txt` | Every library source, listed by hand: add new sources here |
 | `tests/unit_tests/` | Google Test, `ut_<algorithm>[_<area>].cpp`, one executable `checksum_ut` |
-| `tests/compile_fail/`, `tests/bare_metal/`, `tests/benchmarks/` | Negative compile tests, the bare-metal QEMU check, Google Benchmark |
+| `tests/compile_fail/`, `tests/benchmarks/` | Negative compile tests; Google Benchmark, with a stand-in for bare metal |
 | `examples/<algorithm>/` | Small complete programs, built but not run |
 
 ## Commands

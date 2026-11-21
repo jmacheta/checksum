@@ -1,11 +1,12 @@
-// Start-up for the bare-metal check in QEMU system mode: enables the floating-point unit and enters newlib's _start
-// (rdimon.specs, semihosting). Any fault prints a message and ends QEMU with a failing exit code.
+// Start-up of the bare-metal benchmarks, in QEMU system mode or loaded by a debugger: sets the stack, enables the
+// floating-point unit and enters newlib's _start (rdimon.specs, semihosting). Any fault prints a message and exits with failure.
 
   .syntax unified
 
 #if __ARM_ARCH_PROFILE == 'M'
   .section .isr_vector, "aR" // R: kept by --gc-sections
-  .word stack_end
+vector_table:
+  .word __stack
   .word reset
   .rept 14
   .word fault
@@ -16,6 +17,18 @@
   .thumb_func
   .global reset
 reset:
+  // A debugger may start here without a reset: mask interrupts, take over the stack and, where there is one, the
+  // vector table.
+  cpsid i
+  ldr r0, =__stack
+  mov sp, r0
+#if __ARM_ARCH_ISA_THUMB == 2
+  ldr r0, =0xE000ED08 // VTOR
+  ldr r1, =vector_table
+  str r1, [r0]
+  dsb
+  isb
+#endif
 #if defined(__ARM_FP)
   ldr r0, =0xE000ED88 // CPACR: full access to CP10 and CP11
   ldr r1, [r0]
@@ -42,6 +55,11 @@ fault:
   .arm
   .global reset
 reset:
+  cpsid if
+  ldr sp, =__stack
+  // _start enters main in user mode: let it use the performance monitors.
+  mov r0, #1
+  mcr p15, 0, r0, c9, c14, 0 // PMUSERENR.EN
 #if __ARM_ARCH_PROFILE == 'A'
   ldr r0, =vectors
   mcr p15, 0, r0, c12, c0, 0 // VBAR
@@ -102,7 +120,14 @@ translation_table:
   .space 16384
 #endif
 
-  .bss
+  // Heap and stack in .noinit, which _start does not clear: when the debugger reports no stack (OpenOCD), _start runs on
+  // __stack while it clears .bss. newlib's sbrk() grows the heap from end up to the stack pointer. Creating a 64-bit
+  // braided CRC dispatch engine (33 KB) keeps two copies of its table on the stack, hence 128 KiB of stack.
+  .section .noinit, "aw", %nobits
   .balign 8
-  .space 8192
-stack_end:
+  .global end
+end:
+  .space 65536
+  .space 131072
+  .global __stack
+__stack:

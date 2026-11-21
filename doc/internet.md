@@ -22,7 +22,7 @@ A header that holds its correct checksum sums to 0, which is how a receiver veri
 ## You know your target platform
 
 When you build for a known CPU, such as servers with AVX2, name its preset as a template argument. The program then runs
-that preset's kernel directly, with no detection and no compiler flags. On x86-64, AVX2 is 1.2-1.7× faster than the
+that preset's kernel directly, with no detection and no compiler flags. On x86-64, AVX2 is about 1.8× faster than the
 default from 1500 bytes. On AArch64 the default already has the NEON kernel, and Cortex-M3/M4/M7/M33 get theirs with
 `isa::thumb2`.
 
@@ -81,12 +81,12 @@ checksum::isa chosen = internet.preset();
 
 ### Performance
 
-- The portable loop is already fast: it checksums 20-byte IPv4 headers at about 8 000 MB/s on x86-64.
+- The portable loop is already fast: it checksums 20-byte IPv4 headers at about 10 000 MB/s on x86-64.
 - On Cortex-M, the `ldm` kernel runs at full speed from any address, while the portable loop is up to 2.5× slower when a
   header starts at an odd or 2-modulo-4 address.
 - A kernel adds 590-750 bytes of code.
 
-Full figures, including comparisons with Linux and DPDK, are in [performance.md](performance.md#internet-checksum).
+Full figures are in [performance.md](performance.md#internet-checksum).
 
 ### Limitations
 

@@ -8,7 +8,7 @@
             "name": "bare-metal-arm-base",
             "hidden": true,
             "inherits": "gcc-clang-common",
-            "description": "Bare-metal Arm build with the Arm GNU Toolchain (arm-none-eabi, newlib with semihosting): the library and the bare-metal check of detect_isa() and the dispatch engines, which runs in QEMU system mode where the preset names a machine",
+            "description": "Bare-metal Arm build with the Arm GNU Toolchain (arm-none-eabi, newlib with semihosting): the library and the benchmarks, whose smoke tests run in QEMU system mode where the preset names a machine; CHECKSUM_LINK_FLAGS sets the memory layout",
             "cacheVariables": {
                 "CMAKE_SYSTEM_NAME": "Generic",
                 "CMAKE_SYSTEM_PROCESSOR": "arm",
@@ -17,6 +17,12 @@
                 "CMAKE_ASM_COMPILER": "arm-none-eabi-gcc",
                 "CMAKE_TRY_COMPILE_TARGET_TYPE": "STATIC_LIBRARY",
                 "CHECKSUM_EXAMPLES": "OFF",
+                "CHECKSUM_TESTS": "OFF",
+                "CHECKSUM_BENCHMARKS": "ON",
+                "CMAKE_EXECUTABLE_SUFFIX": ".elf",
+                "CMAKE_EXECUTABLE_SUFFIX_CXX": ".elf",
+                "CMAKE_C_FLAGS_RELEASE": "-O2 -DNDEBUG",
+                "CMAKE_CXX_FLAGS_RELEASE": "-O2 -DNDEBUG",
                 "CMAKE_C_FLAGS_DEBUG": "-g -Og -D_GLIBCXX_ASSERTIONS -ftrivial-auto-var-init=pattern",
                 "CMAKE_CXX_FLAGS_DEBUG": "-g -Og -D_GLIBCXX_ASSERTIONS -ftrivial-auto-var-init=pattern"
             },
@@ -24,13 +30,13 @@
                 "CHECKSUM_EXTRA_CFLAGS": "$env{CHECKSUM_CPU_FLAGS}",
                 "CHECKSUM_EXTRA_CXXFLAGS": "$env{CHECKSUM_CPU_FLAGS} -fno-exceptions -fno-rtti -DCHECKSUM_EXPECTED_ISA=$env{CHECKSUM_EXPECTED_ISA} -DCHECKSUM_EXPECTED_BUILT=$env{CHECKSUM_EXPECTED_BUILT}",
                 "ASMFLAGS": "$env{CHECKSUM_CPU_FLAGS}",
-                "LDFLAGS": "--specs=rdimon.specs -Wl,--gc-sections $env{CHECKSUM_LINK_FLAGS}"
+                "LDFLAGS": "--specs=rdimon.specs -Wl,--gc-sections $env{CHECKSUM_LINK_FLAGS} $penv{CHECKSUM_LINK_FLAGS}"
             }
         },
         {
             "name": "bare-cortex-m0",
             "displayName": "Cortex-M0 bare metal (build only)",
-            "description": "-mcpu=cortex-m0 -mthumb: detect_isa() reports generic; QEMU has no machine for it, so the check is only built",
+            "description": "-mcpu=cortex-m0 -mthumb: detect_isa() reports generic; QEMU has no machine for it, so the benchmarks are only built",
             "inherits": "bare-metal-arm-base",
             "environment": {
                 "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m0 -mthumb",
@@ -42,7 +48,7 @@
         {
             "name": "bare-cortex-m3",
             "displayName": "Cortex-M3 bare metal in QEMU",
-            "description": "-mcpu=cortex-m3 -mthumb: detect_isa() reports thumb2; the check runs in qemu-system-arm -M mps2-an385",
+            "description": "-mcpu=cortex-m3 -mthumb: detect_isa() reports thumb2; the smoke tests run in qemu-system-arm -M mps2-an385",
             "inherits": "bare-metal-arm-base",
             "environment": {
                 "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m3 -mthumb",
@@ -57,7 +63,7 @@
         {
             "name": "bare-cortex-m4",
             "displayName": "Cortex-M4F bare metal in QEMU",
-            "description": "-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the check runs in qemu-system-arm -M mps2-an386",
+            "description": "-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the smoke tests run in qemu-system-arm -M mps2-an386",
             "inherits": "bare-metal-arm-base",
             "environment": {
                 "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard",
@@ -72,7 +78,7 @@
         {
             "name": "bare-cortex-m7",
             "displayName": "Cortex-M7 bare metal in QEMU",
-            "description": "-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the check runs in qemu-system-arm -M mps2-an500",
+            "description": "-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the smoke tests run in qemu-system-arm -M mps2-an500",
             "inherits": "bare-metal-arm-base",
             "environment": {
                 "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard",
@@ -87,7 +93,7 @@
         {
             "name": "bare-cortex-m33",
             "displayName": "Cortex-M33 bare metal in QEMU",
-            "description": "-mcpu=cortex-m33 -mthumb -mfpu=fpv5-sp-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the check runs in qemu-system-arm -M mps2-an505",
+            "description": "-mcpu=cortex-m33 -mthumb -mfpu=fpv5-sp-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the smoke tests run in qemu-system-arm -M mps2-an505",
             "inherits": "bare-metal-arm-base",
             "environment": {
                 "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-m33 -mthumb -mfpu=fpv5-sp-d16 -mfloat-abi=hard",
@@ -102,7 +108,7 @@
         {
             "name": "bare-cortex-r5",
             "displayName": "Cortex-R5 bare metal (build only)",
-            "description": "-mcpu=cortex-r5 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; QEMU has no machine for it, so the check is only built",
+            "description": "-mcpu=cortex-r5 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; QEMU has no machine for it, so the benchmarks are only built",
             "inherits": "bare-metal-arm-base",
             "environment": {
                 "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-r5 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard",
@@ -114,7 +120,7 @@
         {
             "name": "bare-cortex-r52",
             "displayName": "Cortex-R52 bare metal (build only)",
-            "description": "-mcpu=cortex-r52 -mthumb -mfpu=neon-fp-armv8 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; QEMU has no machine for it, so the check is only built",
+            "description": "-mcpu=cortex-r52 -mthumb -mfpu=neon-fp-armv8 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; QEMU has no machine for it, so the benchmarks are only built",
             "inherits": "bare-metal-arm-base",
             "environment": {
                 "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-r52 -mthumb -mfpu=neon-fp-armv8 -mfloat-abi=hard",
@@ -126,7 +132,7 @@
         {
             "name": "bare-cortex-a9",
             "displayName": "Cortex-A9 without NEON bare metal in QEMU",
-            "description": "-mcpu=cortex-a9 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the check runs in qemu-system-arm -M vexpress-a9",
+            "description": "-mcpu=cortex-a9 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard: detect_isa() reports thumb2_dsp; the smoke tests run in qemu-system-arm -M vexpress-a9",
             "inherits": "bare-metal-arm-base",
             "environment": {
                 "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-a9 -mthumb -mfpu=vfpv3-d16 -mfloat-abi=hard",
@@ -141,7 +147,7 @@
         {
             "name": "bare-cortex-a9-neon",
             "displayName": "Cortex-A9 with NEON bare metal in QEMU",
-            "description": "-mcpu=cortex-a9 -mthumb -mfpu=neon-vfpv3 -mfloat-abi=hard: detect_isa() reports thumb2_neon; the check runs in qemu-system-arm -M vexpress-a9",
+            "description": "-mcpu=cortex-a9 -mthumb -mfpu=neon-vfpv3 -mfloat-abi=hard: detect_isa() reports thumb2_neon; the smoke tests run in qemu-system-arm -M vexpress-a9",
             "inherits": "bare-metal-arm-base",
             "environment": {
                 "CHECKSUM_CPU_FLAGS": "-mcpu=cortex-a9 -mthumb -mfpu=neon-vfpv3 -mfloat-abi=hard",

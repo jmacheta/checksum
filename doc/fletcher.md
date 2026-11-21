@@ -23,7 +23,7 @@ rejected so that a literal's `'\0'` is never hashed.
 ## You know your target platform
 
 When you build for a known CPU, name its preset as a template argument after the width. The program then runs that
-preset's kernel directly, with no detection and no compiler flags. On x86-64, `isa::x86_avx2` is 2.4× faster than the
+preset's kernel directly, with no detection and no compiler flags. On x86-64, `isa::x86_avx2` is 1.8-2.5× faster than the
 SSE2 kernel of the default for Fletcher-16 and -32, and has the only Fletcher-64 kernel. On Cortex-M4/M7/M33,
 `isa::thumb2_dsp` doubles the speed of Fletcher-16.
 
@@ -88,9 +88,10 @@ The byte kernels are shared with Adler-32.
 ### Performance
 
 - Pass a few KiB per `update` call, and at least the kernel's minimum of 64-384 bytes.
-- With Clang the kernels matter more, because its portable loop is 2.1-2.3× slower than GCC's.
-- On Cortex-M, wider is faster: at 4 KiB on an 80 MHz Cortex-M4, Fletcher-64 runs 44 MB/s, Fletcher-32 38 MB/s and
-  Fletcher-16 with its DSP kernel 30 MB/s. Fletcher-32 and -64 are 11-22 % slower from an odd address.
+- The default has no Fletcher-64 kernel, so the compiler matters: at 4 KiB Clang's portable loop runs 1.8× slower than
+  GCC's.
+- On Cortex-M, wider is faster: at 4 KiB on an 80 MHz Cortex-M4, Fletcher-64 runs 46 MB/s, Fletcher-32 40 MB/s and
+  Fletcher-16 with its DSP kernel 30 MB/s. Fletcher-32 and -64 are 20-22 % slower from an odd address.
 
 Full figures are in [performance.md](performance.md#fletcher-16--32-and--64).
 

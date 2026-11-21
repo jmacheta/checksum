@@ -2,8 +2,8 @@
 
 The seeded hashes MurmurHash3_x86_32 and MurmurHash3_x64_128, with values equal to SMHasher's `MurmurHash3.cpp` on every
 target. They are in `checksum/murmur3.hpp`, and every function is `constexpr` and `noexcept`. Use them where you need
-MurmurHash3 values; for new designs, [XXH3](xxh3.md) is faster: on x86-64 at 1 MiB, about 2× with
-`isa::generic` and 5× with `isa::x86_avx2`.
+MurmurHash3 values; for new designs, [XXH3](xxh3.md) is faster: on x86-64 at 1 MiB, about 2.3× with
+`isa::generic` and 6× with `isa::x86_avx2`.
 
 ## The simplest way
 
@@ -69,8 +69,6 @@ checksum::hash128 hash = murmur3.compute(data);
 ### Performance
 
 - At 4 KiB, x86_32 runs about 32 MB/s on an 80 MHz Cortex-M4, and XXH32 1.6× that.
-- Against SMHasher's code, both variants are at least as fast on x86-64. On a Cortex-A72, x86_32 runs 0.95-1.0× in
-  AArch64 and 0.71-0.97× in AArch32, slowest on 20-byte inputs.
 
 Full figures are in [performance.md](performance.md#murmurhash3).
 

@@ -1,61 +1,74 @@
 # Performance
 
-Measured speed and code size of every algorithm, with comparisons against other libraries. The user guides explain the
-strategies, presets and kernels named here.
+Measured speed of every algorithm, with the default `isa::generic` next to the accelerated presets, and code size on
+Cortex-M4. Every throughput figure comes from the benchmarks in [tests/benchmarks](../tests/benchmarks), and
+[How to reproduce](#how-to-reproduce) gives the commands. The user guides explain the strategies, presets and kernels
+named here.
 
 ## Summary
 
-MB/s at 4 KiB with GCC and the fastest preset; n/m means not measured. The reference ratio is on x86-64 at the size
-stated; a second ratio follows where another platform matters. Above 1.0× this library is faster. Each row links to
-its section.
+MB/s at 4 KiB with GCC: the fastest preset, and `isa::generic` in parentheses. Each row links to its section.
 
-| Algorithm | x86-64 (155H) | Cortex-A72, AArch64 | Cortex-M4 (STM32L4A6) | Cortex-M33 | Reference, x86-64 | Reference, other |
-| --- | --- | --- | --- | --- | --- | --- |
-| [CRC-32](#crc) | 74 320 | 11 167 | 15.3¹ | 25.9¹ | ISA-L 0.95-1.01× at 256 B | ISA-L, zlib-ng 0.97-1.00× from 4 KiB (A72) |
-| [Internet checksum](#internet-checksum) | 82 858 | 13 620 | 115.7 | 205.1 | Linux, DPDK 1.35-1.76× from 1500 B | |
-| [Adler-32](#adler-32) | 84 504 | 6 610 | 29.8 | 47.9 | zlib-ng 1.13-1.17× from 4 KiB | zlib-ng, ISA-L 0.96-0.99× from 1500 B (A72) |
-| [Fletcher-16](#fletcher-16--32-and--64) | 78 507 | 6 560 | 29.7 | 47.9 | none | |
-| [fletcher4](#fletcher4) | 29 258 | 3 024 | n/m² | 45.9 | OpenZFS 1.0× from 1500 B | OpenZFS 1.0× from 4 KiB (A72) |
-| [XXH32](#xxhash) | n/m³ | 2 914 | 50.3 | 100.8 | xxHash 1.0× from 64 B | xxHash 0.88× at 4 KiB (M4) |
-| [XXH3-64](#xxh3) | 48 504 | 4 704 | 26.7 | 48.5 | xxHash 1.0× from 64 B, 0.92× at 256 B | xxHash 1.0-1.15× from 1500 B (A72) |
-| [MurmurHash3 x86_32](#murmurhash3) | n/m | 1 182 | n/m² | 56.4 | SMHasher ≥ 1.0× at 1 MiB | SMHasher 0.71-0.97× (A72, AArch32) |
-
-¹ At 1 KiB, engine in RAM. ² Measured on the nRF52840 only: fletcher4 20.2 MB/s at 64 MHz, x86_32 31.7 MB/s
-converted to 80 MHz. ³ 10 833 MB/s on the Core i7-13700K.
-
-## How to read the figures
-
-- Speed is in MB/s (10⁶ bytes per second), and higher is better. Inputs are in the cache, except 1 MiB on the
-  Cortex-A72.
-- Short inputs measure throughput, not latency, because the benchmark's independent calls overlap in the CPU. When each
-  call waits for the previous result, MurmurHash3_x86_32 at 64 B drops from 4 930 to 3 130 MB/s.
-- Code placement moves short-input figures by up to 10 % on x86-64 and up to 25 % on microcontrollers running from
-  flash. Smaller differences between builds that run the same code are noise.
-- x86-64 figures come from two hosts with different protocols, the Core Ultra 7 155H and the Core i7-13700K, and each
-  section heading names its host. Compare figures only within one host.
-- Comparisons with zlib-ng, Intel ISA-L, OpenZFS, xxHash, Linux, DPDK and SMHasher used the same compiler, flags and
-  calls. A ratio above 1.0× means this library is faster.
-- Columns name the preset that runs the measured code. "Portable" is the loop without any kernel, for comparison.
-
-To measure on your machine, run `cmake --preset native-gcc-bench && cmake --build --preset native-gcc-bench`, then
-`checksum_bench_<algorithm>` from `build/native-gcc-bench/tests/benchmarks/Release/` with `--benchmark_filter=`.
-Benchmarks are named `<name>/<size>` for `isa::generic`, `<name>_<preset>/<size>` for other presets and
-`<name>_dispatch/<size>` for the dispatch engine. `<name>` is the algorithm with its width (`fletcher16`, `xxh3_64`) or
-the CRC strategy and CRC (`sliced_x86_vpclmul/crc32c/4096`). Fletcher and Adler-32 add the start offset from an aligned
-address, 0 or 1 (`adler32/20/0`).
-
-## Platforms
-
-| Name used below | Hardware | Compilers | Measured with |
+| Algorithm | x86-64, Core i7-13700K | Cortex-A72, AArch64 | Cortex-M4, STM32L4A6 at 80 MHz |
 | --- | --- | --- | --- |
-| x86-64 (155H) | Intel Core Ultra 7 155H (laptop) | GCC 16, Clang 21, `-O2` | Google Benchmark, one pinned core; Adler-32 and Fletcher the better median of two runs |
-| Core i7-13700K | Intel Core i7-13700K (P-core), CachyOS | GCC 16, Clang 23, `-O2` | Google Benchmark, one pinned core, best of 5 |
-| Cortex-A72 | Raspberry Pi 4, 1.5 GHz, AArch64 and AArch32 | GCC 14.3, Clang 21, `-O2` | Google Benchmark, one core |
-| Cortex-M4 | nRF52840 at 64 MHz and STM32L4A6 at 80 MHz; code in flash, data in RAM | GCC 14.3, `-O2` | cycle counter, best of 5 calls |
-| Cortex-M33 | nRF54L15 at 128 MHz (with DSP and FPU); code in RRAM with the 8 KiB instruction cache on, data in RAM | GCC 14.3, `-O2 -mcpu=cortex-m33` | cycle counter, best of 5 calls |
+| [CRC-32](#crc) | 86 047 (3 408) | 11 057 (661) | 14.1 |
+| [Internet checksum](#internet-checksum) | 118 423 (63 191) | 13 590 | 111.3 (62.2) |
+| [Adler-32](#adler-32) | 110 073 (26 937) | 6 659 | 29.7 (16.7) |
+| [Fletcher-16](#fletcher-16--32-and--64) | 111 240 (26 888) | 6 583 | 29.7 (16.7) |
+| [fletcher4](#fletcher4) | 36 512 (24 703) | 3 036 | 25.3 |
+| [XXH32](#xxhash) | 10 930 | 2 926 | 50.1 |
+| [XXH3-64](#xxh3) | 72 946 (28 498) | 4 728 | 26.4 |
+| [MurmurHash3 x86_32](#murmurhash3) | 5 288 | 1 187 | 32.4 |
 
-Both Cortex-M4 chips do the same work per cycle, so a 64 MHz figure is 1.25× higher at 80 MHz. With its instruction
-cache off, the nRF54L15 is 3-4× slower. RISC-V has not been measured on hardware.
+Where a single figure stands, no preset of that CPU beats `generic`. On AArch64 `generic` already has the NEON kernels,
+and only CRC gains from `aarch64_crc`.
+
+## How to reproduce
+
+| Name used below | Hardware | Build | Run |
+| --- | --- | --- | --- |
+| x86-64 | Intel Core i7-13700K, one P-core, CachyOS | `native-gcc-bench` and `native-clang-bench` (GCC 16, Clang 23) | `taskset -c 2`, 5 repetitions |
+| Cortex-A72 | Raspberry Pi 4 at 1.5 GHz, AArch64 and AArch32 | `cross-aarch64` and `cross-arm-crc32` (GCC 14.3) with benchmarks | `taskset -c 3`, `performance` governor, 5 repetitions |
+| Cortex-M4 | STM32L4A6 (Nucleo-L4A6ZG); code in flash, data in RAM | `bare-cortex-m4` (GCC 14.3) | cycle counter, best of 5 runs of 8 calls |
+
+Every build is Release at `-O2`. Each table reports the best of the repetitions in MB/s (10⁶ bytes per second), and
+inputs are in the cache except where noted.
+
+On x86-64, build and run one algorithm like this:
+
+```sh
+cmake --preset native-gcc-bench && cmake --build --preset native-gcc-bench
+taskset -c 2 build/native-gcc-bench/tests/benchmarks/Release/checksum_bench_internet \
+  --benchmark_filter='/4096$' --benchmark_repetitions=5 --benchmark_min_time=0.1s
+```
+
+The bench presets compile with `-march=native`, so `generic` here is the portable code as the compiler optimizes it for
+this CPU; the kernels of the other presets do not depend on it. Benchmarks are named `<name>/<size>` for `isa::generic`,
+`<name>_<preset>/<size>` for other presets and `<name>_dispatch/<size>` for the dispatch engine, which runs the best
+preset of the CPU and costs up to 20 % on 20-byte inputs. `<name>` is the algorithm with its width (`fletcher16`,
+`xxh3_64`) or the CRC strategy, preset and CRC (`sliced_x86_vpclmul/crc32_iso_hdlc/4096`). Fletcher and Adler-32 add
+the start offset from an aligned address, 0 or 1 (`adler32/20/0`).
+
+For the Cortex-A72, configure a cross preset with `-DCHECKSUM_BENCHMARKS=ON` and `-DCMAKE_CXX_FLAGS_RELEASE="-O2
+-DNDEBUG"`, build the `checksum_bench_<algorithm>` targets in Release and copy the static executables to the board.
+The `cross-aarch64` build uses `-march=armv8-a` and `cross-arm-crc32` uses `-march=armv8-a+crc -mfpu=neon-fp-armv8`.
+The Pi 4 has no PMULL, so `aarch64_pmull` is not measured.
+
+On a microcontroller, set the chip's memory layout and build the bare-metal preset:
+
+```sh
+CHECKSUM_LINK_FLAGS="-Wl,--section-start=.isr_vector=0x08000000 -Wl,-Ttext-segment=0x08001000 -Wl,-Tdata=0x20000000" \
+  cmake --preset bare-cortex-m4 && cmake --build build/bare-cortex-m4 --config Release
+```
+
+Load `checksum_bench_<algorithm>.elf` with your debugger (code into flash, `.data` into RAM), enable semihosting and
+start at `reset`. On the STM32L4A6, also set `FLASH_ACR` to 4 wait states with prefetch and both caches on (0x704):
+without the caches every figure halves. Each benchmark prints its cycles per call and per byte, and MB/s is the clock
+in MHz divided by cycles/B. The cycle counts belong to 4 wait states, the setting that 80 MHz needs, and the tables
+convert them at 80 MHz. Sizes that do not fit the heap, like 1 MiB, are skipped.
+
+Code placement moves short-input figures by up to 10 % on x86-64 and more on microcontrollers running from flash, so
+differences of a few percent between builds that run the same code are noise.
 
 ## CRC
 
@@ -63,49 +76,51 @@ User guide: [crc.md](crc.md).
 
 Strategies are named without their `crc_lut_` prefix.
 
-### x86-64 (Core Ultra 7 155H)
+### x86-64
 
-GCC 16, MB/s at 16 B / 256 B / 4 KiB / 1 MiB; `none`, `nibble` and `byte` at 4 KiB.
+GCC, MB/s at 16 B / 256 B / 4 KiB / 1 MiB; `none`, `nibble` and `byte` at 4 KiB. `x86_pclmul` runs 41 000-45 000 MB/s
+from 256 B for every width.
 
-| CRC | none | nibble | byte | sliced, portable | braided, portable | sliced, `x86_vpclmul` |
+| CRC | none | nibble | byte | sliced, `generic` | braided, `generic` | sliced, `x86_vpclmul` |
 | --- | --- | --- | --- | --- | --- | --- |
-| CRC-8/SMBUS | 180 | 252 | 797 | 3 814 / 3 540 / 3 091 / 3 019 | 3 705 / 4 940 / 5 976 / 6 045 | 10 564 / 49 017 / 71 769 / 74 200 |
-| CRC-16/XMODEM | 176 | 245 | 781 | 4 099 / 3 012 / 2 579 / 2 589 | 3 664 / 4 703 / 5 884 / 6 009 | 10 573 / 48 774 / 72 463 / 71 670 |
-| CRC-32/ISO-HDLC | 137 | 289 | 673 | 4 663 / 3 657 / 2 923 / 2 896 | 4 332 / 5 345 / 6 685 / 6 556 | 9 754 / 52 967 / 74 320 / 75 889 |
-| CRC-64/XZ | 137 | 287 | 661 | 4 758 / 2 761 / 2 501 / 2 424 | 4 456 / 5 192 / 6 710 / 6 485 | 10 291 / 53 467 / 73 653 / 75 693 |
+| CRC-8/SMBUS | 214 | 297 | 925 | 3 989 / 4 162 / 3 643 / 3 630 | 3 965 / 5 557 / 7 276 / 7 406 | 8 777 / 53 818 / 84 256 / 87 677 |
+| CRC-16/XMODEM | 212 | 286 | 909 | 3 985 / 3 395 / 3 111 / 3 082 | 3 800 / 5 399 / 7 128 / 7 272 | 8 778 / 53 820 / 84 146 / 87 679 |
+| CRC-32/ISO-HDLC | 163 | 339 | 782 | 5 149 / 4 113 / 3 408 / 3 375 | 4 855 / 6 357 / 8 494 / 8 855 | 10 416 / 62 263 / 86 047 / 87 719 |
+| CRC-64/XZ | 163 | 339 | 782 | 5 270 / 3 228 / 3 027 / 3 043 | 4 820 / 6 390 / 8 666 / 8 866 | 10 482 / 62 351 / 86 095 / 87 718 |
 
-With `x86_vpclmul`, `braided` is within 6 % of `sliced`, and Clang is similar. Against Intel ISA-L's AVX2
-VPCLMULQDQ assembly, CRC-32, CRC-32C and CRC-64/XZ run at 0.89-1.45× from 20 B to 1 MiB, and 0.95-1.01× at 256 B.
+With a kernel, `braided` runs the same code as `sliced`. CRC-32C with `x86_vpclmul` runs 77 233 MB/s at 256 B. Clang
+gives the same kernel figures, and its `sliced` portable loop is faster at 16 B (6 973 MB/s for CRC-32).
 
 ### Cortex-A72
 
-GCC 14, `-march=armv8-a+crc` (no PMULL on this core), MB/s at 16 B / 64 B / 4 KiB.
+MB/s at 16 B / 64 B / 256 B / 4 KiB / 1 MiB; `none`, `nibble` and `byte` at 4 KiB run 26-45, 75-93 and 213-299 MB/s.
+The CRC32 instructions cover CRC-32 and CRC-32C only, so the other widths run the portable loop under every preset.
 
-| CRC, strategy | `aarch64_crc` | portable |
-| --- | --- | --- |
-| CRC-32/ISO-HDLC, sliced | 1 256 / 3 812 / 11 167 | 569 / 634 / 655 |
-| CRC-32/ISO-HDLC, braided | 1 138 / 3 286 / 11 060 | 494 / 623 / 848 |
-| CRC-64/XZ, sliced / braided | | 537 / 623 / 655, 526 / 623 / 827 |
-| CRC-16/KERMIT, sliced / braided | | 472 / 537 / 569, 451 / 526 / 698 |
-| any width, byte | | 215 / 215 / 215 |
+| CRC, strategy | AArch64 `aarch64_crc` | AArch64 `generic` | AArch32 `thumb2_crc` |
+| --- | --- | --- | --- |
+| CRC-32/ISO-HDLC, sliced | 956 / 2 896 / 7 079 / 11 057 / 6 261 | 523 / 622 / 653 / 661 / 652 | 853 / 2 030 / 3 982 / 5 706 / 4 300 |
+| CRC-32/ISO-HDLC, braided | 824 / 2 655 / 6 826 / 10 999 / 6 284 | 468 / 605 / 775 / 846 / 854 | 747 / 1 911 / 3 823 / 5 686 / 4 274 |
+| CRC-64/XZ, braided | | 459 / 597 / 581 / 821 / 793 | |
+| CRC-16/KERMIT, braided | | 408 / 514 / 624 / 703 / 696 | |
 
-Against the faster of zlib-ng and ISA-L (`-O2 -mcpu=cortex-a72+crc`), CRC-32 runs 1.20× at 20 B, 0.94× at 256 B and
-0.97-1.00× from 4 KiB. CRC-32C runs 1.00-1.13× ISA-L and Google crc32c. At 1 MiB every implementation drops to about
-6 000 MB/s, limited by the cache.
+At 1 MiB the input no longer fits the caches, which limits CRC-32 to about 6 300 MB/s.
 
 ### Cortex-M4
 
-nRF52840 at 64 MHz, GCC 14 `-O2`, MB/s at 1 KiB, engine in flash / in RAM. Every column runs the portable loop.
+STM32L4A6, MB/s at 16 B / 4 KiB. Every column runs the portable loop, with the engine's tables in flash.
 
 | CRC | none | nibble | byte | sliced | braided |
 | --- | --- | --- | --- | --- | --- |
-| CRC-32/ISO-HDLC | 1.14 | 2.95 / 3.75 | 4.92 / 6.36 | 7.77 / 12.3 | 7.05 / 10.5 |
-| CRC-32/BZIP2 | 1.33 | 3.22 / 4.24 | 5.31 / 7.06 | 7.42 / 11.2 | 6.96 / 10.6 |
-| CRC-16/XMODEM | 1.00 | 3.10 / 3.75 | 4.92 / 6.35 | 7.31 / 10.9 | 7.07 / 10.8 |
-| CRC-8/SMBUS | 1.00 | 3.42 / 3.54 | 5.86 / 9.04 | 8.00 / 12.6 | 6.76 / 10.5 |
+| CRC-32/ISO-HDLC | 1.3 / 1.5 | 3.6 / 4.7 | 5.2 / 8.0 | 5.9 / 14.1 | 6.0 / 13.2 |
+| CRC-32/BZIP2 | 1.3 / 1.5 | 3.6 / 5.0 | 5.3 / 8.9 | 5.9 / 15.1 | 5.6 / 13.3 |
+| CRC-16/XMODEM | 1.1 / 1.2 | 3.2 / 4.2 | 5.0 / 8.0 | 5.6 / 13.8 | 5.5 / 13.7 |
+| CRC-8/SMBUS | 1.2 / 1.3 | 3.3 / 4.4 | 6.0 / 11.4 | 6.0 / 15.9 | 5.9 / 13.2 |
+| CRC-64/XZ | 0.7 / 0.8 | 2.4 / 3.0 | 3.7 / 5.3 | 4.3 / 8.6 | 4.2 / 4.6 |
 
-Footprint of one CRC through `crc_engine_for`, linked with `--gc-sections`: bytes of code added to an empty program /
-bytes of engine in `.rodata`.
+### Code size
+
+Footprint of one CRC through `crc_engine_for` on Cortex-M4, linked with `--gc-sections`: bytes of code added to an empty
+program / bytes of engine in `.rodata`.
 
 | CRC | none | nibble | byte | sliced | braided |
 | --- | --- | --- | --- | --- | --- |
@@ -114,96 +129,44 @@ bytes of engine in `.rodata`.
 | CRC-8/SMBUS | 101 / 11 | 101 / 27 | 97 / 267 | 252 / 2 240 | 1 068 / 4 288 |
 | CRC-64/XZ | 116 / 64 | 140 / 192 | 100 / 2 112 | 380 / 16 608 | 1 868 / 32 992 |
 
-### Cortex-M4 with a CRC peripheral
-
-The STM32 CRC unit, driven with 8-bit writes by a strategy like `examples/crc/hardware_strategy.cpp`, against built-in
-strategies in RAM. MB/s at 16 B / 1 KiB. Each call configures the unit, and a reflected CRC reverses the state in
-software, which dominates short inputs.
-
-| CRC | CRC unit | `crc_lut_sliced` | `crc_lut_byte` |
-| --- | --- | --- | --- |
-| CRC-32/MPEG-2 | 9.7 / 15.8 | 6.5 / 14.0 | 5.9 / 8.8 |
-| CRC-32/ISO-HDLC | 3.3 / 15.1 | 7.1 / 15.3 | 5.7 / 8.0 |
-| CRC-16/XMODEM | 9.7 / 15.8 | 6.3 / 13.7 | 5.4 / 7.9 |
-| CRC-8/SMBUS | 9.7 / 15.8 | 6.8 / 15.7 | 6.7 / 11.3 |
-
-### Cortex-M33
-
-MB/s at 16 B / 1 KiB, with the engine in RRAM (`crc_engine_for`) or copied to RAM. The instruction cache holds no
-data, and the chip has no general-purpose CRC unit.
-
-| CRC | none | nibble | byte | sliced | braided |
-| --- | --- | --- | --- | --- | --- |
-| CRC-32/ISO-HDLC, RRAM | 2.3 / 2.4 | 6.8 / 7.5 | 11.1 / 12.8 | 13.2 / 18.5 | 13.6 / 13.1 |
-| CRC-32/ISO-HDLC, RAM | 2.3 / 2.4 | 6.6 / 7.5 | 10.5 / 12.8 | 14.2 / 25.9 | 14.0 / 23.4 |
-| CRC-32/BZIP2, RAM | 2.3 / 2.4 | 6.8 / 8.0 | 10.1 / 12.7 | 13.3 / 25.2 | 13.3 / 23.7 |
-| CRC-16/XMODEM, RAM | 2.0 / 2.1 | 6.1 / 7.1 | 9.1 / 11.6 | 11.9 / 25.1 | 11.9 / 23.2 |
-| CRC-8/SMBUS, RAM | 2.2 / 2.4 | 6.1 / 7.1 | 14.5 / 21.2 | 13.7 / 28.8 | 13.6 / 24.0 |
-
 ## Internet checksum
 
 User guide: [internet.md](internet.md).
 
-### x86-64 (Core Ultra 7 155H)
+### x86-64
 
-Below 512 B both presets run the portable loop.
+Below 512 B every preset runs the portable loop. `x86_avxvnni` runs the `x86_avx2` kernel.
 
-| Input | GCC 16 portable | GCC 16 `x86_avx2` | Clang 21 portable | Clang 21 `x86_avx2` |
+| Input | GCC `generic` | GCC `x86_avx2` | Clang `generic` | Clang `x86_avx2` |
 | --- | --- | --- | --- | --- |
-| 20 B (IPv4 header) | 8 198 | 8 193 | 7 564 | 7 573 |
-| 64 B | 25 213 | 24 161 | 24 291 | 23 353 |
-| 256 B | 46 748 | 46 352 | 45 065 | 45 027 |
-| 1500 B (Ethernet payload) | 53 538 | 74 313 | 52 868 | 81 358 |
-| 4 KiB | 55 492 | 82 858 | 56 057 | 95 187 |
-| 1 MiB | 59 974 | 71 025 | 60 008 | 88 316 |
-
-Against the faster of Linux v7.3-rc5 `csum_partial` and DPDK `rte_raw_cksum` (GCC 16 `-O2 -march=native`), this
-library runs 1.14× at 20 B, 0.98× at 64 B, 0.97× at 256 B and 1.35-1.76× from 1500 B.
+| 20 B (IPv4 header) | 9 971 | 9 530 | 9 142 | 8 775 |
+| 64 B | 29 252 | 28 083 | 28 087 | 27 006 |
+| 256 B | 53 937 | 53 959 | 52 348 | 51 991 |
+| 1500 B (Ethernet payload) | 59 076 | 105 074 | 62 386 | 115 372 |
+| 4 KiB | 63 191 | 118 423 | 63 999 | 126 702 |
+| 1 MiB | 69 670 | 129 254 | 69 674 | 126 581 |
 
 ### Cortex-A72
 
-GCC 14.3, `-O2`. AArch64 `-march=armv8-a`; AArch32 `thumb2_neon` `-march=armv8-a+crc -mfpu=neon-fp-armv8`,
-`thumb2` `-mfpu=vfpv3-d16`. Kernels start at 512 B (AArch64) and 192 B (AArch32).
+GCC. On AArch64 the NEON kernel is part of `generic` and starts at 512 B; on AArch32 the kernels start at 192 B.
 
-| Input | AArch64 portable | AArch64 `generic` | AArch32 portable | AArch32 `thumb2_neon` | AArch32 `thumb2` |
-| --- | --- | --- | --- | --- | --- |
-| 20 B | 1 190 | 1 144 | 899 | 842 | 837 |
-| 64 B | 2 974 | 2 758 | 1 779 | 1 730 | 1 730 |
-| 256 B | 5 682 | 5 437 | 2 819 | 4 426 | 3 536 |
-| 1500 B | 7 288 | 11 204 | 3 186 | 9 409 | 4 838 |
-| 4 KiB | 7 527 | 13 620 | 3 309 | 11 777 | 5 413 |
-| 1 MiB | 5 454 | 6 975 | 3 032 | 6 777 | 4 679 |
-
-Against Linux v7.3-rc5 `do_csum`, AArch64 is 1.10× faster at 20 B (separate harness).
+| Input | AArch64 `generic` | AArch32 `generic` | AArch32 `thumb2` | AArch32 `thumb2_neon` |
+| --- | --- | --- | --- | --- |
+| 20 B | 1 149 | 766 | 681 | 681 |
+| 64 B | 2 808 | 1 686 | 1 558 | 1 567 |
+| 256 B | 5 539 | 2 673 | 3 212 | 4 376 |
+| 1500 B | 10 924 | 3 177 | 4 686 | 9 483 |
+| 4 KiB | 13 588 | 3 308 | 5 354 | 11 804 |
+| 1 MiB | 7 010 | 3 037 | 4 684 | 6 612 |
 
 ### Cortex-M4
 
-Offset is the start address modulo 4, where 2 is typical for an IP header behind an Ethernet header. Below 192 B both
-builds run the portable loop.
+STM32L4A6, MB/s. Below 192 B `thumb2` runs the portable loop.
 
-| Input | nRF52840 portable | nRF52840 `thumb2` | STM32L4A6 portable | STM32L4A6 `thumb2` |
-| --- | --- | --- | --- | --- |
-| 20 B | 10.8 | 10.5 | 13.4 | 13.1 |
-| 64 B | 23.3 | 22.6 | 29.1 | 28.3 |
-| 256 B | 39.4 | 52.0 | 49.2 | 65.0 |
-| 1500 B | 48.9 | 82.6 | 61.1 | 103.4 |
-| 4 KiB | 50.3 | 92.6 | 62.8 | 115.7 |
-| 1500 B, offset 2 | 41.0 | 81.1 | 51.3 | 101.9 |
-| 4 KiB, offset 1 | 36.1 | 90.2 | 45.1 | 112.8 |
-
-### Cortex-M33
-
-MB/s:
-
-| Input | Portable | `thumb2` |
-| --- | --- | --- |
-| 20 B | 26.4 | 27.2 |
-| 64 B | 57.7 | 58.1 |
-| 256 B | 101.8 | 118.7 |
-| 1500 B | 129.7 | 184.3 |
-| 4 KiB | 133.7 | 205.1 |
-| 1500 B, offset 2 | 103.5 | 181.6 |
-| 4 KiB, offset 2 | 106.0 | 201.6 |
+| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
+| --- | --- | --- | --- | --- | --- |
+| `generic` | 9.4 | 22.3 | 43.6 | 59.5 | 62.2 |
+| `thumb2` | 9.3 | 22.0 | 48.3 | 94.4 | 111.3 |
 
 ### Code size
 
@@ -222,47 +185,37 @@ and for the tail after the kernel. RV64 without fast unaligned access loads word
 
 User guide: [adler32.md](adler32.md).
 
-### x86-64 (Core Ultra 7 155H)
+### x86-64
 
-GCC 16 at 4 KiB: portable 7 309 MB/s, `generic` 22 964, `x86_avx2` 58 088. `x86_avxvnni`:
+GCC, aligned start; `x86_vpclmul` runs the `x86_avx2` kernel.
 
-| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| Build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| GCC | 4 074 | 11 570 | 35 225 | 56 789 | 84 504 | 88 630 |
-| Clang | 3 746 | 11 655 | 36 649 | 57 952 | 85 027 | 89 914 |
+| `generic` | 4 926 | 9 693 | 20 566 | 24 352 | 26 937 | 27 695 |
+| `x86_avx2` | 4 927 | 10 683 | 29 833 | 51 034 | 68 376 | 73 452 |
+| `x86_avxvnni` | 4 927 | 12 163 | 38 362 | 68 527 | 110 073 | 116 117 |
 
-Against zlib-ng's AVX-VNNI kernel: 0.98× at 20 B, 0.78× at 64 B, 0.91× at 256 B and 1.13-1.17× from 4 KiB.
+From an odd address, `x86_avxvnni` runs 92 246 MB/s at 4 KiB. Clang's `generic` loop is slower, 19 390 MB/s at 4 KiB,
+and so is its `x86_avxvnni`, 103 284.
 
 ### Cortex-A72
 
-GCC 14.3, `-O2`, aligned start. MB/s:
+GCC, aligned start. On AArch64 the NEON kernel is part of `generic`.
 
-| Build | 64 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- |
-| AArch64 portable | 740 | 830 | 890 | 900 |
-| AArch64 `generic` | 1 230 | 2 790 | 5 380 | 6 610 |
-| AArch32 portable | 710 | 830 | 910 | 930 |
-| AArch32 `thumb2_neon` | 1 020 | 2 600 | 4 030 | 4 620 |
-
-On AArch64, against zlib-ng and ISA-L: 0.96-0.99× from 1500 B.
+| Build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| AArch64 `generic` | 574 | 1 137 | 2 637 | 5 399 | 6 659 | 5 439 |
+| AArch32 `generic` | 436 | 693 | 800 | 899 | 915 | 948 |
+| AArch32 `thumb2_neon` | 430 | 1 074 | 2 583 | 4 039 | 4 667 | 3 956 |
 
 ### Cortex-M4
 
-STM32L4A6 at 80 MHz, MB/s; from an odd address `thumb2_dsp` runs 29.6 MB/s at 4 KiB.
+STM32L4A6, MB/s; from an odd address `thumb2_dsp` runs 29.5 MB/s at 4 KiB.
 
 | Input | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Portable | 6.6 | 10.7 | 12.6 | 13.4 | 13.8 | 14.9 | 15.1 |
-| `thumb2_dsp` | 6.8 | 12.9 | 18.1 | 20.9 | 22.7 | 28.5 | 29.8 |
-
-### Cortex-M33
-
-MB/s; from an odd address `thumb2_dsp` runs 47.8 MB/s at 4 KiB.
-
-| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- | --- |
-| Portable | 13.8 | 21.0 | 26.1 | 28.0 | 28.3 |
-| `thumb2_dsp` | 13.8 | 22.8 | 38.0 | 46.0 | 47.9 |
+| `generic` | 5.9 | 10.5 | 13.0 | 14.0 | 14.6 | 16.4 | 16.7 |
+| `thumb2_dsp` | 5.6 | 11.1 | 16.3 | 19.3 | 21.2 | 28.0 | 29.7 |
 
 ### Code size
 
@@ -273,74 +226,53 @@ the inline short paths of the header add to each caller.
 
 User guide: [fletcher.md](fletcher.md).
 
-### x86-64 (Core Ultra 7 155H)
+### x86-64
 
-MB/s at 4 KiB, GCC 16 and Clang 21.
+MB/s at 4 KiB, aligned start. `generic` runs SSE2 kernels for Fletcher-16 and -32 and the portable loop for
+Fletcher-64.
 
-| Checksum | GCC portable | GCC `generic` | GCC `x86_avx2` | Clang portable | Clang `x86_avx2` |
+| Checksum | GCC `generic` | GCC `x86_avx2` | GCC `x86_avxvnni` | Clang `generic` | Clang `x86_avxvnni` |
 | --- | --- | --- | --- | --- | --- |
-| Fletcher-16 | 7 373 | 22 955 | 54 620 | 3 183 | 56 748 |
-| Fletcher-32 | 14 419 | 21 918 | 53 037 | 6 436 | 52 933 |
-| Fletcher-64 | 27 485 | (portable) | 51 094 | 12 977 | 53 681 |
+| Fletcher-16 | 26 888 | 67 396 | 111 240 | 19 340 | 104 432 |
+| Fletcher-32 | 33 221 | 61 224 | 61 605 | 33 377 | 64 083 |
+| Fletcher-64 | 30 547 | 63 720 | 63 920 | 17 105 | 65 825 |
 
-`generic` on x86-64 has no Fletcher-64 kernel, so it runs the portable loop. Clang's portable loop runs at 0.43-0.47×
-of GCC's.
-
-`x86_avxvnni`, GCC 16, MB/s:
+`x86_avxvnni`, GCC, MB/s:
 
 | Checksum | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| Fletcher-16 | 4 136 | 11 095 | 32 186 | 55 934 | 78 507 | 76 821 |
-| Fletcher-32 | 5 402 | 9 228 | 20 612 | 40 062 | 50 327 | 51 876 |
-| Fletcher-64 | 5 292 | 11 626 | 19 442 | 37 377 | 49 912 | 56 686 |
-
-At 20 B Fletcher-32 runs 0.94× the plain loop of the Wikipedia article with GCC, 0.83× with Clang.
+| Fletcher-16 | 4 742 | 11 807 | 36 381 | 68 324 | 111 240 | 116 484 |
+| Fletcher-32 | 5 765 | 10 907 | 25 476 | 48 704 | 61 605 | 61 396 |
+| Fletcher-64 | 5 788 | 13 746 | 24 143 | 52 980 | 63 920 | 71 608 |
 
 ### Cortex-A72
 
-GCC 14.3, `-O2`, aligned start. MB/s at 64 B / 256 B / 1500 B / 4 KiB.
+GCC, aligned start, MB/s at 64 B / 256 B / 1500 B / 4 KiB. On AArch64 the NEON kernels are part of `generic`.
 
-| Checksum | AArch64 portable | AArch64 `generic` | AArch32 portable | AArch32 `thumb2_neon` |
-| --- | --- | --- | --- | --- |
-| Fletcher-16 | 710 / 830 / 900 / 910 | 1 100 / 2 600 / 5 280 / 6 560 | 610 / 840 / 970 / 980 | 1 050 / 2 580 / 3 980 / 4 630 |
-| Fletcher-32 | 1 290 / 1 750 / 1 790 / 1 850 | 1 180 / 2 860 / 4 740 / 5 260 | 920 / 1 550 / 1 720 / 1 770 | 910 / 2 630 / 4 490 / 5 110 |
-| Fletcher-64 | 1 610 / 2 900 / 3 620 / 3 830 | 1 660 / 3 120 / 4 790 / 5 600 | 990 / 1 490 / 1 690 / 1 790 | 940 / 2 500 / 4 580 / 5 500 |
+| Checksum | AArch64 `generic` | AArch32 `generic` | AArch32 `thumb2_neon` |
+| --- | --- | --- | --- |
+| Fletcher-16 | 1 007 / 2 453 / 5 270 / 6 583 | 564 / 780 / 917 / 935 | 1 017 / 2 498 / 3 784 / 4 683 |
+| Fletcher-32 | 1 257 / 2 914 / 4 766 / 5 272 | 885 / 1 554 / 1 723 / 1 765 | 928 / 2 565 / 4 379 / 5 127 |
+| Fletcher-64 | 1 706 / 3 054 / 4 811 / 5 638 | 893 / 1 421 / 1 728 / 1 797 | 838 / 2 323 / 4 348 / 5 464 |
 
 ### Cortex-M4
 
-STM32L4A6 at 80 MHz, MB/s at 4 KiB. Fletcher-32 and -64 have no DSP kernel and always run the portable loop.
+STM32L4A6, MB/s at 4 KiB. Fletcher-32 and -64 have no DSP kernel and run the portable loop under every preset.
 
-| Checksum | Portable, aligned | Portable, odd start | `thumb2_dsp`, aligned | `thumb2_dsp`, odd start |
+| Checksum | `generic`, aligned | `generic`, odd start | `thumb2_dsp`, aligned | `thumb2_dsp`, odd start |
 | --- | --- | --- | --- | --- |
-| Fletcher-16 | 15.1 | n/m | 29.7 | 29.5 |
-| Fletcher-32 | 37.9 | 30.7 | no kernel | no kernel |
-| Fletcher-64 | 44.4 | 34.8 | no kernel | no kernel |
-
-Fletcher-16 on the STM32L4A6, MB/s:
-
-| Input | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Portable | 5.9 | 10.2 | 12.2 | 13.0 | 13.5 | 14.9 | 15.1 |
-| `thumb2_dsp` | 5.9 | 12.1 | 17.3 | 20.2 | 22.1 | 28.2 | 29.8 |
-
-On this core the wider sums are cheaper per byte, and Fletcher-32 and -64 are slower from an odd address.
-
-### Cortex-M33
-
-MB/s at 4 KiB. Fletcher-32 and -64 have no DSP kernel and always run the portable loop.
-
-| Checksum | Portable, aligned | Portable, odd start | `thumb2_dsp`, aligned | `thumb2_dsp`, odd start |
-| --- | --- | --- | --- | --- |
-| Fletcher-16 | 28.3 | n/m | 47.9 | 47.6 |
-| Fletcher-32 | 62.4 | 55.7 | no kernel | no kernel |
-| Fletcher-64 | 83.1 | 71.5 | no kernel | no kernel |
+| Fletcher-16 | 16.7 | 16.7 | 29.7 | 29.5 |
+| Fletcher-32 | 39.7 | 31.8 | no kernel | no kernel |
+| Fletcher-64 | 45.6 | 35.5 | no kernel | no kernel |
 
 Fletcher-16, MB/s:
 
-| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- | --- |
-| Portable | 13.8 | 21.1 | 26.2 | 28.0 | 28.3 |
-| `thumb2_dsp` | 14.2 | 22.1 | 37.5 | 45.9 | 47.9 |
+| Input | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `generic` | 6.1 | 10.8 | 13.2 | 14.1 | 14.8 | 16.4 | 16.7 |
+| `thumb2_dsp` | 5.8 | 11.3 | 16.4 | 19.4 | 21.4 | 28.1 | 29.7 |
+
+On this core the wider sums are cheaper per byte, and Fletcher-32 and -64 are slower from an odd address.
 
 ### Code size
 
@@ -351,55 +283,34 @@ inline short paths of the header add to each caller.
 
 User guide: [fletcher4.md](fletcher4.md).
 
-### x86-64 (Core Ultra 7 155H)
+### x86-64
 
-MB/s, `-O2`. Portable runs the portable lanes from 256 B. Below the thresholds every build runs the word loop.
+MB/s. Below the kernel thresholds every preset runs the word loop. `x86_avxvnni` runs the `x86_avx2` kernel.
 
-| Build | 20 B | 64 B | 128 B | 256 B | 512 B | 1500 B | 4 KiB | 1 MiB |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GCC portable | 4 269 | 8 114 | 9 378 | 9 725 | 13 357 | 15 640 | 16 917 | 17 497 |
-| GCC `generic` | 4 402 | 8 233 | 9 756 | 13 545 | 16 092 | 17 811 | 19 318 | 19 703 |
-| GCC `x86_avx2` | 4 715 | 9 440 | 12 863 | 18 875 | 21 258 | 26 384 | 29 258 | 30 817 |
-| Clang portable | 3 665 | 8 977 | 10 443 | 5 591 | 6 096 | 7 818 | 8 424 | 8 757 |
-| Clang `generic` | 4 293 | 8 886 | 10 437 | 13 512 | 16 259 | 17 679 | 19 246 | 19 416 |
-| Clang `x86_avx2` | 3 716 | 9 120 | 11 612 | 16 941 | 22 186 | 26 171 | 28 620 | 29 653 |
-
-Against OpenZFS f79c81d `fletcher_4_native` (its fastest kernel, GCC `-O2 -march=native`), `x86_avx2` runs 0.93× at
-20 B, 1.09× at 256 B and 1.0× from 1500 B.
+| Build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| GCC `generic` | 8 397 | 13 203 | 18 142 | 23 296 | 24 703 | 25 540 |
+| GCC `x86_avx2` | 8 346 | 13 149 | 24 239 | 32 766 | 36 368 | 38 341 |
+| Clang `generic` | 7 791 | 15 381 | 18 993 | 23 793 | 24 915 | 25 487 |
+| Clang `x86_avx2` | 7 380 | 15 354 | 23 346 | 35 139 | 37 902 | 38 717 |
 
 ### Cortex-A72
 
-GCC 14.3 and Clang 21, `-O2 -mcpu=cortex-a72`. MB/s:
+GCC, MB/s. On AArch64 the NEON kernel is part of `generic` and starts at 192 B.
 
-| Build | 20 B | 64 B | 128 B | 256 B | 512 B | 1500 B | 4 KiB | 1 MiB |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| AArch64 GCC portable | 803 | 1 343 | 1 526 | 2 228 | 2 432 | 2 797 | 3 026 | 2 766 |
-| AArch64 GCC `generic` | 803 | 1 337 | 1 531 | 2 209 | 2 450 | 2 827 | 3 024 | 2 757 |
-| AArch64 Clang portable | 756 | 1 462 | 1 813 | 1 500 | 1 494 | 1 619 | 1 672 | 1 617 |
-| AArch64 Clang `generic` | 761 | 1 465 | 1 809 | 2 101 | 2 443 | 2 740 | 2 889 | 2 638 |
-| AArch32 GCC word loop | 484 | 778 | 839 | 931 | 1 001 | 1 053 | 1 069 | 1 027 |
-| AArch32 GCC `thumb2_neon` | 375 | 678 | 769 | 1 126 | 1 504 | 2 046 | 2 384 | 2 408 |
-| AArch32 Clang `thumb2_neon` | 325 | 622 | 785 | 1 354 | 1 788 | 2 460 | 2 862 | 2 815 |
-
-Against OpenZFS (superscalar4, aarch64_neon), AArch64 GCC runs 0.92× at 20 B, 1.18× at 256 B and 1.0× from 4 KiB.
+| Build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| AArch64 `generic` | 1 106 | 1 620 | 2 277 | 2 874 | 3 036 | 2 804 |
+| AArch32 `generic` | 510 | 770 | 943 | 1 057 | 1 076 | 1 056 |
+| AArch32 `thumb2_neon` | 476 | 769 | 1 138 | 2 060 | 2 397 | 2 352 |
 
 ### Cortex-M4
 
-Word loop, two words per iteration. nRF52840 at 64 MHz, code aligned to 16 bytes. MB/s:
+STM32L4A6, word loop under every preset. MB/s:
 
-| Start | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
+| Input | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
 | --- | --- | --- | --- | --- | --- |
-| Aligned | 5.5 | 10.9 | 16.8 | 19.8 | 20.2 |
-| Odd address | 5.2 | 10.1 | 14.9 | 17.1 | 17.4 |
-
-### Cortex-M33
-
-MB/s:
-
-| Start | 20 B | 64 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- | --- |
-| Aligned | 12.8 | 25.4 | 38.5 | 45.0 | 45.9 |
-| Odd address | 12.5 | 24.2 | 35.8 | 41.3 | 42.2 |
+| `generic` | 7.3 | 14.2 | 21.3 | 24.8 | 25.3 |
 
 ### Code size
 
@@ -408,51 +319,21 @@ inline short paths of the header add to each caller.
 
 ## xxHash
 
-XXH32 and XXH64. User guide: [xxhash.md](xxhash.md).
+XXH32 and XXH64. User guide: [xxhash.md](xxhash.md). Every preset runs the same portable code.
 
-### x86-64 (Core Ultra 7 155H)
-
-Built with `-O2 -march=native`, unlike most x86-64 figures here. MB/s at 20 B / 1 MiB: XXH32 6 831 / 8 743, XXH64
-8 186 / 18 364. Both match xxHash v0.8.4 from 64 B and are faster at 20 B.
-
-### x86-64 (Core i7-13700K)
-
-GCC 16, `-O2` without `-march`, best of 5: XXH32 runs 10 833 MB/s at 4 KiB, and 10 867 at 1 MiB.
-
-### Cortex-A72
-
-GCC 14.3, `-O2`, MB/s; AArch32 with `-march=armv8-a+crc -mfpu=neon-fp-armv8`:
-
-| Hash, mode | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| Hash, platform | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| XXH32, AArch64 | 775 | 1 730 | 2 521 | 2 787 | 2 914 | 2 635 |
-| XXH64, AArch64 | 812 | 915 | 1 535 | 1 868 | 1 948 | 1 889 |
-| XXH32, AArch32 | 633 | 1 460 | 2 352 | 2 767 | 2 904 | 2 580 |
-| XXH64, AArch32 | 286 | 367 | 596 | 698 | 731 | 723 |
+| XXH32, x86-64 GCC | 8 247 | 10 325 | 10 802 | 10 940 | 10 930 | 10 972 |
+| XXH32, x86-64 Clang | 5 859 | 11 498 | 11 553 | 7 406 | 6 942 | 6 677 |
+| XXH64, x86-64 GCC | 9 400 | 11 600 | 18 002 | 20 925 | 21 638 | 21 940 |
+| XXH32, AArch64 | 786 | 1 737 | 2 532 | 2 800 | 2 926 | 2 668 |
+| XXH64, AArch64 | 814 | 937 | 1 554 | 1 876 | 1 956 | 1 910 |
+| XXH32, AArch32 | 635 | 1 469 | 2 374 | 2 765 | 2 910 | 2 613 |
+| XXH64, AArch32 | 282 | 372 | 596 | 701 | 734 | 730 |
+| XXH32, Cortex-M4 | 8.4 | 20.9 | 37.6 | 47.8 | 50.1 | |
+| XXH64, Cortex-M4 | 7.5 | 6.0 | 13.8 | 21.0 | 23.1 | |
 
-Against xxHash v0.8.4: both match from 256 B.
-
-### Cortex-M4
-
-STM32L4A6 at 80 MHz, MB/s:
-
-| Hash | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| XXH32 | 9.9 | 23.6 | 32.3 | 36.8 | 39.6 | 48.4 | 50.3 |
-| XXH64 | 8.4 | 9.3 | 13.4 | 15.8 | 17.3 | 21.6 | 23.6 |
-
-Against xxHash v0.8.4 at 4 KiB: XXH64 1.15×, XXH32 0.88×.
-
-### Cortex-M33
-
-MB/s, and cycles per byte at 4 KiB:
-
-| Hash | 20 B | 64 B | 256 B | 1500 B | 4 KiB | cycles/B |
-| --- | --- | --- | --- | --- | --- | --- |
-| XXH32 | 21.7 | 51.2 | 81.9 | 97.2 | 100.8 | 1.27 |
-| XXH64 | 15.8 | 16.9 | 30.2 | 38.1 | 40.1 | 3.19 |
-
-From an odd address both are 7-16 % slower at 4 KiB.
+XXH64 with Clang runs within 4 % of GCC. On the Cortex-M4, XXH32 takes 1.60 cycles per byte at 4 KiB and XXH64 3.47.
 
 ### Code size
 
@@ -463,60 +344,42 @@ of the header add to each caller.
 
 User guide: [xxh3.md](xxh3.md).
 
-### x86-64 (Core Ultra 7 155H)
+### x86-64
 
-XXH3-64, GCC 16, MB/s. Up to 240 B every build runs the same straight-line code. From 241 B XXH3 switches to the
-stripe loop, which the portable build runs in scalar code: hence its drop at 256 B.
+XXH3-64, MB/s. Up to 240 B every build runs straight-line code; from 241 B XXH3 switches to the stripe loop, which
+`generic` runs in SSE2. `x86_avxvnni` runs the `x86_avx2` kernel.
 
 | Build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| Portable | 13 269 | 26 667 | 11 060 | 13 165 | 13 932 | 13 809 |
-| `generic` | 12 946 | 26 749 | 16 291 | 21 057 | 22 002 | 21 992 |
-| `x86_avx2` | 14 463 | 28 828 | 28 533 | 43 777 | 48 504 | 48 994 |
+| GCC `generic` | 7 803 | 17 545 | 16 966 | 25 695 | 28 498 | 28 583 |
+| GCC `x86_avx2` | 9 263 | 20 599 | 38 804 | 65 803 | 72 942 | 73 430 |
+| Clang `generic` | 13 674 | 28 020 | 31 860 | 38 625 | 40 436 | 40 301 |
+| Clang `x86_avx2` | 13 687 | 28 036 | 38 104 | 66 620 | 73 471 | 74 482 |
 
-Clang 21 at 1 MiB: portable 20 107, `generic` 32 658, `x86_avx2` 46 907. Built with `-march=native`, XXH3-128
-runs 7 827 / 50 172 at 20 B / 1 MiB. Both widths match xxHash v0.8.4 from 64 B (0.92× at 256 B) and are faster at 20 B.
+XXH3-128 with GCC `x86_avx2` runs 69 695 MB/s at 4 KiB.
 
 ### Cortex-A72
 
-GCC 14.3, `-O2`, MB/s; AArch32 with `-march=armv8-a+crc -mfpu=neon-fp-armv8`:
+GCC, MB/s. On AArch64 the NEON kernel is part of `generic`.
 
 | Hash, build | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| XXH3-64, AArch64 portable | 911 | 1 884 | 2 238 | 3 446 | 3 771 | 3 394 |
-| XXH3-64, AArch64 `generic` | 910 | 1 885 | 2 643 | 4 280 | 4 704 | 4 113 |
-| XXH3-128, AArch64 portable | 875 | 1 866 | 1 864 | 3 275 | 3 699 | 3 415 |
-| XXH3-128, AArch64 `generic` | 874 | 1 866 | 2 229 | 4 055 | 4 598 | 4 109 |
-| XXH3-64, AArch32 portable | 522 | 1 057 | 921 | 1 235 | 1 341 | 1 308 |
-| XXH3-64, AArch32 `thumb2_neon` | 522 | 1 057 | 1 544 | 2 494 | 2 807 | 2 652 |
-| XXH3-128, AArch32 portable | 442 | 881 | 794 | 1 192 | 1 321 | 1 307 |
-| XXH3-128, AArch32 `thumb2_neon` | 441 | 881 | 1 224 | 2 332 | 2 728 | 2 655 |
-
-Against xxHash v0.8.4: 1.0-1.15× from 1500 B, 0.95-1.05× at 256 B.
+| XXH3-64, AArch64 `generic` | 886 | 1 911 | 2 795 | 4 345 | 4 728 | 4 319 |
+| XXH3-128, AArch64 `generic` | 664 | 1 426 | 2 066 | 3 972 | 4 555 | 4 274 |
+| XXH3-64, AArch32 `generic` | 403 | 834 | 904 | 1 250 | 1 344 | 1 321 |
+| XXH3-64, AArch32 `thumb2_neon` | 399 | 820 | 1 419 | 2 486 | 2 818 | 2 689 |
+| XXH3-128, AArch32 `thumb2_neon` | 318 | 683 | 1 087 | 2 268 | 2 689 | 2 707 |
 
 ### Cortex-M4
 
-Portable code. STM32L4A6 at 80 MHz, MB/s:
+STM32L4A6, portable code under every preset. MB/s, and cycles per byte at 4 KiB:
 
-| Hash | 20 B | 64 B | 128 B | 192 B | 256 B | 1500 B | 4 KiB |
+| Hash | 20 B | 64 B | 200 B | 256 B | 1500 B | 4 KiB | cycles/B |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| XXH3-64 | 10.0 | 19.5 | 22.1 | 19.5 | 13.8 | 23.6 | 26.7 |
-| XXH3-128 | 8.5 | 16.7 | 19.2 | 11.2 | 10.7 | 21.7 | 25.7 |
+| XXH3-64 | 5.8 | 13.1 | 16.7 | 12.7 | 23.0 | 26.4 | 3.03 |
+| XXH3-128 | 5.1 | 11.4 | 11.4 | 10.9 | 21.8 | 25.8 | 3.10 |
 
 XXH3 hashes 17-128 B, 129-240 B and longer inputs with different code, so throughput changes at those boundaries.
-
-Against xxHash v0.8.4 at 4 KiB: 0.95-0.96×.
-
-### Cortex-M33
-
-MB/s, and cycles per byte at 4 KiB:
-
-| Hash | 20 B | 64 B | 256 B | 1500 B | 4 KiB | cycles/B |
-| --- | --- | --- | --- | --- | --- | --- |
-| XXH3-64 | 18.6 | 34.3 | 30.3 | 44.4 | 48.5 | 2.64 |
-| XXH3-128 | 10.9 | 23.9 | 22.8 | 39.8 | 46.4 | 2.76 |
-
-From an odd address both are 7-16 % slower at 4 KiB.
 
 ### Code size
 
@@ -525,34 +388,20 @@ the header add to each caller.
 
 ## MurmurHash3
 
-User guide: [murmur3.md](murmur3.md).
+User guide: [murmur3.md](murmur3.md). Every preset runs the same portable code.
 
-### x86-64 (Core Ultra 7 155H)
-
-Built with `-O2 -march=native`, unlike most x86-64 figures here. MB/s at 20 B / 1 MiB: x86_32 5 850 / 4 499, x64_128
-6 140 / 10 006; at least as fast as SMHasher's MurmurHash3.cpp at both sizes.
-
-### Cortex-A72
-
-GCC 14.3, `-O2`. MB/s:
-
-| Hash, mode | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| Hash, platform | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
 | --- | --- | --- | --- | --- | --- | --- |
-| x86_32, AArch64 | 720 | 981 | 1 084 | 1 169 | 1 182 | 1 143 |
-| x64_128, AArch64 | 646 | 1 081 | 1 430 | 1 634 | 1 672 | 1 619 |
-| x86_32, AArch32 | 618 | 902 | 1 066 | 1 167 | 1 180 | 1 098 |
-| x64_128, AArch32 | 278 | 408 | 536 | 595 | 604 | 599 |
+| x86_32, x86-64 GCC | 6 487 | 7 119 | 6 414 | 5 382 | 5 288 | 5 225 |
+| x64_128, x86-64 GCC | 6 329 | 10 148 | 11 916 | 12 477 | 12 158 | 12 210 |
+| x86_32, AArch64 | 708 | 985 | 1 086 | 1 175 | 1 187 | 1 160 |
+| x64_128, AArch64 | 533 | 995 | 1 421 | 1 637 | 1 676 | 1 635 |
+| x86_32, AArch32 | 597 | 915 | 1 071 | 1 123 | 1 135 | 1 122 |
+| x64_128, AArch32 | 271 | 405 | 539 | 598 | 605 | 603 |
+| x86_32, Cortex-M4 | 8.3 | 17.4 | 26.9 | 31.5 | 32.4 | |
+| x64_128, Cortex-M4 | 5.8 | 9.9 | 14.9 | 17.7 | 18.0 | |
 
-Against SMHasher, x86_32: 0.95-1.0× on AArch64; 0.71× at 20 B to 0.97× from 1500 B in AArch32.
-
-### Cortex-M4
-
-nRF52840 with code aligned to 16 bytes, converted to 80 MHz. MB/s at 20 B / 4 KiB: x86_32 10.9 / 31.7, x64_128
-5.5 / 18.0. Without the alignment, code placement moves these by up to 17 %.
-
-### Cortex-M33
-
-MB/s at 20 B / 4 KiB: x86_32 19.4 / 56.4, x64_128 10.2 / 29.7.
+Clang is about 20 % slower on x86-64: 4 243 and 9 094 MB/s at 4 KiB.
 
 ### Code size
 

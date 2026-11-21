@@ -24,7 +24,7 @@ The result is a `std::array` of the four 64-bit sums, in the word order of the Z
 
 When you build for a known CPU, name its preset as a template argument. The program then runs that preset's kernel
 directly, with no detection and no compiler flags. On x86-64, `isa::x86_avx2` hashes a 4 KiB block at about
-29 000 MB/s, 1.5× the default and on par with OpenZFS.
+36 000 MB/s, 1.5× the default and on par with OpenZFS.
 
 ```cpp
 checksum::fletcher4_value value = checksum::fletcher4_compute<checksum::isa::x86_avx2>(data);
@@ -85,7 +85,7 @@ Short inputs run a word loop. Longer ones run four interleaved lanes, which a ke
 ### Performance
 
 - ZFS blocks are long enough to always run the lanes.
-- On a 64 MHz Cortex-M4 the word loop runs about 20 MB/s, and aligned buffers are 16 % faster than odd addresses.
+- On an 80 MHz Cortex-M4 the word loop runs about 25 MB/s.
 
 Full figures are in [performance.md](performance.md#fletcher4).
 

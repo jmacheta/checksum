@@ -15,7 +15,7 @@
 - The build never adds instruction-set flags: each preset source carries its own target options (`presets.hpp`,
   `target_begin.hpp`), so any build system compiles every `src/**/*.cpp` as is.
 - Third-party code comes through CPM in `cmake/requirements.cmake`: GoogleTest when `CHECKSUM_TESTS` is on, Google
-  Benchmark and zlib (the benchmark baseline) when `CHECKSUM_BENCHMARKS` is on.
+  Benchmark when `CHECKSUM_BENCHMARKS` is on.
 
 ## Presets
 
@@ -25,7 +25,7 @@
 - `CMakePresets.json` holds the typical native builds (`native-gcc`, `native-clang`, `native-asan`,
   `native-gcc-no-exceptions`, `native-clang-libcxx`, `windows-msvc`, and `windows-clang-cl` with clang-cl and lld-link).
 - Everything else is in dedicated files under `cmake/`, included by `CMakePresets.json`: `emulator_presets.json`
-  (cross builds tested in QEMU user mode), `bare_metal_presets.json` (`arm-none-eabi`, checks in QEMU system mode),
+  (cross builds tested in QEMU user mode), `bare_metal_presets.json` (`arm-none-eabi`, benchmarks with smoke tests in QEMU system mode),
   `benchmark_presets.json`, `msvc_wine_presets.json` and the shared hidden presets of `common_presets.json`. A preset
   file includes `common_presets.json` itself if it inherits from it.
 - Test presets inherit the hidden `test-common` (output on failure, 8 jobs, stop on failure) and test the Debug

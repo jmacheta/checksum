@@ -25,7 +25,7 @@ rejected so that a literal's `'\0'` is never hashed.
 
 When you build for a known CPU, name its preset as a template argument after the width. The program then runs that
 preset's kernel directly, with no detection and no compiler flags. On x86-64, `isa::x86_avx2` reaches about
-48 000 MB/s, twice the SSE2 kernel of the default. Inputs up to 240 bytes run the same straight-line code with every
+73 000 MB/s, 2.6× the SSE2 kernel of the default. Inputs up to 240 bytes run the same straight-line code with every
 preset.
 
 ```cpp

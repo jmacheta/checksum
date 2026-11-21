@@ -21,7 +21,7 @@ rejected so that a literal's `'\0'` is never hashed.
 
 When you build for a known CPU, name its preset as a template argument. The program then runs that preset's kernel
 directly, with no detection and no compiler flags. At 4 KiB on x86-64, `isa::x86_avx2` is 2.5× faster than the SSE2
-kernel of the default, and `isa::x86_avxvnni` 3.7×. On Cortex-M4/M7/M33, `isa::thumb2_dsp` doubles the speed.
+kernel of the default, and `isa::x86_avxvnni` 4×. On Cortex-M4/M7/M33, `isa::thumb2_dsp` nearly doubles the speed.
 
 ```cpp
 std::uint32_t value = checksum::adler32_compute<checksum::isa::x86_avx2>(data);
@@ -79,8 +79,7 @@ The kernels are shared with Fletcher-16, with the modulus 65521.
 
 ### Performance
 
-- At 4 KiB on x86-64, the default runs about 23 000 MB/s, `x86_avx2` 58 000 and `x86_avxvnni` 85 000, which is
-  1.13-1.17× zlib-ng.
+- At 4 KiB on x86-64, the default runs about 13 000 MB/s, `x86_avx2` 68 000 and `x86_avxvnni` 110 000.
 - Pass at least 64 bytes per `update` call, and preferably a few KiB, so that the kernels run.
 
 Full figures are in [performance.md](performance.md#adler-32).

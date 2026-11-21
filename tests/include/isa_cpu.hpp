@@ -7,8 +7,8 @@
 #include <checksum/isa.hpp>
 
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
-#include <iostream>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -126,7 +126,8 @@ inline bool required(checksum::isa preset) {
 // CHECKSUM_REQUIRED_ISA requires preset.
 inline bool cpu_runs_or_exit(checksum::isa preset) {
   if(!cpu_runs(preset) && required(preset)) {
-    std::cerr << "the CPU cannot run " << name(preset) << ", which CHECKSUM_REQUIRED_ISA requires\n";
+    std::fprintf(stderr, "the CPU cannot run %.*s, which CHECKSUM_REQUIRED_ISA requires\n", static_cast<int>(name(preset).size()),
+                 name(preset).data());
     std::exit(EXIT_FAILURE); // NOLINT(concurrency-mt-unsafe): before any benchmark thread starts
   }
   return cpu_runs(preset);
