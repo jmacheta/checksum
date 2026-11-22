@@ -63,6 +63,8 @@ jobs:
           # Clang 18 builds riscv_v only with the build's own V (presets.hpp), so the rv64gc build has riscv_zbc alone; Clang 19 adds V itself.
           - { preset: cross-riscv64-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 lld-18 g++-14-riscv64-linux-gnu", emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic", required: riscv_zbc }
           - { preset: cross-riscv64-clang, cc: clang-19, cxx: clang++-19, packages: "clang-19 lld-19 g++-14-riscv64-linux-gnu", emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v", required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
+          # RV32 Linux: Ubuntu has no cross compiler for it, so Bootlin's glibc toolchain; every preset is RV64, so generic only.
+          - { preset: cross-riscv32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: riscv32-buildroot-linux-gnu, vendor: bootlin, cross: riscv32-linux-gnu }
           # Big-endian AArch64: Ubuntu has no cross compiler for it; the Arm GNU Toolchain comes from setup-gcc-toolchain (cached).
           - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1, required: aarch64_pmull }
           # Newest compilers, so that a new release that breaks the build shows up here: GCC (xPack) and Clang (apt.llvm.org)
@@ -86,7 +88,7 @@ jobs:
         id: toolchain
         if: matrix.toolchain
         timeout-minutes: 10
-        uses: jmacheta/setup-gcc-toolchain@902d3659aab2b37c2a76daeb17eea51c859a081a # v2.2.0
+        uses: jmacheta/setup-gcc-toolchain@79ab97389ae603bd509cf6888f3a3fc44a25187f # v2.3.0
         with:
           toolchain: ${{ matrix.toolchain }}
           vendor: ${{ matrix.vendor }}
@@ -238,7 +240,7 @@ jobs:
 
       - name: Install the Arm GNU Toolchain
         timeout-minutes: 10
-        uses: jmacheta/setup-gcc-toolchain@902d3659aab2b37c2a76daeb17eea51c859a081a # v2.2.0
+        uses: jmacheta/setup-gcc-toolchain@79ab97389ae603bd509cf6888f3a3fc44a25187f # v2.3.0
         with:
           toolchain: arm-none-eabi
           vendor: arm

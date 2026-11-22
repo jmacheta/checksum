@@ -19,7 +19,7 @@ and at run time.
   Zbc and V. On long x86-64 inputs it is on par with xxHash, OpenZFS and Intel ISA-L, and faster than
   zlib-ng, Linux and DPDK.
 - **Run-time dispatch:** name the instruction set at compile time, or let the library pick the best for the running CPU.
-- **Portable:** GCC 14+, Clang 18+, MSVC and clang-cl, on x86-64, AArch64, 32-bit Arm, RISC-V and bare metal.
+- **Portable:** GCC 14+, Clang 18+, MSVC and clang-cl, on x86-64, AArch64, 32-bit Arm, RISC-V (RV32 and RV64) and bare metal.
 - **Tested in CI:** unit tests run natively on Linux, Windows (x64, ARM64) and macOS (Apple silicon), and in QEMU for
   32-bit Arm, RISC-V and big-endian AArch64. On bare-metal Cortex-M3/M4/M7/M33 and A9, QEMU runs the benchmarks' checks of `detect_isa()` and
   of every preset and dispatch engine against the generic one.
