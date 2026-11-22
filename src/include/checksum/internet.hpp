@@ -75,7 +75,9 @@ template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr inte
 namespace checksum::internet_detail {
 
 // The presets a dispatch engine chooses from: generic, those with target options, and riscv_v, the one without them with a kernel.
-inline constexpr isa_set own_loops = isa_detail::built_with_target_options() | isa::riscv_v;
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options({isa::x86_pclmul, isa::x86_vpclmul, isa::x86_avxvnni, isa::aarch64_crc,
+                                                                            isa::aarch64_pmull, isa::thumb2_dsp}) |
+                                     isa::riscv_v;
 
 } // namespace checksum::internet_detail
 

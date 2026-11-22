@@ -1,9 +1,11 @@
 #ifndef CHECKSUM_ISA_HPP
 #define CHECKSUM_ISA_HPP
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <ranges>
 
 /**
@@ -136,9 +138,10 @@ constexpr bool algorithm_specific(isa preset) noexcept;
 // loop of an algorithm is generic's unless the algorithm has a kernel for it.
 constexpr bool without_target_options(isa preset) noexcept;
 
-// generic and the presets of this build with target options, algorithm_specific() ones aside: those that run a loop of their
-// own for every algorithm with per-preset loops. A dispatch engine adds the presets without target options that the algorithm has a kernel for.
-constexpr isa_set built_with_target_options() noexcept;
+// generic and the presets of this build with target options, algorithm_specific() ones and same_as_parent aside: those that
+// run a loop of their own. same_as_parent lists the presets whose loop of the algorithm compiles to the same code as their
+// parent's, so they run the parent's. A dispatch engine adds the presets without target options that the algorithm has a kernel for.
+constexpr isa_set built_with_target_options(std::initializer_list<isa> same_as_parent = {}) noexcept;
 
 // The preset of cpu that a dispatch engine runs: the latest preset of this build in both cpu and own_loops, the presets that
 // run a loop of their own for its algorithm, else generic.
@@ -262,11 +265,11 @@ constexpr isa loop_preset(isa preset, isa_set own_loops) noexcept {
   return isa::generic;
 }
 
-constexpr isa_set built_with_target_options() noexcept {
+constexpr isa_set built_with_target_options(std::initializer_list<isa> same_as_parent) noexcept {
   isa_set presets;
   for(isa const preset : built_presets) {
-    if(!without_target_options(preset) && !algorithm_specific(preset)) {
-      presets = presets | preset;
+    if(!without_target_options(preset) && !algorithm_specific(preset) && std::ranges::find(same_as_parent, preset) == same_as_parent.end()) {
+      presets = presets | only(preset);
     }
   }
   return presets;

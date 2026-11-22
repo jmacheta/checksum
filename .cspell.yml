@@ -211,6 +211,7 @@ words:
 - nrsc
 - nullopt
 - nvme
+- objdump
 - openpgp
 - opensafety
 - orrs

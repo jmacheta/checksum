@@ -10,7 +10,7 @@ by instruction-set presets. Read [README.md](README.md) first for the user-facin
 | `src/include/checksum/` | Public headers: one per algorithm, plus `isa.hpp` (presets), `engine.hpp` (`accumulator`, dispatch engines) and `byte_range.hpp` |
 | `src/include_private/checksum_private/` | Portable loops (`<algorithm>_loops.hpp`), kernel templates (`<algorithm>_arch.hpp`), target shape and options (`target.hpp`, `presets.hpp`) |
 | `src/include_private/checksum_private/{x86_64,arm,riscv64}/` | Architecture kernels |
-| `src/<algorithm>/` | Run-time loops, one source per preset, e.g. `sum_loop_x86_avx2.cpp` |
+| `src/<algorithm>/` | Run-time loops, one source per preset with code of its own, e.g. `sum_loop_x86_avx2.cpp` |
 | `src/isa/detect.cpp` | `detect_isa()`, the only CPU query |
 | `src/CMakeLists.txt` | Every library source, listed by hand: add new sources here |
 | `tests/unit_tests/` | Google Test, `ut_<algorithm>[_<area>].cpp`, one executable `checksum_ut` |

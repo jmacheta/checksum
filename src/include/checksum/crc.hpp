@@ -206,7 +206,8 @@ template <class Strategy, class Register> consteval bool takes_preset() noexcept
 // The presets a dispatch engine of Strategy chooses from: generic, those with target options and riscv_zbc, the one without them
 // with a kernel; generic alone for a strategy whose loop is the same for every preset.
 template <class Strategy, class Register>
-inline constexpr isa_set own_loops = takes_preset<Strategy, Register>() ? isa_detail::built_with_target_options() | isa::riscv_zbc : isa_set{};
+inline constexpr isa_set own_loops =
+    takes_preset<Strategy, Register>() ? isa_detail::built_with_target_options({isa::x86_avxvnni, isa::thumb2_dsp}) | isa::riscv_zbc : isa_set{};
 
 // The built-in strategies differ only in the size of their table.
 template <std::size_t Size> struct lookup_strategy {
