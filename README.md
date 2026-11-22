@@ -3,13 +3,13 @@
 [![CI](https://github.com/jmacheta/checksum/actions/workflows/ci.yml/badge.svg)](https://github.com/jmacheta/checksum/actions/workflows/ci.yml)
 
 A C++23 library of fast non-cryptographic checksums and hashes, for everything from a Cortex-M0 to a server. One API
-covers CRC, the Internet checksum, Adler-32, Fletcher, fletcher4, xxHash and MurmurHash3, at compile time and at run
-time.
+covers CRC, the Internet checksum, Adler-32, Fletcher, fletcher4, xxHash, MurmurHash3 and FNV-1a, at compile time
+and at run time.
 
 ## Features
 
-- **Seven algorithm families:** CRC of any width with all 112 catalogued CRCs built in, the Internet checksum,
-  Adler-32, Fletcher-16/32/64, ZFS fletcher4, xxHash (XXH32, XXH64, XXH3) and MurmurHash3.
+- **Eight algorithm families:** CRC of any width with all 112 catalogued CRCs built in, the Internet checksum,
+  Adler-32, Fletcher-16/32/64, ZFS fletcher4, xxHash (XXH32, XXH64, XXH3), MurmurHash3 and FNV-1a (32, 64).
 - **Verified values:** CI checks results against reference vectors generated with zlib, OpenZFS, xxHash and
   SMHasher, and against the CRC catalogue's check values, on every unit-test target, big-endian AArch64 included.
 - **`constexpr` everywhere:** any checksum can be computed in a `static_assert`, with the same result as at run time.
@@ -95,6 +95,7 @@ Each guide's presets table lists which preset enables which kernel.
 | XXH32, XXH64 | `checksum/xxhash.hpp` | [doc/xxhash.md](doc/xxhash.md) |
 | XXH3-64, XXH3-128 | `checksum/xxh3.hpp` | [doc/xxh3.md](doc/xxh3.md) |
 | MurmurHash3 | `checksum/murmur3.hpp` | [doc/murmur3.md](doc/murmur3.md) |
+| FNV-1a 32, 64 | `checksum/fnv1a.hpp` | [doc/fnv1a.md](doc/fnv1a.md) |
 
 [doc/performance.md](doc/performance.md) has measured speed, code size and comparisons on x86-64, Cortex-A72, Cortex-M4
 and Cortex-M33.

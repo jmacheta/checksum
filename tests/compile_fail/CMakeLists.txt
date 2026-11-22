@@ -14,6 +14,7 @@ set(algorithms
     crc
     fletcher
     fletcher4
+    fnv1a
     internet
     murmur3
     xxh3

@@ -123,6 +123,7 @@ target_sources(
          include/checksum/engine.hpp
          include/checksum/fletcher.hpp
          include/checksum/fletcher4.hpp
+         include/checksum/fnv1a.hpp
          include/checksum/hash128.hpp
          include/checksum/internet.hpp
          include/checksum/isa.hpp

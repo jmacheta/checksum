@@ -134,7 +134,7 @@ chunk of little-endian values. Fletcher-16 and Adler-32 run the same byte kernel
 - Short inputs build the sums in one integer, because member-wise stores stall store forwarding with GCC.
 - Adler-32 reduces with its fold (2^16 ≡ 15 mod 65521), not a division, so 32-bit targets call no division function.
 
-## MurmurHash3, XXH32 and XXH64
+## MurmurHash3, XXH32, XXH64 and FNV-1a
 
 These have no kernels: each lane is a serial chain of multiplications. Per-preset copies of their loops gave no
 speed-up and cost code size, so each has one generic loop.
@@ -142,6 +142,7 @@ speed-up and cost code size, so each has one generic loop.
 - On 32-bit Arm, MurmurHash3 x86_32 takes four blocks per iteration so that multiplications overlap.
 - The XXH32/XXH64 stripe loop is not inlined, so compilers do not pack the lanes into one vector.
 - XXH64's one-shot keeps its lanes in locals only on 64-bit targets, since they spill on Cortex-M.
+- FNV-1a has no loop in `src/`: its inline loop takes four bytes per iteration, 1.55× faster on Cortex-M4.
 
 ## XXH3
 

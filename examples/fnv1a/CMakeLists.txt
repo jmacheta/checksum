@@ -1,0 +1,2 @@
+add_executable(checksum_example_fnv1a_compile_time compile_time.cpp)
+target_link_libraries(checksum_example_fnv1a_compile_time PRIVATE checksum::checksum)
