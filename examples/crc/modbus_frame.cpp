@@ -1,12 +1,13 @@
 // Appends a CRC-16/MODBUS to a frame and checks a received frame.
 // The protocol defines the CRC byte order on the wire: MODBUS sends the low byte first.
 
-#include <checksum/crc_catalog.hpp>
+#include <checksum/crc.hpp>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <print>
+#include <iomanip>
+#include <iostream>
 #include <span>
 
 namespace {
@@ -38,11 +39,12 @@ int main() {
   std::array<std::byte, 8> frame{std::byte{0x01}, std::byte{0x03}, std::byte{0x00}, std::byte{0x00},
                                  std::byte{0x00}, std::byte{0x0A}, std::byte{0x00}, std::byte{0x00}};
   append_crc(frame);
-  std::println("CRC bytes on the wire: {:02X} {:02X}", std::to_integer<unsigned>(frame[6]), std::to_integer<unsigned>(frame[7]));
+  std::cout << "CRC bytes on the wire: " << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << std::to_integer<unsigned>(frame[6])
+            << ' ' << std::setw(2) << std::to_integer<unsigned>(frame[7]) << '\n';
 
   bool const intact = is_valid(frame);
   frame[3] ^= std::byte{0x01}; // a transmission error
   bool const corrupted = is_valid(frame);
-  std::println("intact frame valid: {}, corrupted frame valid: {}", intact ? "yes" : "no", corrupted ? "yes" : "no");
+  std::cout << "intact frame valid: " << (intact ? "yes" : "no") << ", corrupted frame valid: " << (corrupted ? "yes" : "no") << '\n';
   return intact && !corrupted ? 0 : 1;
 }

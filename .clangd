@@ -46,6 +46,7 @@ Diagnostics:
 
       readability-braces-around-statements.ShortStatementLines: 0
       readability-function-cognitive-complexity.Threshold: 30
+      readability-function-cognitive-complexity.IgnoreMacros: true
 
       readability-implicit-bool-conversion.UseUpperCaseLiteralSuffix: true
       readability-implicit-bool-conversion.AllowLogicalOperatorConversion: true
@@ -147,3 +148,15 @@ Diagnostics:
       - readability-magic-numbers                          # Literal expected values are the point of a test
       - cppcoreguidelines-avoid-non-const-global-variables # Test fixtures are commonly non-const globals
       - bugprone-easily-swappable-parameters               # Tests routinely call helpers with several same-typed args
+
+---
+# =============================================================================
+# Architecture kernels
+# =============================================================================
+If:
+  PathMatch:
+    - .*/checksum_private/(x86_64|arm|riscv64)/.*
+Diagnostics:
+  ClangTidy:
+    Remove:
+      - portability-simd-intrinsics                        # The kernels are written in intrinsics by design

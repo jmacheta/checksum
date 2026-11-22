@@ -29,7 +29,7 @@ static_assert(std::is_convertible_v<std::uint64_t, crc_polynomial>);
 
 constexpr std::uint64_t mask_of(unsigned width) { return width == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << width) - 1; }
 
-TEST(CrcPolynomial, CreateAcceptsValidRange) {
+TEST(crc_polynomial, create_accepts_valid_range) {
   for(unsigned width = 1; width <= 64; ++width) {
     auto const max = mask_of(width);
     auto const polynomial = crc_polynomial::create(max, width);
@@ -40,7 +40,7 @@ TEST(CrcPolynomial, CreateAcceptsValidRange) {
   EXPECT_EQ(crc_polynomial::create(0, 0), crc_polynomial{0}) << "the polynomial 1";
 }
 
-TEST(CrcPolynomial, CreateRejectsInvalid) {
+TEST(crc_polynomial, create_rejects_invalid) {
   EXPECT_FALSE(crc_polynomial::create(1, 65));
   EXPECT_FALSE(crc_polynomial::create(0, 1000));
   for(unsigned width = 1; width < 64; ++width) {
@@ -52,14 +52,14 @@ TEST(CrcPolynomial, CreateRejectsInvalid) {
   EXPECT_FALSE(crc_polynomial::create(0x06, 8)) << "no x^0 term";
 }
 
-TEST(CrcPolynomial, Equality) {
+TEST(crc_polynomial, equality) {
   EXPECT_EQ(crc_polynomial::create(0x07, 8), crc_polynomial::create(0x07, 8));
   EXPECT_NE(crc_polynomial::create(0x07, 8), crc_polynomial::create(0x07, 9));
   EXPECT_NE(crc_polynomial::create(0x07, 8), crc_polynomial::create(0x05, 8));
 }
 
 // Every catalog polynomial converts to its normal form and width and back.
-TEST(CrcPolynomial, CatalogPolynomialsRoundTrip) {
+TEST(crc_polynomial, catalog_polynomials_round_trip) {
   for(crc_test::catalog_check const &entry : crc_test::catalog_checks) {
     crc_polynomial const polynomial = entry.parameters.polynomial;
     EXPECT_EQ(crc_polynomial::create(polynomial.normal_form(), polynomial.width()), polynomial) << entry.name;
@@ -67,7 +67,7 @@ TEST(CrcPolynomial, CatalogPolynomialsRoundTrip) {
 }
 
 // Random polynomials of every width round-trip between the normal form and Koopman notation.
-TEST(CrcPolynomial, RoundTrips) {
+TEST(crc_polynomial, round_trips) {
   std::mt19937_64 generator(1234);
   for(unsigned width = 1; width <= 64; ++width) {
     for(int round = 0; round < 32; ++round) {

@@ -2,11 +2,12 @@
 #define CHECKSUM_XXHASH_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/engine.hpp>
+#include <checksum/isa.hpp>
 
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <ranges>
@@ -24,63 +25,95 @@
 
 namespace checksum {
 
-/// Running XXH32 (Width 32) or XXH64 (Width 64) hash. Every value is valid; the default is the empty message with seed 0, and
-/// xxhash_state<Width>{.seed = seed} starts one with another seed.
+/// Running XXH32 (Width 32) or XXH64 (Width 64) hash. Every value is valid; the default is the empty message.
 template <unsigned Width>
   requires(Width == 32 || Width == 64)
 struct xxhash_state {
-  /// The hash, seed and lane type: std::uint32_t or std::uint64_t.
-  using value_type = std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>;
+  /// Lane accumulators: std::uint32_t or std::uint64_t, set from the seed when the first stripe is folded.
+  std::array<std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>, 4> lanes{};
+  std::uint64_t length = 0;                  ///< Bytes folded so far.
+  std::array<std::byte, Width / 2> buffer{}; ///< The unfinished stripe: its first length % buffer.size() bytes.
 
-  std::array<value_type, 4> lanes{};                      ///< Lane accumulators; set from the seed when the first stripe is folded.
-  std::uint64_t length = 0;                               ///< Bytes folded so far.
-  value_type seed = 0;                                    ///< Seed of the hash.
-  std::array<std::byte, 4 * sizeof(value_type)> buffer{}; ///< The unfinished stripe: its first length % buffer.size() bytes.
+  /// Equal if they hash alike with every seed: the same length and unfinished stripe, and the same lanes from the first stripe on.
+  friend constexpr bool operator==(xxhash_state const &left, xxhash_state const &right) noexcept {
+    auto const buffered = static_cast<std::size_t>(left.length % left.buffer.size());
+    return left.length == right.length && (left.length < left.buffer.size() || left.lanes == right.lanes) &&
+           std::ranges::equal(std::span(left.buffer).first(buffered), std::span(right.buffer).first(buffered));
+  }
 };
 
-/// Folds data into state; data may be split anywhere.
+/// XXH32 (Width 32) or XXH64 (Width 64) with a seed. Every instruction-set preset Isa (checksum/isa.hpp) runs the loop of isa::generic.
+template <unsigned Width, isa Isa = isa::generic>
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
+class xxhash_engine {
+public:
+  using state_type = xxhash_state<Width>;                                           ///< Running hash.
+  using value_type = std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>; ///< The hash and the seed.
+
+  /// The engine of the hash with seed.
+  constexpr explicit xxhash_engine(value_type seed = 0) noexcept;
+
+  /// Isa, whose loop is generic's.
+  [[nodiscard]] static constexpr isa preset() noexcept;
+
+  /// State of an empty message.
+  [[nodiscard]] constexpr state_type initial() const noexcept;
+
+  /// Folds data into state; data may be split anywhere.
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data) const noexcept;
+
+  /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
+  template <byte_range Range> [[nodiscard]] constexpr state_type update(state_type state, Range &&data) const noexcept;
+
+  /// The hash of the message folded into state. Messages of 4 GiB or more mix in their length modulo 2^32 for Width 32.
+  [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
+
+  /// finalize(update(initial(), data)).
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
+
+  /// finalize(update(initial(), data)) for a byte range.
+  template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
+
+private:
+  value_type hash_seed;
+};
+
+/// xxhash_engine<Width, Isa>{seed}.compute(data).
+template <unsigned Width, isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr xxhash_engine<Width, Isa>::value_type xxhash_compute(Range &&data,
+                                                                             typename xxhash_engine<Width, Isa>::value_type seed = 0) noexcept;
+
+} // namespace checksum
+
+namespace checksum::xxhash_detail {
+
+// The presets a dispatch engine chooses from: generic alone, whose loop every preset runs.
+inline constexpr isa_set own_loops = isa_set{};
+
+} // namespace checksum::xxhash_detail
+
+namespace checksum {
+
+/// An xxhash_engine with the dispatch engines' interface. No preset has a loop of its own, so it always chooses generic.
 template <unsigned Width>
-[[nodiscard]] constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, std::span<std::byte const> data) noexcept;
-
-/// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <unsigned Width, byte_range Range>
-[[nodiscard]] constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, Range &&data) noexcept;
-
-/// The hash of the message folded into state. Messages of 4 GiB or more mix in their length modulo 2^32 for Width 32.
-template <unsigned Width> [[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_finalize(xxhash_state<Width> const &state) noexcept;
-
-/// The hash of data: xxhash_finalize(xxhash_update(xxhash_state<Width>{.seed = seed}, data)).
-template <unsigned Width>
-[[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_compute(std::span<std::byte const> data,
-                                                                       typename xxhash_state<Width>::value_type seed = 0) noexcept;
-
-/// The hash of a byte range with a seed. A std::span<std::byte const> takes the overload above.
-template <unsigned Width, byte_range Range>
-  requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
-[[nodiscard]] constexpr xxhash_state<Width>::value_type xxhash_compute(Range &&data, typename xxhash_state<Width>::value_type seed = 0) noexcept;
-
-/// Running XXH32 hash.
-using xxh32_state = xxhash_state<32>;
-
-/// Running XXH64 hash.
-using xxh64_state = xxhash_state<64>;
-
-/// The XXH32 hash of data: xxhash_compute<32>(data, seed).
-template <byte_range Range> [[nodiscard]] constexpr std::uint32_t xxh32_compute(Range &&data, std::uint32_t seed = 0) noexcept;
-
-/// The XXH64 hash of data: xxhash_compute<64>(data, seed).
-template <byte_range Range> [[nodiscard]] constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed = 0) noexcept;
+  requires(Width == 32 || Width == 64)
+class xxhash_dispatch_engine
+    : public detail::dispatch_engine<xxhash_engine<Width>, xxhash_detail::own_loops, typename xxhash_engine<Width>::value_type> {
+public:
+  /// The engine of the hash with seed; cpu does not change the loop.
+  constexpr explicit xxhash_dispatch_engine(typename xxhash_engine<Width>::value_type seed = 0, isa_set cpu = detect_isa()) noexcept;
+};
 
 } // namespace checksum
 
 /// Implementation details; not part of the public API.
 namespace checksum::xxhash_detail {
 
-template <unsigned Width> using word = xxhash_state<Width>::value_type;
+template <unsigned Width> using lane_array = decltype(xxhash_state<Width>::lanes);
 
-template <unsigned Width> using lane_array = std::array<word<Width>, 4>;
+template <unsigned Width> using word = lane_array<Width>::value_type;
 
-template <unsigned Width> inline constexpr std::size_t stripe_size = 4 * sizeof(word<Width>);
+template <unsigned Width> inline constexpr std::size_t stripe_size = std::tuple_size_v<decltype(xxhash_state<Width>::buffer)>;
 
 // Rotations of the four lanes when they converge, for both widths.
 inline constexpr std::array<int, 4> convergence_rotations{1, 7, 12, 18};
@@ -98,7 +131,7 @@ template <> struct algorithm_constants<32> {
   static constexpr int round_rotation = 13;
   static constexpr int word_rotation = 17;
   static constexpr int byte_rotation = 11;
-  static constexpr std::array<int, 3> avalanche_shifts{15, 13, 16};
+  static constexpr std::array<unsigned, 3> avalanche_shifts{15, 13, 16};
 };
 
 template <> struct algorithm_constants<64> {
@@ -111,7 +144,7 @@ template <> struct algorithm_constants<64> {
   static constexpr int word_rotation = 27;
   static constexpr int half_word_rotation = 23;
   static constexpr int byte_rotation = 11;
-  static constexpr std::array<int, 3> avalanche_shifts{33, 29, 32};
+  static constexpr std::array<unsigned, 3> avalanche_shifts{33, 29, 32};
 };
 
 using detail::load;
@@ -128,8 +161,8 @@ template <unsigned Width> constexpr word<Width> converge(lane_array<Width> const
 // packing them into one vector register: slower than scalar code for XXH32.
 template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept;
 
-// fold_stripes(), then converge() if wanted, else 0; defined in src/xxhash/stripe_loop.cpp for both widths. Returning the merged
-// value spares the caller reloading the lanes right after their stores.
+// fold_stripes(), then converge() if wanted, else 0; defined once in src/xxhash/stripe_loop.cpp, the loop of every preset. Returning the
+// merged value spares the caller reloading the lanes right after their stores.
 template <unsigned Width> word<Width> stripe_loop(lane_array<Width> &lanes, std::span<std::byte const> data, bool converged) noexcept;
 
 // fold_stripes() and converge() if wanted, during constant evaluation, else stripe_loop().
@@ -142,8 +175,8 @@ template <unsigned Width> constexpr word<Width> avalanche(word<Width> hash) noex
 template <unsigned Width>
 constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint64_t length, std::span<std::byte const> tail) noexcept;
 
-// The hash of data of at least one stripe, defined in src/xxhash/stripe_loop.cpp for both widths. Its lanes are locals, which GCC
-// and Clang keep in scalar registers: on Cortex-M4 an XXH32 stripe takes 24.5 cycles, against 28.6 through stripe_loop().
+// The hash of data of at least one stripe, defined with stripe_loop(). Its lanes are locals, which GCC and Clang keep in
+// scalar registers: on Cortex-M4 an XXH32 stripe takes 24.5 cycles, against 28.6 through stripe_loop().
 template <unsigned Width> word<Width> run_time_hash(std::span<std::byte const> data, word<Width> seed) noexcept;
 
 } // namespace checksum::xxhash_detail
@@ -166,16 +199,17 @@ template <unsigned Width> constexpr lane_array<Width> initial_lanes(word<Width> 
 
 template <unsigned Width> constexpr word<Width> converge(lane_array<Width> const &lanes) noexcept {
   using constants = algorithm_constants<Width>;
-  word<Width> hash = std::rotl(lanes[0], convergence_rotations[0]) + std::rotl(lanes[1], convergence_rotations[1]) +
-                     std::rotl(lanes[2], convergence_rotations[2]) + std::rotl(lanes[3], convergence_rotations[3]);
+  word<Width> const hash = std::rotl(lanes[0], convergence_rotations[0]) + std::rotl(lanes[1], convergence_rotations[1]) +
+                           std::rotl(lanes[2], convergence_rotations[2]) + std::rotl(lanes[3], convergence_rotations[3]);
   if constexpr(Width == 64) {
     // Spelled out: GCC keeps the lanes of a loop here in memory.
     auto const merge = [](word<Width> value, word<Width> lane) {
       return ((value ^ round<Width>(0, lane)) * constants::prime_1) + constants::prime_4;
     };
-    hash = merge(merge(merge(merge(hash, lanes[0]), lanes[1]), lanes[2]), lanes[3]);
+    return merge(merge(merge(merge(hash, lanes[0]), lanes[1]), lanes[2]), lanes[3]);
+  } else {
+    return hash;
   }
-  return hash;
 }
 
 template <unsigned Width> constexpr void fold_stripes(lane_array<Width> &lanes, std::span<std::byte const> data) noexcept {
@@ -243,11 +277,29 @@ constexpr word<Width> finish(word<Width> converged, word<Width> seed, std::uint6
 
 namespace checksum {
 
-template <unsigned Width> constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, std::span<std::byte const> data) noexcept {
+template <unsigned Width, isa Isa>
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
+constexpr xxhash_engine<Width, Isa>::xxhash_engine(value_type seed) noexcept : hash_seed(seed) {}
+
+template <unsigned Width, isa Isa>
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
+constexpr isa xxhash_engine<Width, Isa>::preset() noexcept {
+  return Isa;
+}
+
+template <unsigned Width, isa Isa>
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
+constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::initial() const noexcept {
+  return {};
+}
+
+template <unsigned Width, isa Isa>
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
+constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::update(xxhash_state<Width> state, std::span<std::byte const> data) const noexcept {
   constexpr std::size_t stripe_size = xxhash_detail::stripe_size<Width>;
   auto const buffered = static_cast<std::size_t>(state.length % stripe_size);
   if(state.length < stripe_size && data.size() >= stripe_size - buffered) {
-    state.lanes = xxhash_detail::initial_lanes<Width>(state.seed);
+    state.lanes = xxhash_detail::initial_lanes<Width>(hash_seed);
   }
   state.length += data.size();
   if(buffered != 0) {
@@ -267,56 +319,68 @@ template <unsigned Width> constexpr xxhash_state<Width> xxhash_update(xxhash_sta
   return state;
 }
 
-template <unsigned Width, byte_range Range> constexpr xxhash_state<Width> xxhash_update(xxhash_state<Width> state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = xxhash_update(state, chunk); });
+template <unsigned Width, isa Isa>
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
+template <byte_range Range>
+constexpr xxhash_state<Width> xxhash_engine<Width, Isa>::update(xxhash_state<Width> state, Range &&data) const noexcept {
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-template <unsigned Width> constexpr xxhash_state<Width>::value_type xxhash_finalize(xxhash_state<Width> const &state) noexcept {
+template <unsigned Width, isa Isa>
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
+constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::finalize(xxhash_state<Width> const &state) const noexcept {
   auto const buffered = static_cast<std::size_t>(state.length % xxhash_detail::stripe_size<Width>);
   // Before the first stripe the lanes are unused, and converging them would cost 8 multiplications for nothing.
   xxhash_detail::word<Width> const converged = state.length >= xxhash_detail::stripe_size<Width> ? xxhash_detail::converge<Width>(state.lanes) : 0;
-  return xxhash_detail::finish<Width>(converged, state.seed, state.length, std::span(state.buffer).first(buffered));
+  return xxhash_detail::finish<Width>(converged, hash_seed, state.length, std::span(state.buffer).first(buffered));
 }
 
-template <unsigned Width>
-constexpr xxhash_state<Width>::value_type xxhash_compute(std::span<std::byte const> data, typename xxhash_state<Width>::value_type seed) noexcept {
+template <unsigned Width, isa Isa>
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
+constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::compute(std::span<std::byte const> data) const noexcept {
   std::size_t const whole = data.size() - (data.size() % xxhash_detail::stripe_size<Width>);
   // On 32-bit targets the four lanes of XXH64 do not fit the registers: as locals they ran 18 % slower on Cortex-M4.
   if constexpr(sizeof(std::size_t) >= sizeof(xxhash_detail::word<Width>)) {
     if !consteval {
       if(whole != 0) {
-        return xxhash_detail::run_time_hash<Width>(data, seed);
+        return xxhash_detail::run_time_hash<Width>(data, hash_seed);
       }
     }
   }
   xxhash_detail::word<Width> converged = 0;
   if(whole != 0) {
-    xxhash_detail::lane_array<Width> lanes = xxhash_detail::initial_lanes<Width>(seed);
+    xxhash_detail::lane_array<Width> lanes = xxhash_detail::initial_lanes<Width>(hash_seed);
     converged = xxhash_detail::fold_and_converge<Width>(lanes, data.first(whole), true);
   }
-  return xxhash_detail::finish<Width>(converged, seed, data.size(), data.subspan(whole));
+  return xxhash_detail::finish<Width>(converged, hash_seed, data.size(), data.subspan(whole));
 }
 
-template <unsigned Width, byte_range Range>
-  requires(!std::same_as<std::remove_cvref_t<Range>, std::span<std::byte const>>)
-constexpr xxhash_state<Width>::value_type xxhash_compute(Range &&data, typename xxhash_state<Width>::value_type seed) noexcept {
+template <unsigned Width, isa Isa>
+  requires(Width == 32 || Width == 64) && (isa_available(Isa))
+template <byte_range Range>
+constexpr xxhash_engine<Width, Isa>::value_type xxhash_engine<Width, Isa>::compute(Range &&data) const noexcept {
   // Contiguous ranges skip the buffer of the state.
   if constexpr(std::ranges::contiguous_range<Range> && std::ranges::sized_range<Range>) {
     if !consteval {
-      return xxhash_compute<Width>(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))), seed);
+      return compute(std::as_bytes(std::span(std::ranges::data(data), std::ranges::size(data))));
+    } else {
+      return finalize(update(initial(), std::forward<Range>(data)));
     }
+  } else {
+    return finalize(update(initial(), std::forward<Range>(data)));
   }
-  return xxhash_finalize(xxhash_update(xxhash_state<Width>{.seed = seed}, std::forward<Range>(data)));
 }
 
-template <byte_range Range> constexpr std::uint32_t xxh32_compute(Range &&data, std::uint32_t seed) noexcept {
-  return xxhash_compute<32>(std::forward<Range>(data), seed);
+template <unsigned Width, isa Isa, byte_range Range>
+constexpr xxhash_engine<Width, Isa>::value_type xxhash_compute(Range &&data, typename xxhash_engine<Width, Isa>::value_type seed) noexcept {
+  return xxhash_engine<Width, Isa>{seed}.compute(std::forward<Range>(data));
 }
 
-template <byte_range Range> constexpr std::uint64_t xxh64_compute(Range &&data, std::uint64_t seed) noexcept {
-  return xxhash_compute<64>(std::forward<Range>(data), seed);
-}
+template <unsigned Width>
+  requires(Width == 32 || Width == 64)
+constexpr xxhash_dispatch_engine<Width>::xxhash_dispatch_engine(typename xxhash_engine<Width>::value_type seed, isa_set cpu) noexcept
+    : detail::dispatch_engine<xxhash_engine<Width>, xxhash_detail::own_loops, typename xxhash_engine<Width>::value_type>(cpu, seed) {}
 
 } // namespace checksum
 

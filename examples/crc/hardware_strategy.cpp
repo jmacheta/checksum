@@ -1,18 +1,18 @@
-// A user-defined strategy driving the CRC unit of STM32 F0/F3/F7/G0/G4/H7/L4 parts. The library prepares and
-// finalizes the CRC; the strategy only feeds whole bytes.
+// A custom strategy that drives the CRC unit of STM32 F0/F3/F7/G0/G4/H7/L4 parts. The strategy only feeds whole bytes;
+// the library handles everything else.
 //
-// A software model stands in for the peripheral so the example runs on any host. On the device,
-// stm32_crc_registers is the volatile register block at the peripheral's address.
+// A software model stands in for the peripheral, so the example runs on any host. On the device, stm32_crc_registers
+// is the volatile register block at the peripheral's address.
 
 #include <checksum/crc.hpp>
-#include <checksum/crc_catalog.hpp>
 
 #include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
+#include <iostream>
 #include <optional>
-#include <print>
 #include <span>
 
 using namespace checksum;
@@ -38,10 +38,12 @@ private:
   std::uint32_t crc = 0;
 };
 
-inline stm32_crc_registers crc_peripheral;
+namespace {
+stm32_crc_registers crc_peripheral;
+} // namespace
 
-// A strategy provides table_type, make_table and update. The state passes in and out of each update, so one unit
-// serves any number of engines, one computation at a time; not constexpr, so engines come from crc_engine::create.
+// The state passes in and out of each update, so one unit serves any number of engines, one computation at a time.
+// The members are not constexpr, so engines come from crc_engine::create.
 struct stm32_crc_unit {
   // make_table's result: the parameters as register values instead of a lookup table.
   struct configuration {
@@ -61,6 +63,8 @@ struct stm32_crc_unit {
 
 static_assert(crc_strategy_for<stm32_crc_unit, std::uint32_t>);
 
+namespace {
+
 // Reverses the low size bits of value; size is 1..32.
 constexpr std::uint32_t reverse_bits(std::uint32_t value, unsigned size) noexcept {
   std::uint32_t result = 0;
@@ -69,6 +73,8 @@ constexpr std::uint32_t reverse_bits(std::uint32_t value, unsigned size) noexcep
   }
   return result;
 }
+
+} // namespace
 
 void stm32_crc_registers::configure(std::uint32_t polynomial, unsigned size, bool reverse, std::uint32_t initial) noexcept {
   pol = polynomial;
@@ -113,17 +119,18 @@ template <class Register> Register stm32_crc_unit::update(configuration const &t
 int main() {
   std::array<std::byte, 9> const message{std::byte{'1'}, std::byte{'2'}, std::byte{'3'}, std::byte{'4'}, std::byte{'5'},
                                          std::byte{'6'}, std::byte{'7'}, std::byte{'8'}, std::byte{'9'}};
-  // Each supported parameter set must match the library's default strategy.
+  // Every supported CRC must match the library's default strategy.
   bool all_match = true;
   auto const check = [&](char const *name, crc_parameters const &parameters, std::uint32_t expected) {
     auto const engine = crc_engine<std::uint32_t, stm32_crc_unit>::create(parameters);
     if(!engine) {
-      std::println("{:16} rejected by make_table", name);
+      std::cout << std::left << std::setfill(' ') << std::setw(16) << name << " rejected by make_table\n";
       all_match = false;
       return;
     }
     std::uint32_t const crc = engine->compute(message);
-    std::println("{:16} 0x{:08X} ({})", name, crc, crc == expected ? "matches crc_lut_none" : "MISMATCH");
+    std::cout << std::left << std::setfill(' ') << std::setw(16) << name << " 0x" << std::right << std::hex << std::uppercase << std::setfill('0')
+              << std::setw(8) << crc << " (" << (crc == expected ? "matches crc_lut_none" : "MISMATCH") << ")\n";
     all_match = all_match && crc == expected;
   };
   check("CRC-32/MPEG-2", crc32_mpeg_2, crc_engine_for<crc32_mpeg_2>.compute(message));
@@ -133,6 +140,6 @@ int main() {
   check("CRC-8/SMBUS", crc8_smbus, crc_engine_for<crc8_smbus>.compute(message));
   check("CRC-7/MMC", crc7_mmc, crc_engine_for<crc7_mmc>.compute(message));
   // A width the unit cannot compute is rejected when the engine is created.
-  std::println("CRC-12/UMTS      {}", crc_engine<std::uint32_t, stm32_crc_unit>::create(crc12_umts) ? "accepted" : "rejected by make_table");
+  std::cout << "CRC-12/UMTS      " << (crc_engine<std::uint32_t, stm32_crc_unit>::create(crc12_umts) ? "accepted" : "rejected by make_table") << '\n';
   return all_match ? 0 : 1;
 }

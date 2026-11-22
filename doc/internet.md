@@ -1,116 +1,93 @@
-# Internet checksum user guide
+# Internet checksum
 
-`checksum` computes the Internet checksum of RFC 1071: the 16-bit one's complement of the one's complement sum of a
-message read as 16-bit big-endian words. IPv4, ICMP, IGMP, UDP and TCP use it. It works at compile time or at run
-time, and everything is in one header, `checksum/internet.hpp`.
+The Internet checksum of RFC 1071, as used by IPv4, ICMP, UDP and TCP. It is in `checksum/internet.hpp`, needs no
+tables, and every function is `constexpr` and `noexcept`.
 
-The requirements are the same as for the rest of the library: C++23, GCC ≥ 14, or Clang ≥ 18. It has no tables,
-allocates no memory and has no global state.
-
-## 1. Quick start
+## The simplest way
 
 ```cpp
 #include <checksum/internet.hpp>
+using namespace std::literals;
 
-// One call. The result goes into the packet most significant byte first.
-std::uint16_t value = checksum::internet_compute(std::span(header));
-header[10] = std::byte(value >> 8);
-header[11] = std::byte(value & 0xFF);
+static_assert(checksum::internet_compute("123456789"sv) == 0xF62A);
 
-// Incremental, e.g. a UDP pseudo-header, the UDP header and the payload.
-checksum::internet_state state;
-state = checksum::internet_update(state, pseudo_header);
-state = checksum::internet_update(state, udp_header);
-state = checksum::internet_update(state, payload);
-std::uint16_t udp_checksum = checksum::internet_finalize(state);
-
-// Compile time.
-static_assert(checksum::internet_compute(std::string_view("123456789")) == 0xF62A);
+std::uint16_t sum = checksum::internet_compute(data);
+bool valid = checksum::internet_compute(received_header) == 0;
 ```
 
-`examples/internet` has complete programs: an IPv4 header template with its checksum filled in at compile time, an
-IPv4 header checksum filled in and verified, a UDP checksum summed from the pseudo-header, the header and the payload,
-and the RFC 1624 update of a header after a TTL decrement.
+`data` is a `std::span<std::byte const>` or any range of bytes. Pass text as `std::string_view`: character arrays are
+rejected so that a literal's `'\0'` is never hashed.
+A header that holds its correct checksum sums to 0, which is how a receiver verifies it.
 
-## 2. Definition
+## You know your target platform
 
-The message is read as 16-bit big-endian words, a last odd byte padded with a zero byte. The words are added in one's
-complement arithmetic, each carry out of bit 15 added back into bit 0, and the checksum is the one's complement
-(bitwise NOT) of that sum.
+When you build for a known CPU, such as servers with AVX2, name its preset as a template argument. The program then runs
+that preset's kernel directly, with no detection and no compiler flags. On x86-64, AVX2 is about 1.8× faster than the
+default from 1500 bytes. On AArch64 the default already has the NEON kernel, and Cortex-M3/M4/M7/M33 get theirs with
+`isa::thumb2`.
 
-## 3. API
+```cpp
+std::uint16_t sum = checksum::internet_compute<checksum::isa::x86_avx2>(data);
 
-| Name | What it does |
+// A UDP checksum from its pieces, without copying them into one buffer.
+constexpr checksum::internet_engine<checksum::isa::x86_avx2> internet;
+checksum::accumulator running{internet};
+std::uint16_t udp_checksum = running.update(pseudo_header).update(header).update(payload).value();
+```
+
+The CPU must support a named preset: running it on one that does not is undefined behavior. See
+[Hardware acceleration](../README.md#hardware-acceleration).
+
+## You don't know the CPU, or you need broad compatibility
+
+A dispatch engine detects the CPU once and then runs the best preset of the build.
+Make it once, as a `static` or global object.
+
+```cpp
+static checksum::internet_dispatch_engine const internet;
+std::uint16_t sum = internet.compute(data);
+checksum::isa chosen = internet.preset();
+```
+
+## Reference
+
+### API
+
+| Name | Description |
 | --- | --- |
-| `internet_state` | The running sum (`sum`) and whether an odd number of bytes was folded (`odd`). A plain value: copy it, compare it, store it. The default is the empty message. |
-| `internet_update(state, data)` | Folds `data` into `state` and returns the new state. |
-| `internet_update(checksum, data)` | Folds `data` into the message whose checksum is `checksum`, a `std::uint16_t`, and returns the new checksum. That message must have an even length. |
-| `internet_finalize(state)` | The checksum: `~state.sum`. |
-| `internet_compute(data)` | `internet_finalize(internet_update({}, data))`. |
+| `internet_compute<Isa>(data)` | The checksum of `data`, a `std::uint16_t`. |
+| `internet_engine<Isa>` | An empty engine with `initial()`, `update(state, data)`, `finalize(state)`, `compute(data)`, `resume(checksum)` and the static `preset()`. |
+| `internet_state` | The running sum and whether an odd number of bytes was folded. A plain value. |
+| `internet_dispatch_engine` | The same members, with the constructor `(isa_set cpu = detect_isa())`. Passing a preset as `cpu` runs it, or the next lower one the build has, without checking the CPU. |
 
-All functions are `constexpr` and `noexcept`. `data` is a `std::span<std::byte const>` or any range of `std::byte`,
-`char`, `unsigned char`, `signed char` or `char8_t`, as for the other algorithms. Contiguous ranges are passed
-on as one span and other ranges in 64-byte chunks. Arrays of `char` are rejected, so the `'\0'` of a string literal
-is never summed: pass text as `std::string_view`.
+`Isa` defaults to `isa::generic`, and no function has preconditions. `accumulator` works with every engine.
 
-Every `internet_state` value is valid, so nothing has preconditions.
+- A message may be split anywhere, even inside a 16-bit word, and gives the same checksum.
+- The result is a number; write it most significant byte first.
+- The empty message and an all-zero message give 0xFFFF.
+- `internet.update(internet.resume(stored), data)` continues from a stored checksum, as in the RFC 1624 incremental
+  update. It is correct only after an even number of bytes, so keep the state otherwise.
 
-## 4. Behavior
+### Presets and kernels
 
-- **Splits:** a message may be split anywhere, including inside a 16-bit word. `odd` records that the next byte is
-  the low byte of a word, and the result is the same as for one call.
-- **Zero:** the sum is 0 only if every byte is 0. Otherwise a sum that is a multiple of 0xFFFF is 0xFFFF, so:
-  - the empty message and an all-zero message give 0xFFFF;
-  - a message that already contains its correct checksum gives 0.
+| Preset | Kernel |
+| --- | --- |
+| `x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | 32-bit halves summed in 64-bit vector lanes, from 512 B |
+| every preset on little-endian AArch64, `generic` included | NEON `uadalp`, from 512 B |
+| `thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 192 B |
+| `thumb2`, `thumb2_dsp` (Cortex-M3/M4/M7/M33), and the NEON presets on big-endian | `ldm` + `adcs` assembly, from 192 B, at any alignment |
+| `riscv_v` | Widening vector add, any vector length, from 64 B |
+| all others | Portable loop of two add-with-carry chains |
 
-  That is how a receiver verifies a packet.
-- **Byte order:** the result is a number; write it into the packet most significant byte first. The library reads
-  the message the same way on little- and big-endian targets.
+### Performance
 
-**Continuing from a stored checksum.** `internet_update(value, data)` continues a message whose checksum is `value`
-and returns the new checksum; the running sum is `~value`. It is correct only if that message has an even number of
-bytes: the checksum does not record an odd last byte, which `internet_state` keeps in `odd`, so after an odd length
-keep the state instead. `value` must be a `std::uint16_t`: another integer type does not compile, so that
-`internet_update({}, data)` still starts from the empty state.
+- The portable loop is already fast: it checksums 20-byte IPv4 headers at about 10 000 MB/s on x86-64.
+- On Cortex-M, the `ldm` kernel runs at full speed from any address, while the portable loop is up to 2.5× slower when a
+  header starts at an odd or 2-modulo-4 address.
+- A kernel adds 590-750 bytes of code.
 
-## 5. CPU acceleration
+Full figures are in [performance.md](performance.md#internet-checksum).
 
-The portable loop adds the widest native word (`std::size_t`) in 64-byte blocks (32 bytes on 32-bit targets) with two
-independent carry chains of four words; on x86-64 each chain is an `add`/`adc` sequence with its carry added back at
-once. The bytes after the last whole word come from one load of the message's last word, the bytes already summed
-masked off, so no load reaches past the message. It runs at every optimization level, and its result does not depend
-on the target's byte order. The order in which bytes are added does not change a one's complement sum, so the loop
-adds native-order words and swaps the bytes of the result once.
+### Limitations
 
-| Target and flags | Kernel | Used from |
-| --- | --- | --- |
-| x86-64 with AVX2 (`-mavx2`, or a `-march` that includes it) | 64-byte blocks: 32-bit halves summed into 64-bit vector lanes | 512 B |
-| AArch64, little-endian (NEON is always there) | NEON pairwise add-accumulate (`uadalp`) of 32-bit words into 64-bit lanes | 512 B |
-| 32-bit Arm with NEON, little-endian | the same NEON kernel | 192 B |
-| 32-bit Arm without NEON, Thumb-2 or Arm state, e.g. Cortex-M3/M4/M7/M33 or ARMv7-A without NEON | `ldm` + `adcs` carry chain in inline assembly, 32 bytes per iteration, any start address | 192 B |
-| RISC-V RV64 with the V extension (`-march=rv64gcv`) or Zve64x, any vector length | widening vector add (`vwaddu`) of 32-bit words into 64-bit lanes | 64 B |
-| everything else (Thumb-1 code such as Cortex-M0/M0+/M23, big-endian NEON, RV64 without V), or `CHECKSUM_ACCELERATION=OFF` | portable loop | always |
-
-The kernel is selected at compile time from the compiler flags; there is no run-time CPU detection. AArch64 and
-Cortex-M3/M4/M7/M33 builds get their kernel from their usual `-march` or `-mcpu` alone. Constant evaluation always runs a
-byte-by-byte loop with the same result. Which other architectures are worth a kernel is discussed in
-[design/acceleration.md](design/acceleration.md).
-
-## 6. Performance guidelines
-
-Measured figures are in [performance.md](performance.md#internet-checksum).
-
-- **Kernels start at a minimum size** (section 5): 512 B on x86-64 and AArch64, 192 B on 32-bit Arm, 64 B on RISC-V.
-  Packet headers are shorter and always run the portable loop, which is already fast: about 8 000 MB/s for a 20-byte
-  IPv4 header on x86-64.
-- **On x86-64, enable AVX2** (`-mavx2` or a `-march` that includes it): from 1500 B it makes the checksum 1.4-1.7×
-  faster. AArch64 and Cortex-M3/M4/M7/M33 get their kernel from their usual flags.
-- **On Cortex-M, the start address matters for the portable loop only.** It is up to 2.5× slower than the kernel from
-  an odd or 2-modulo-4 address, typical for an IP header behind a 14-byte Ethernet header. The kernel runs at the
-  same speed from any address.
-- **Flash budget:** a kernel adds 590-750 bytes of code on Arm and x86-64. `CHECKSUM_ACCELERATION=OFF` keeps the
-  portable loop alone.
-
-## 7. Limitations
-
-- **UDP zero:** the UDP rule of sending 0xFFFF instead of a computed 0 is protocol logic and stays in the caller.
+- UDP sends a computed 0 as 0xFFFF. That is protocol logic and stays in the caller.

@@ -55,7 +55,7 @@ concept has_register_for = requires { typename crc_register_for<Width>; };
 static_assert(!has_register_for<0> && !has_register_for<65>);
 
 // create() rejects an initial value or final XOR wider than the CRC.
-TEST(CrcParameters, EngineCreateValidatesInitialValueAndFinalXor) {
+TEST(crc_parameters, engine_create_validates_initial_value_and_final_xor) {
   for(unsigned width = 1; width <= 64; ++width) {
     auto const polynomial = *crc_polynomial::create(1, width);
     auto const mask = width == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << width) - 1;
@@ -68,7 +68,7 @@ TEST(CrcParameters, EngineCreateValidatesInitialValueAndFinalXor) {
   }
 }
 
-TEST(CrcParameters, Equality) {
+TEST(crc_parameters, equality) {
   auto const polynomial = *crc_polynomial::create(0x07, 8);
   crc_parameters const base{.polynomial = polynomial};
   EXPECT_EQ(base, (crc_parameters{.polynomial = polynomial}));

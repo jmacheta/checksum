@@ -33,11 +33,11 @@ constexpr Register ccitt_only::update(table_type<Register> const &table, Registe
 static_assert(checksum::crc_strategy_for<ccitt_only, std::uint16_t>);
 
 #ifdef CHECKSUM_EXPECT_COMPILE_ERROR
-constexpr std::uint64_t normal_form = 0x8005;
+constexpr std::uint64_t test_normal_form = 0x8005;
 #else
-constexpr std::uint64_t normal_form = 0x1021;
+constexpr std::uint64_t test_normal_form = 0x1021;
 #endif
 
-constexpr checksum::crc_parameters parameters{.polynomial = *checksum::crc_polynomial::create(normal_form, 16)};
+constexpr checksum::crc_parameters test_parameters{.polynomial = *checksum::crc_polynomial::create(test_normal_form, 16)};
 
-[[maybe_unused]] auto const result = checksum::crc_engine_for<parameters, ccitt_only>.compute(std::span<std::byte const>{});
+[[maybe_unused]] auto const result = checksum::crc_engine_for<test_parameters, ccitt_only>.compute(std::span<std::byte const>{});

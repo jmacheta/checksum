@@ -1,6 +1,7 @@
 #ifndef CHECKSUM_CRC_CATALOG_HPP
 #define CHECKSUM_CRC_CATALOG_HPP
 
+// NOLINTNEXTLINE(misc-header-include-cycle): crc.hpp includes this header at its end, after its own definitions.
 #include <checksum/crc.hpp>
 
 /**

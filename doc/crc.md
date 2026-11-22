@@ -1,262 +1,201 @@
-# CRC user guide
+# CRC
 
-`checksum` computes cyclic redundancy checks of any width from 1 to 64 bits, over byte- and bit-granular messages,
-at compile time or at run time. Everything is in two headers:
+Cyclic redundancy checks of any width from 1 to 64 bits, over byte- or bit-granular messages. Everything is in
+`checksum/crc.hpp`, including a catalog of 112 named CRCs, and every function is `constexpr` and `noexcept`.
 
-- `checksum/crc.hpp`: the parameter model, the engines, the strategies;
-- `checksum/crc_catalog.hpp`: 112 named parameter sets (`checksum::crc32`, `checksum::crc16_modbus`, ...).
-
-Requirements: C++23, GCC ≥ 14 with libstdc++, or Clang ≥ 18 with libstdc++ ≥ 14 or libc++ ≥ 18. The library
-throws no exceptions, allocates no memory, uses no RTTI and has no global state; it builds with
-`-fno-exceptions -fno-rtti` and on bare-metal toolchains.
-
-## 1. Adding the library
-
-```cmake
-add_subdirectory(checksum)            # or CPMAddPackage / FetchContent
-target_link_libraries(app PRIVATE checksum::checksum)
-```
-
-| CMake option | Default | Effect |
-| --- | --- | --- |
-| `CHECKSUM_ACCELERATION` | `ON` | Lets `crc_lut_sliced` and `crc_lut_braided` use the CPU instructions that the compiler flags enable (section 7). `OFF` keeps only the portable loops. |
-| `CHECKSUM_TESTS` | top-level project | Unit tests and negative compile tests (downloads GoogleTest). |
-| `CHECKSUM_BENCHMARKS` | `OFF` | Benchmarks (downloads Google Benchmark and zlib); on in the `native-*-bench` presets. |
-| `CHECKSUM_EXAMPLES` | top-level project | Builds `examples/`. |
-
-Compile and link the application with `-ffunction-sections -fdata-sections` and `-Wl,--gc-sections`: the library
-compiles the run-time loops of every strategy and register type, and the linker then keeps only the ones the
-program uses. Unused catalog entries cost nothing either way.
-
-## 2. Quick start
+## The simplest way
 
 ```cpp
-#include <checksum/crc_catalog.hpp>
+#include <checksum/crc.hpp>
 using namespace std::literals;
 
-// Compile time: the engine and its table are constants in read-only data.
-static_assert(checksum::crc_engine_for<checksum::crc32>.compute("123456789"sv) == 0xCBF43926);
+static_assert(checksum::crc_compute<checksum::crc32>("123456789"sv) == 0xCBF43926);
 
-// Run time, with a faster strategy.
-constexpr auto const &crc32 = checksum::crc_engine_for<checksum::crc32, checksum::crc_lut_sliced>;
-std::uint32_t value = crc32.compute(std::span(buffer));
-
-// Incremental.
-checksum::crc_accumulator accumulator{crc32};
-accumulator.update(header).update(payload);
-std::uint32_t frame_crc = accumulator.value();
-
-// Parameters known only at run time.
-auto engine = checksum::crc_polynomial::create(normal_form, width).and_then([](checksum::crc_polynomial polynomial) {
-  return checksum::crc_engine<std::uint64_t, checksum::crc_lut_byte>::create({.polynomial = polynomial});
-});
+std::uint32_t crc = checksum::crc_compute<checksum::crc32>(data);
+std::uint16_t modbus = checksum::crc_compute<checksum::crc16_modbus>(data);
 ```
 
-`examples/crc` has complete programs: compile-time CRC, a file checksum, a custom CRC, run-time parameters, a
-MODBUS frame and a strategy driving an MCU CRC peripheral.
+`data` is a `std::span<std::byte const>` or any range of bytes. Pass text as `std::string_view`: character arrays are
+rejected so that a literal's `'\0'` is never hashed.
 
-## 3. Parameter model
+Every CRC of the [catalog](#catalog) is a named constant, and a CRC that is not there takes four lines to
+[define](#custom-parameters). The engine and its table are built at compile time and placed in read-only data, so the
+program contains no table-building code.
 
-A CRC is described by `crc_parameters`, a plain aggregate usable as a template argument:
+## You know your target platform
+
+The default engine computes bit by bit and has no table, which suits a small microcontroller. Faster engines trade
+memory for speed through a [strategy](#strategies): `crc_lut_byte` needs 1 KiB for CRC-32 and is about 5× faster, and
+`crc_lut_sliced` needs 8 KiB and is faster again.
+
+On top of that, `crc_lut_sliced` uses CPU instructions when you name a preset after the strategy. On x86-64,
+`isa::x86_vpclmul` computes CRC-32 at about 86 000 MB/s from 4 KiB, against about 3 400 MB/s for the portable loop. The
+program runs that kernel directly, with no detection and no compiler flags.
 
 ```cpp
-struct crc_parameters {
-  crc_polynomial polynomial;        // generator polynomial; its degree is the CRC width
-  std::uint64_t initial_value = 0;  // register value before the first message bit
-  bool reflect_input = false;       // message bytes are fed least significant bit first
-  bool reflect_output = false;      // the result is reflected before the final XOR
-  std::uint64_t final_xor = 0;      // XORed into the result
-};
+using checksum::crc_lut_sliced, checksum::isa;
+std::uint32_t crc = checksum::crc_compute<checksum::crc32, crc_lut_sliced, isa::x86_vpclmul>(data);
 
-inline constexpr checksum::crc_parameters my_crc{
-    .polynomial = 0xC002,           // x^16 + x^15 + x^2 + 1
+// Data in pieces.
+constexpr auto const &crc32 =
+    checksum::crc_engine_for<checksum::crc32, crc_lut_sliced, isa::x86_vpclmul>;
+checksum::accumulator running{crc32};
+std::uint32_t frame_crc = running.update(header).update(payload).value();
+```
+
+The CPU must support a named preset: running it on one that does not is undefined behavior. See
+[Hardware acceleration](../README.md#hardware-acceleration).
+
+## You don't know the CPU, or you need broad compatibility
+
+A dispatch engine detects the CPU once and then runs the best preset of the build. Make it
+once, as a `static` or global object.
+
+```cpp
+using crc32_dispatch = checksum::crc_dispatch_engine<std::uint32_t, checksum::crc_lut_sliced>;
+static auto const crc32 = crc32_dispatch::create(checksum::crc32).value();
+std::uint32_t crc = crc32.compute(data);
+checksum::isa chosen = crc32.preset();
+```
+
+Unlike the other dispatch engines, this one is made by `create`, because its parameters may come from run time and be
+invalid: `create` returns an empty `std::optional` then. You also name the register type and the strategy, as for
+`crc_engine`. The engine holds a single table, which the loops of all presets share. Only `crc_lut_sliced` and
+`crc_lut_braided` have kernels, so with any other strategy `preset()` is always `generic`.
+
+## Reference
+
+### Catalog
+
+The catalog defines every CRC of width up to 64 from the "Catalogue of parametrised CRC algorithms". A name is the
+catalog name in lower case, with `CRC-` written `crc` and other `/` and `-` written `_`: `crc32_iso_hdlc`,
+`crc16_ibm_3740`, `crc15_can`. Each entry's comment lists its polynomial and other names.
+
+Four common aliases are provided: `crc32` (CRC-32/ISO-HDLC), `crc32c` (CRC-32/ISCSI), `crc16_ccitt_false`
+(CRC-16/IBM-3740) and `crc16_x25` (CRC-16/IBM-SDLC). There is no bare `crc64`, because the catalog's CRC-64 is ECMA-182
+while common usage often means `crc64_xz`.
+
+### Custom parameters
+
+A CRC is a `crc_parameters` aggregate, which can be a template argument.
+
+**`.polynomial` is in Koopman notation, not the normal form of data sheets:** CRC-16/MODBUS's 0x8005 is 0xC002 here.
+Convert the normal form with `crc_polynomial::create(0x8005, 16)`.
+
+```cpp
+inline constexpr checksum::crc_parameters sensor_crc{
+    .polynomial = 0xC002,  // x^16 + x^15 + x^2 + 1 in Koopman notation
     .initial_value = 0xFFFF,
     .reflect_input = true,
     .reflect_output = true,
 };
+std::uint16_t crc = checksum::crc_compute<sensor_crc>(data);
 ```
 
-`initial_value` and `final_xor` are written unreflected, as published in CRC catalogs. The initial value is the
-register content before the first message bit (catalogs call this the "direct" form).
-
-**Polynomials.** `crc_polynomial` stores one 64-bit value in Koopman notation: bit i is the coefficient of
-x^(i + 1), the x^0 term is implicit and the highest set bit gives the width. CRC-16/CCITT
-(x^16 + x^12 + x^5 + 1) is `0x8810`; the constructor is implicit, so a plain number initializes the field. The
-normal form found in data sheets converts with `crc_polynomial::create(0x1021, 16)`, which returns `std::nullopt`
-if the width is above 64, the value does not fit the width or the x^0 term is missing. `width()` and
-`normal_form()` convert back.
-
-**Validity.** A parameter set is valid for an engine if the width is 1..64 and fits the engine's register, and
-`initial_value` and `final_xor` are below 2^width. `crc_engine::create` returns `std::nullopt` otherwise;
-`crc_engine_for` fails to compile (the diagnostic names `std::bad_optional_access`).
-
-## 4. Catalog
-
-`checksum/crc_catalog.hpp` defines every CRC of width ≤ 64 from the "Catalogue of parametrised CRC algorithms"
-as `inline constexpr crc_parameters`. A name is the catalog name in lower case with `CRC-` written `crc` and the
-other `/` and `-` mapped to `_`: `crc32_iso_hdlc`, `crc16_ibm_3740`, `crc15_can`. Each entry's comment lists its
-polynomial and the catalog's other names for it.
-
-Aliases are references to the same object: `crc32` (CRC-32/ISO-HDLC), `crc32c` (CRC-32/ISCSI),
-`crc16_ccitt_false` (CRC-16/IBM-3740) and `crc16_x25` (CRC-16/IBM-SDLC). There is no bare `crc64`: the catalog's
-CRC-64 is ECMA-182, while common usage often means CRC-64/XZ.
-
-## 5. Engines
-
-`crc_engine<Register, Strategy>` holds a strategy's table and the prepared parameters. It is immutable, so one
-engine serves any number of computations; the running CRC is a separate `state_type` value.
-
-| Member | Meaning |
+| Field | Meaning |
 | --- | --- |
-| `static create(parameters)` | Validates the parameters and builds the table; `std::optional`. |
-| `initial()` | State of the empty message. |
-| `update(state, data)` | Folds bytes into a state. |
-| `update(state, data, bit_length)` | Folds the first `bit_length` bits of `data` (section 5.2). |
-| `finalize(state)` | Turns a state into the CRC. |
-| `compute(data)`, `compute(data, bit_length)` | `finalize(update(initial(), ...))`. |
+| `polynomial` | The generator polynomial, whose degree is the width. |
+| `initial_value` | The register before the first bit, unreflected and in the direct form, as catalogs publish it. Default 0. |
+| `reflect_input` | Whether each byte is fed least significant bit first. Default `false`. |
+| `reflect_output` | Whether the result is reflected before the final XOR. Default `false`. |
+| `final_xor` | The value XORed into the result, unreflected. Default 0. |
 
-`crc_engine_for<Parameters, Strategy>` is the engine built at compile time, with the smallest register
-(`crc_register_for<width>`). It is a constant in read-only data, so a program that uses it contains no
-table-building code. Equal parameter values name the same object: `crc_engine_for<crc_parameters{.polynomial = 0x83}>`
-is `crc_engine_for<checksum::crc8_smbus>`.
+In Koopman notation bit i is the coefficient of x^(i + 1), and the x^0 term is implicit. `crc_polynomial::create`
+returns an empty `std::optional` for an invalid polynomial.
 
-`crc_engine<Register, Strategy>::create(parameters)` builds an engine at run time (or in a `constexpr` context).
-`Register` is `std::uint8_t`, `std::uint16_t`, `std::uint32_t` or `std::uint64_t`. A wider register than the CRC
-needs gives the same results, so one engine type can serve run-time parameter sets of any width up to 64.
-
-Splitting a message anywhere gives the same CRC: `finalize(update(update(initial(), a), b)) == compute(a ++ b)`.
-`crc_accumulator` wraps that: it holds a pointer to the engine and a state, and offers `update` (chainable),
-`value()` (does not change the state), `state()` and `reset()`. The engine must outlive the accumulator;
-constructing one from a temporary engine does not compile.
-
-### 5.1 Input
-
-Every function taking data accepts `std::span<std::byte const>` and any input range of `std::byte`, `char`,
-`unsigned char`, `signed char` or `char8_t`. Contiguous ranges are passed on as one span; other ranges (lists,
-views, generators) are copied through a 64-byte buffer on the stack.
-
-Arrays of `char` and `char8_t` are rejected at compile time, since a string literal's `'\0'` would be included:
-pass text as `std::string_view` and other `char` buffers wrapped in `std::span`. Ranges of `volatile` elements are
-rejected as well; copy memory-mapped buffers first.
-
-### 5.2 Bit-granular messages
-
-`update(state, data, bit_length)` folds the first `bit_length / 8` bytes, then `bit_length % 8` bits of the next
-byte. Bits are taken in the message order of the CRC: from bit 0 up if the input is reflected, from bit 7 down
-otherwise; the other bits of that byte are ignored. For example, the 83-bit message of a CAN frame:
+For parameters known only at run time, `crc_engine<Register, Strategy>::create(parameters)` returns an engine in a
+`std::optional`, which is empty when the width does not fit the register or a value does not fit the width.
+`crc_engine_for` makes the same check at compile time.
 
 ```cpp
-constexpr auto const &can = checksum::crc_engine_for<checksum::crc15_can>;
-std::uint16_t crc = can.compute(bits, 83);   // bits: std::array<std::byte, 11>
-```
-
-### 5.3 Preconditions
-
-A state passed to `update` or `finalize` must be below 2^width, and `bit_length` must not exceed
-`8 * data.size()`. Both are checked with `assert`. With `NDEBUG` the state is masked and the bit length clamped,
-so a violation gives a wrong CRC but never undefined behavior. Without `NDEBUG`, a failed `assert` during constant evaluation is a
-compile error.
-
-## 6. Strategies
-
-A strategy decides how whole bytes are folded into the register and what the engine stores for it. Bit tails,
-reflection, the initial value and the final XOR are handled by the engine, so all strategies give identical
-results.
-
-| Strategy | Engine size (8 / 16 / 32 / 64-bit register) | Method |
-| --- | --- | --- |
-| `crc_lut_none` (default) | 11 / 16 / 32 / 64 B | Bitwise, no table. Smallest code and data. |
-| `crc_lut_nibble` | 27 / 48 / 96 / 192 B | 16-entry table, two lookups per byte. |
-| `crc_lut_byte` | 267 / 528 / 1056 / 2112 B | 256-entry table, one lookup per byte. |
-| `crc_lut_sliced` | 2.2 / 4.2 / 8.2 / 16.2 KiB | Slicing-by-8: eight 256-entry tables, one 8-byte word per step. CPU acceleration (section 7). |
-| `crc_lut_braided` | 4.2 / 8.2 / 16.2 / 32.2 KiB | Slicing-by-8 plus 8 braid tables: five interleaved streams of 8-byte words from 128 B on. CPU acceleration (section 7). |
-
-Sizes are `sizeof(crc_engine)` on a 64-bit host. The sliced and braided engines include 160 B of folding constants
-for the CPU kernels. Large engines belong in static storage (`crc_engine_for`, or a `static`/global object), not on
-an MCU stack.
-
-Choosing:
-
-- **Flash- or RAM-constrained MCU:** `crc_lut_none` or `crc_lut_nibble`.
-- **MCU with spare memory:** `crc_lut_byte`, or `crc_lut_sliced` for the best speed (section 8). A copy of the
-  engine in RAM is about 1.5× faster than one in flash on a Cortex-M4.
-- **Desktop and server CPUs:** `crc_lut_sliced`. With acceleration it is the fastest strategy everywhere. Without it,
-  `crc_lut_braided` is about twice as fast from 128 B on, on out-of-order cores.
-
-### 6.1 Custom strategies
-
-Any type modeling `crc_strategy_for<Strategy, Register>` is a strategy:
-
-```cpp
-struct my_strategy {
-  template <class Register> using table_type = /* semiregular: what update() needs */;
-  template <class Register> static std::optional<table_type<Register>> make_table(checksum::crc_parameters const &);
-  template <class Register> static Register update(table_type<Register> const &, Register state, std::span<std::byte const>);
+using byte_engine = checksum::crc_engine<std::uint64_t, checksum::crc_lut_byte>;
+auto make_engine = [](checksum::crc_polynomial polynomial) {
+  return byte_engine::create({.polynomial = polynomial});
 };
+auto engine = checksum::crc_polynomial::create(normal_form, width).and_then(make_engine);
 ```
 
-`make_table` runs once per engine and returns `std::nullopt` for parameters the strategy cannot handle (for example
-a peripheral that supports only some polynomials). `update` receives the public state: below 2^width, reflected if
-the input is reflected. It must return the state after the bytes. A strategy needs to support only the registers it
-names. Strategies without `constexpr` members work with `crc_engine::create` at run time only.
-`examples/crc/hardware_strategy.cpp` drives the CRC unit of STM32 parts this way.
+### API
 
-## 7. CPU acceleration
+| Name | Description |
+| --- | --- |
+| `crc_compute<Parameters, Strategy, Isa>(data)` | The CRC of `data`, through `crc_engine_for`. |
+| `crc_engine_for<Parameters, Strategy, Isa>` | An engine built at compile time with the smallest register that fits, as a constant in read-only data. |
+| `crc_engine<Register, Strategy, Isa>` | An engine with `create(parameters)`, `initial()`, `update(state, data)`, `finalize(state)`, `compute(data)`, `resume(crc)` and the static `preset()`. `Register` is `std::uint8_t` to `std::uint64_t`. |
+| `crc_dispatch_engine<Register, Strategy>` | The same members, with `create(parameters, isa_set cpu = detect_isa())`. Passing a preset as `cpu` runs it, or the next lower one the build has, without checking the CPU. |
 
-`crc_lut_sliced` and `crc_lut_braided` use CPU instructions when the compiler flags enable them. The choice is
-made by the preprocessor in the library's sources, from the macros the compiler predefines for the flags. There is
-no run-time CPU detection, so the library must be compiled with the flags of the target CPU:
+`Strategy` defaults to `crc_lut_none` and `Isa` to `isa::generic`. All strategies give identical results.
 
-| Target | Flags (examples) | What runs |
+- A message may be split anywhere and gives the same CRC.
+- `update(state, data, bit_length)` and `compute(data, bit_length)` take a message whose length is not a whole number
+  of bytes, such as the 83 bits of a CAN frame: `crc_engine_for<checksum::crc15_can>.compute(bits, 83)`. The last bits
+  are taken in the CRC's bit order.
+- `crc32.update(crc32.resume(stored), data)` continues from a stored CRC after any length.
+- A state passed in must be below 2^width, and `bit_length` at most `8 * data.size()`. Both are checked by `assert`.
+  With `NDEBUG`, a violation gives a wrong CRC but never undefined behavior.
+
+### Strategies
+
+| Strategy | Engine size, 8 / 16 / 32 / 64-bit register | Method |
 | --- | --- | --- |
-| x86-64 with PCLMULQDQ | `-mpclmul -msse4.1` | Carry-less multiplication folding for every parameter set, inputs ≥ 16 B. |
-| x86-64 with VPCLMULQDQ and AVX2 | `-march=icelake-client`, `alderlake`, `znver3`, `native` | Inputs ≥ 256 B also fold 256 B per iteration. |
-| x86-64 with SSE4.2 | `-msse4.2`, `-march=x86-64-v2` | The `crc32` instruction for CRC-32C; with PCLMULQDQ also available, CRC-32C inputs ≥ 25 B fold instead. |
-| AArch64 / AArch32 with the CRC extension | `-march=armv8-a+crc` | The CRC32 instructions for CRC-32 and CRC-32C. |
-| Little-endian AArch64 with PMULL | `-march=armv8-a+crc+crypto` | Folding for every other parameter set; with `+sha3` (Neoverse V1/V2, Apple M1 and later) each fold uses one `EOR3`. |
-| RV64, little-endian, with Zbc | `-march=rv64gc_zbc` | Folding with `clmul` / `clmulh`. |
+| `crc_lut_none` | 11 / 16 / 32 / 64 B | Bitwise, no table |
+| `crc_lut_nibble` | 27 / 48 / 96 / 192 B | 16-entry table, two lookups per byte |
+| `crc_lut_byte` | 267 / 528 / 1056 / 2112 B | 256-entry table, one lookup per byte |
+| `crc_lut_sliced` | 2.2 / 4.2 / 8.2 / 16.2 KiB | Slicing-by-8, with CPU kernels |
+| `crc_lut_braided` | 4.2 / 8.2 / 16.2 / 32.2 KiB | Slicing-by-8 over five interleaved streams from 128 B, with CPU kernels |
 
-Notes:
+- **Microcontrollers short of memory:** `crc_lut_none` or `crc_lut_nibble`.
+- **Microcontrollers with spare memory:** `crc_lut_byte`, or `crc_lut_sliced` for the best speed. Keep the engine in
+  RAM if it fits, because table lookups from flash are 1.2-1.5× slower.
+- **Desktop and server CPUs:** `crc_lut_sliced` with a preset. Without a kernel, `crc_lut_braided` is about twice as
+  fast from 128 B on out-of-order cores, but slower on in-order ones.
 
-- The CRC-32 and CRC-32C instructions apply to any parameter set with that polynomial and reflected input in a
-  `std::uint32_t` register, whatever its initial value and final XOR.
-- `crc_lut_braided` runs the `crc_lut_sliced` code wherever acceleration applies, so in accelerated builds the two
-  strategies perform the same and `crc_lut_sliced` is half the size.
-- x86-64-v3 (AVX2) does not include PCLMULQDQ; add `-mpclmul`.
-- Big-endian AArch64 uses the CRC32 instructions but not PMULL.
-- Constant evaluation always runs the portable loops; results are identical.
-- `CHECKSUM_ACCELERATION=OFF` disables all of it.
+Keep large engines in static storage, through `crc_engine_for` or a `static` object, and not on a small stack.
 
-The design and the measurements behind each kernel are in [design/acceleration.md](design/acceleration.md).
+### Custom strategies
 
-## 8. Performance guidelines
+A strategy can drive a CRC peripheral or any other hardware. It is a type with three members, and the engine still
+handles reflection, the initial value, the final XOR and bit tails:
 
-Measured figures for every strategy and platform are in [performance.md](performance.md#crc).
+- `template <class Register> using table_type`, a semiregular type holding whatever `update` needs;
+- `template <class Register> static std::optional<table_type<Register>> make_table(crc_parameters const &)`, which runs
+  once per engine and returns `std::nullopt` for parameters the hardware cannot handle;
+- `template <class Register> static Register update(table_type<Register> const &, Register state, std::span<std::byte const>)`,
+  which folds whole bytes into the state, reflected when the input is reflected.
 
-- **Choose the strategy by memory first** (section 6). Each step from `crc_lut_none` to `crc_lut_sliced` is 1.5× to
-  several times faster than the one below it, and costs more table memory.
-- **Compile for the target CPU.** `crc_lut_sliced` and `crc_lut_braided` use the instructions of section 7 only if
-  the compiler flags enable them. The kernels take over at these sizes:
-  - carry-less folding (PCLMULQDQ, PMULL, Zbc): every parameter set, from 16 B;
-  - VPCLMULQDQ with AVX2: 256 B per iteration, from 256 B;
-  - the CRC instructions of Arm (`+crc`): CRC-32 and CRC-32C;
-  - SSE4.2 `crc32`: CRC-32C, folding from 25 B when PCLMULQDQ is also enabled.
+[examples/crc/hardware_strategy.cpp](../examples/crc/hardware_strategy.cpp) drives the CRC unit of STM32 parts this way.
+On an STM32L4A6 it matches `crc_lut_sliced` in RAM on long messages, with no table, but its per-call setup makes it
+slower on short ones. A strategy without `constexpr` members works with `crc_engine::create` at run time only.
 
-  On x86-64 CRC-32 then runs at about 75 000 MB/s from 4 KiB, against about 3 000 MB/s for the portable sliced loop.
-- **Without acceleration on a desktop CPU**, `crc_lut_braided` is about twice as fast as `crc_lut_sliced` from
-  128 B on. On in-order cores such as Cortex-M it is slower and twice the size.
-- **On a microcontroller, keep the engine in RAM** if it fits. Table lookups from flash wait for the memory: a copy
-  of the engine in RAM is about 1.5× faster on a Cortex-M4, and `crc_lut_sliced` 1.2-1.4× faster on the nRF54L15,
-  whose instruction cache holds no data. Engines take kilobytes, so use a static object, not the stack.
-- **A CRC peripheral** driven by a custom strategy (section 6.1) runs as fast as `crc_lut_sliced` in RAM on long
-  messages on an STM32L4A6, with no table. Its per-call setup, and the software bit reversal of a reflected CRC,
-  make it slower on short messages.
-- **Compile-time CRCs of large inputs are slow:** constant evaluation runs the byte-table loop at best.
+A strategy can also take the engine's preset. If its `update` has a second template parameter, `isa Isa`, the engine
+calls `update<Register, Isa>`, and a dispatch engine chooses among all presets of the build; otherwise the strategy
+always gets `generic`. A `static constexpr bool takes_preset` member overrides that choice.
 
-## 9. Limitations
+### Presets and kernels
 
-- **Widths 1..64** only, and only polynomials with an x^0 term.
-- **Initial values are direct**: the register content before the first message bit, never the "augmented" form.
-- **No run-time CPU detection.** Acceleration is fixed by the compiler flags of the library build; a binary built
-  with `-march=native` does not run on older CPUs.
-- **Not thread-safe.** A `const` engine can be shared between threads; an accumulator cannot.
+Only `crc_lut_sliced` and `crc_lut_braided` have kernels. With a kernel both run the same code, so `crc_lut_sliced` is
+as fast at half the size.
+
+| Preset | Kernel |
+| --- | --- |
+| `x86_pclmul`, `x86_avx2` | PCLMULQDQ folding for every CRC from 16 B; for CRC-32C, SSE4.2 `crc32` |
+| `x86_vpclmul`, `x86_avxvnni` | As above, plus 256-bit VPCLMULQDQ folding from 256 B |
+| `aarch64_crc`, `thumb2_crc` | CRC32 instructions for CRC-32 and CRC-32C |
+| `aarch64_pmull` | CRC32 instructions, plus PMULL folding for every other CRC from 16 B (little-endian only) |
+| `riscv_zbc` | Zbc `clmul` folding from 16 B, on little-endian RV64 |
+| all others | Portable sliced or braided loop |
+
+The CRC32 instructions serve any CRC with the CRC-32 or CRC-32C polynomial and reflected input in a `std::uint32_t`
+register, whatever its initial value and final XOR.
+
+### Performance
+
+- Each step from `crc_lut_none` to `crc_lut_sliced` is 1.5× to several times faster.
+- A compile-time CRC of a large input is slow, because constant evaluation runs the byte-table loop at best.
+
+Full figures, including Cortex-M flash and RAM footprints, are in [performance.md](performance.md#crc).
+
+### Limitations
+
+- Only widths 1 to 64, and only polynomials with an x^0 term.
+- Initial values are in the direct form, never the "augmented" one.

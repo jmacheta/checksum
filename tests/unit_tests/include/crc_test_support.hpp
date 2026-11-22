@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -191,6 +192,19 @@ template <class Type> using tag = std::type_identity<Type>;
 
 template <class Visitor> void for_each_strategy(Visitor visit);
 
+// Every built-in strategy, for typed tests.
+using strategies =
+    testing::Types<checksum::crc_lut_none, checksum::crc_lut_nibble, checksum::crc_lut_byte, checksum::crc_lut_sliced, checksum::crc_lut_braided>;
+
+// The strategy's name without the crc_lut_ prefix.
+template <class Strategy> constexpr std::string_view strategy_name();
+
+// Names typed tests over strategies after their strategy.
+struct strategy_names {
+  // NOLINTNEXTLINE(readability-identifier-naming): name required by Google Test.
+  template <class Strategy> static std::string GetName(int /*index*/) { return std::string(strategy_name<Strategy>()); }
+};
+
 // Calls visit(tag<Register>{}) for every register type with at least width bits.
 template <class Visitor> void for_each_register(unsigned width, Visitor visit);
 
@@ -212,6 +226,7 @@ constexpr std::uint64_t mask_of(unsigned width) { return width == 64 ? ~std::uin
 inline bitwise_reference::bitwise_reference(crc_model const &model) : model(model), remainder(model.initial_value) {}
 
 inline void bitwise_reference::feed_bit(unsigned bit) {
+  // NOLINTNEXTLINE(clang-analyzer-core.BitwiseShift): model.width is 1..64.
   bool const feedback = (((remainder >> (model.width - 1)) & 1U) ^ bit) != 0;
   remainder = (remainder << 1U) & mask_of(model.width);
   if(feedback) {
@@ -272,6 +287,20 @@ inline std::vector<std::byte> extract_bits(std::span<std::byte const> data, bool
     result[index / 8] |= static_cast<std::byte>(bit << position);
   }
   return result;
+}
+
+template <class Strategy> constexpr std::string_view strategy_name() {
+  if constexpr(std::is_same_v<Strategy, checksum::crc_lut_none>) {
+    return "none";
+  } else if constexpr(std::is_same_v<Strategy, checksum::crc_lut_nibble>) {
+    return "nibble";
+  } else if constexpr(std::is_same_v<Strategy, checksum::crc_lut_byte>) {
+    return "byte";
+  } else if constexpr(std::is_same_v<Strategy, checksum::crc_lut_sliced>) {
+    return "sliced";
+  } else {
+    return "braided";
+  }
 }
 
 template <class Visitor> void for_each_strategy(Visitor visit) {

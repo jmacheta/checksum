@@ -1,14 +1,15 @@
-// XXH32 and XXH64: reference values, splits, alignments and ranges.
+// XXH32 and XXH64: reference values, splits, alignments, ranges and edge seeds.
 
+#include <checksum/engine.hpp>
 #include <checksum/xxhash.hpp>
 #include <xxhash_reference_vectors.hpp>
 
+#include <engine_checks.hpp>
 #include <gtest/gtest.h>
 #include <test_data.hpp>
 
 #include <algorithm>
 #include <array>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -51,13 +52,12 @@ template <unsigned Width> constexpr std::size_t prefix_mismatches(std::size_t si
 
 // The hash of data, folded in pieces of chunk_size bytes.
 template <unsigned Width>
-constexpr auto chunked(std::span<std::byte const> data, std::size_t chunk_size, typename xxhash_state<Width>::value_type seed) {
-  xxhash_state<Width> state{.seed = seed};
-  for(; data.size() > chunk_size; data = data.subspan(chunk_size)) {
-    state = xxhash_update(state, data.first(chunk_size));
-  }
-  return xxhash_finalize(xxhash_update(state, data));
+constexpr auto chunked(std::span<std::byte const> data, std::size_t chunk_size, typename xxhash_engine<Width>::value_type seed) {
+  return engine_checks::chunked(xxhash_engine<Width>(seed), data, chunk_size);
 }
+
+// Every tail length around two XXH64 stripes.
+constexpr std::size_t constant_limit = 70;
 
 using namespace std::literals;
 
@@ -65,16 +65,13 @@ static_assert(xxhash_compute<32>(""sv) == 0x02CC5D05U);
 static_assert(xxhash_compute<64>(""sv) == 0xEF46DB3751D8E999U);
 static_assert(xxhash_compute<32>("abc"sv) == 0x32D153FFU);
 static_assert(xxhash_compute<64>("abc"sv) == 0x44BC2CF5AD770999U);
-static_assert(xxhash_finalize(xxhash_state<64>{}) == 0xEF46DB3751D8E999U);
+static_assert(xxhash_engine<64>{}.finalize(xxhash_state<64>{}) == 0xEF46DB3751D8E999U);
 static_assert(xxhash_compute<32>(std::span(message), xxhash32_vectors[2].seed) == xxhash32_vectors[2].prefixes[300]);
 static_assert(xxhash_compute<64>(std::span(message).first(33), xxhash64_vectors[2].seed) == xxhash64_vectors[2].prefixes[33]);
 static_assert(chunked<64>(message, 7, xxhash64_vectors[1].seed) == xxhash64_vectors[1].prefixes[300]);
 static_assert(chunked<32>(message, 13, xxhash32_vectors[1].seed) == xxhash32_vectors[1].prefixes[300]);
-// Every tail length around two XXH64 stripes; longer prefixes exceed the constant-evaluation step limit of Clang.
-static_assert(prefix_mismatches<32>(70) == 0);
-static_assert(prefix_mismatches<64>(70) == 0);
-static_assert(std::same_as<xxh32_state, xxhash_state<32>> && std::same_as<xxh64_state, xxhash_state<64>>);
-static_assert(xxh32_compute("abc"sv) == 0x32D153FFU && xxh64_compute("abc"sv, 1) == xxhash_compute<64>("abc"sv, 1));
+static_assert(xxhash_engine<64>{1}.compute("abc"sv) == xxhash_compute<64>("abc"sv, 1));
+static_assert(engine<xxhash_engine<32>> && engine<xxhash_dispatch_engine<64>> && !resumable_engine<xxhash_engine<64>>);
 
 template <class Width> class xxhash : public testing::Test {};
 
@@ -87,19 +84,19 @@ struct width_names {
 
 TYPED_TEST_SUITE(xxhash, widths, width_names);
 
-TYPED_TEST(xxhash, reference_prefixes) {
+TYPED_TEST(xxhash, reference_values) {
   constexpr unsigned width = TypeParam::value;
   for(auto const &set : vectors<width>()) {
     for(std::size_t size = 0; size < xxhash_test::prefix_count; ++size) {
       auto const data = std::span(message).first(size);
       ASSERT_EQ(xxhash_compute<width>(data, set.seed), set.prefixes[size]) << "seed " << set.seed << ", size " << size;
-      ASSERT_EQ(xxhash_finalize(xxhash_update(xxhash_state<width>{.seed = set.seed}, data)), set.prefixes[size])
-          << "seed " << set.seed << ", size " << size;
+      xxhash_engine<width> const engine(set.seed);
+      ASSERT_EQ(engine.finalize(engine.update(engine.initial(), data)), set.prefixes[size]) << "seed " << set.seed << ", size " << size;
     }
   }
 }
 
-TYPED_TEST(xxhash, unaligned_starts) {
+TYPED_TEST(xxhash, every_size_and_offset) {
   constexpr unsigned width = TypeParam::value;
   auto const &set = vectors<width>()[2];
   for(std::size_t offset = 0; offset < 16; ++offset) {
@@ -119,16 +116,17 @@ TYPED_TEST(xxhash, split_anywhere) {
   auto const data = std::span<std::byte const>(message).first(size);
   for(std::size_t first = 0; first <= size; ++first) {
     for(std::size_t second = first; second <= size; ++second) {
-      xxhash_state<width> state = xxhash_update(xxhash_state<width>{.seed = set.seed}, data.first(first));
-      state = xxhash_update(state, data.subspan(first, second - first));
-      ASSERT_EQ(xxhash_finalize(state), set.prefixes[second]) << "split at " << first << " and " << second;
-      ASSERT_EQ(xxhash_finalize(xxhash_update(state, data.subspan(second))), set.prefixes[size]) << "split at " << first << " and " << second;
+      xxhash_engine<width> const engine(set.seed);
+      xxhash_state<width> state = engine.update(engine.initial(), data.first(first));
+      state = engine.update(state, data.subspan(first, second - first));
+      ASSERT_EQ(engine.finalize(state), set.prefixes[second]) << "split at " << first << " and " << second;
+      ASSERT_EQ(engine.finalize(engine.update(state, data.subspan(second))), set.prefixes[size]) << "split at " << first << " and " << second;
     }
   }
 }
 
 // Pieces of every size up to past two 32-byte stripes, so that splits fall at every offset around the stripe boundaries.
-TYPED_TEST(xxhash, chunks_across_stripes) {
+TYPED_TEST(xxhash, split_into_chunks) {
   constexpr unsigned width = TypeParam::value;
   for(auto const &set : vectors<width>()) {
     for(std::size_t chunk_size = 1; chunk_size <= 70; ++chunk_size) {
@@ -148,9 +146,40 @@ TYPED_TEST(xxhash, byte_ranges) {
   EXPECT_EQ(xxhash_compute<width>(text, set.seed), expected);
   EXPECT_EQ(xxhash_compute<width>(std::list<char>(text.begin(), text.end()), set.seed), expected);
   EXPECT_EQ(xxhash_compute<width>(std::vector<unsigned char>(text.begin(), text.end()), set.seed), expected);
-  EXPECT_EQ(xxhash_finalize(xxhash_update(xxhash_state<width>{.seed = set.seed}, text)), expected);
+  xxhash_engine<width> const engine(set.seed);
+  EXPECT_EQ(engine.finalize(engine.update(engine.initial(), text)), expected);
   // Longer than one 64-byte chunk of a non-contiguous range.
   EXPECT_EQ(xxhash_compute<width>(std::list<std::byte>(message.begin(), message.end()), set.seed), set.prefixes[300]);
+}
+
+// States of one message compare equal however it was split, though their buffers keep different stale bytes.
+TYPED_TEST(xxhash, equal_states_after_any_split) {
+  constexpr unsigned width = TypeParam::value;
+  static_assert(engine_checks::same_state_for_any_split(xxhash_engine<width>(7), std::span(message).first(70)));
+  for(std::size_t const size : {0UZ, 1UZ, 15UZ, 16UZ, 17UZ, 31UZ, 32UZ, 33UZ, 65UZ, 300UZ}) {
+    EXPECT_TRUE(engine_checks::same_state_for_any_split(xxhash_engine<width>(7), std::span(message).first(size))) << "size " << size;
+  }
+}
+
+// Every prefix up to past a few blocks computed at compile time, for every seed; longer prefixes exceed the constant-evaluation step limit
+// of Clang.
+TYPED_TEST(xxhash, constant_evaluation) {
+  static constexpr unsigned width = TypeParam::value;
+  static_assert(prefix_mismatches<width>(constant_limit) == 0);
+  static constexpr auto prefixes = [] {
+    std::array<std::array<typename std::remove_cvref_t<decltype(vectors<width>()[0].prefixes)>::value_type, constant_limit + 1>, 3> result{};
+    for(std::size_t set = 0; set < result.size(); ++set) {
+      for(std::size_t size = 0; size <= constant_limit; ++size) {
+        result[set][size] = xxhash_compute<width>(std::span(message).first(size), vectors<width>()[set].seed);
+      }
+    }
+    return result;
+  }();
+  for(std::size_t set = 0; set < prefixes.size(); ++set) {
+    for(std::size_t size = 0; size <= constant_limit; ++size) {
+      ASSERT_EQ(prefixes[set][size], xxhash_compute<width>(std::span(message).first(size), vectors<width>()[set].seed)) << "size " << size;
+    }
+  }
 }
 
 TYPED_TEST(xxhash, long_message) {
@@ -163,24 +192,10 @@ TYPED_TEST(xxhash, long_message) {
   }
 }
 
-TEST(xxhash, aliases) {
-  constexpr std::string_view text = "123456789 123456789 123456789 123456789";
-  auto const bytes = std::as_bytes(std::span(text));
-  for(auto const &set : xxhash32_vectors) {
-    EXPECT_EQ(xxh32_compute(text, set.seed), xxhash_compute<32>(text, set.seed));
-    EXPECT_EQ(xxh32_compute(bytes, set.seed), xxhash_compute<32>(bytes, set.seed));
-    EXPECT_EQ(xxh32_compute(std::span(message), set.seed), set.prefixes[300]);
-  }
-  for(auto const &set : xxhash64_vectors) {
-    EXPECT_EQ(xxh64_compute(text, set.seed), xxhash_compute<64>(text, set.seed));
-    EXPECT_EQ(xxh64_compute(bytes, set.seed), xxhash_compute<64>(bytes, set.seed));
-    EXPECT_EQ(xxh64_compute(std::span(message), set.seed), set.prefixes[300]);
-  }
-  EXPECT_EQ(xxhash_finalize(xxhash_update(xxh64_state{.seed = 7}, text)), xxh64_compute(text, 7));
-}
-
 // Seeds of all ones wrap every lane's initial value; hashes from xxhash.h 0.8.4.
-TEST(xxhash, all_ones_seed) {
+TYPED_TEST(xxhash, edge_values) {
+  constexpr unsigned width = TypeParam::value;
+  constexpr auto seed = static_cast<xxhash_engine<width>::value_type>(~std::uint64_t{0});
   struct expected_hashes {
     std::size_t size;
     std::uint32_t xxh32;
@@ -197,10 +212,9 @@ TEST(xxhash, all_ones_seed) {
                                                      {300, 0x0CB5B0CAU, 0x536EB91EDFE26C25U}}};
   for(auto const &hashes : expected) {
     auto const data = std::span(message).first(hashes.size);
-    EXPECT_EQ(xxhash_compute<32>(data, 0xFFFFFFFFU), hashes.xxh32) << "size " << hashes.size;
-    EXPECT_EQ(xxhash_compute<64>(data, ~std::uint64_t{0}), hashes.xxh64) << "size " << hashes.size;
-    EXPECT_EQ(chunked<32>(data, 7, 0xFFFFFFFFU), hashes.xxh32) << "size " << hashes.size;
-    EXPECT_EQ(chunked<64>(data, 7, ~std::uint64_t{0}), hashes.xxh64) << "size " << hashes.size;
+    auto const hash = width == 32 ? hashes.xxh32 : hashes.xxh64;
+    EXPECT_EQ(xxhash_compute<width>(data, seed), hash) << "size " << hashes.size;
+    EXPECT_EQ(chunked<width>(data, 7, seed), hash) << "size " << hashes.size;
   }
 }
 

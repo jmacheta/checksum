@@ -2,8 +2,9 @@
 #define CHECKSUM_ADLER32_HPP
 
 #include <checksum/byte_range.hpp>
+#include <checksum/engine.hpp>
+#include <checksum/isa.hpp>
 
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -30,29 +31,60 @@ struct adler32_state {
   friend constexpr bool operator==(adler32_state, adler32_state) noexcept = default;
 };
 
-/// Folds data into state; data may be split anywhere.
-[[nodiscard]] constexpr adler32_state adler32_update(adler32_state state, std::span<std::byte const> data) noexcept;
+/// Adler-32 with the run-time loop compiled for the instruction-set preset Isa (checksum/isa.hpp). Empty: make one wherever it
+/// is needed.
+template <isa Isa = isa::generic>
+  requires(isa_available(Isa))
+class adler32_engine {
+public:
+  using state_type = adler32_state; ///< Running checksum.
+  using value_type = std::uint32_t; ///< The checksum.
 
-/// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
-template <byte_range Range> [[nodiscard]] constexpr adler32_state adler32_update(adler32_state state, Range &&data) noexcept;
+  /// The preset whose loop the engine runs: Isa.
+  [[nodiscard]] static constexpr isa preset() noexcept;
 
-/// Folds data into the message whose checksum is checksum and returns the new checksum, like zlib's adler32(adler, buf, len).
-/// The checksum must be a std::uint32_t, so that {} still means the empty adler32_state.
-template <std::same_as<std::uint32_t> Checksum>
-[[nodiscard]] constexpr std::uint32_t adler32_update(Checksum checksum, std::span<std::byte const> data) noexcept;
+  /// State of an empty message.
+  [[nodiscard]] constexpr state_type initial() const noexcept;
 
-/// Folds a byte range into the message whose checksum is checksum and returns the new checksum.
-template <std::same_as<std::uint32_t> Checksum, byte_range Range>
-[[nodiscard]] constexpr std::uint32_t adler32_update(Checksum checksum, Range &&data) noexcept;
+  /// Folds data into state; data may be split anywhere.
+  [[nodiscard]] constexpr state_type update(state_type state, std::span<std::byte const> data) const noexcept;
 
-/// The checksum of state.
-[[nodiscard]] constexpr std::uint32_t adler32_finalize(adler32_state state) noexcept;
+  /// Folds a byte range into state. Contiguous ranges are passed on as one span, others in 64-byte chunks.
+  template <byte_range Range> [[nodiscard]] constexpr state_type update(state_type state, Range &&data) const noexcept;
 
-/// adler32_finalize(adler32_update(adler32_state{}, data)).
-[[nodiscard]] constexpr std::uint32_t adler32_compute(std::span<std::byte const> data) noexcept;
+  /// The checksum of state.
+  [[nodiscard]] constexpr value_type finalize(state_type const &state) const noexcept;
 
-/// adler32_finalize(adler32_update(adler32_state{}, data)) for a byte range.
-template <byte_range Range> [[nodiscard]] constexpr std::uint32_t adler32_compute(Range &&data) noexcept;
+  /// State of a message whose checksum is checksum, like the adler argument of zlib's adler32(adler, buf, len).
+  [[nodiscard]] constexpr state_type resume(value_type checksum) const noexcept;
+
+  /// finalize(update(initial(), data)).
+  [[nodiscard]] constexpr value_type compute(std::span<std::byte const> data) const noexcept;
+
+  /// finalize(update(initial(), data)) for a byte range.
+  template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
+};
+
+/// adler32_engine<Isa>{}.compute(data).
+template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr adler32_engine<Isa>::value_type adler32_compute(Range &&data) noexcept;
+
+} // namespace checksum
+
+namespace checksum::adler32_detail {
+
+// The presets a dispatch engine chooses from: generic and those with target options.
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options();
+
+} // namespace checksum::adler32_detail
+
+namespace checksum {
+
+/// An adler32_engine whose preset is chosen when it is made, by default the best one of this build that the running CPU executes.
+class adler32_dispatch_engine : public detail::dispatch_engine<adler32_engine<>, adler32_detail::own_loops> {
+public:
+  /// The best preset of this build in cpu: by default the presets the running CPU executes, or an explicit choice.
+  constexpr explicit adler32_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
+};
 
 } // namespace checksum
 
@@ -68,8 +100,8 @@ constexpr std::uint32_t reduce_once(std::uint32_t value) noexcept;
 // Folds data byte by byte; the constant-evaluation loop.
 constexpr adler32_state update_bytes(adler32_state state, std::span<std::byte const> data) noexcept;
 
-// The same fold at run time, defined in src/adler32/sum_loop.cpp.
-adler32_state sum_loop(adler32_state state, std::span<std::byte const> data) noexcept;
+// The same fold at run time, compiled for the preset Isa: src/adler32/ defines it for every preset isa_available() accepts.
+template <isa Isa> adler32_state sum_loop(adler32_state state, std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::adler32_detail
 
@@ -94,38 +126,66 @@ constexpr adler32_state update_bytes(adler32_state state, std::span<std::byte co
 
 namespace checksum {
 
-constexpr adler32_state adler32_update(adler32_state state, std::span<std::byte const> data) noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr isa adler32_engine<Isa>::preset() noexcept {
+  return Isa;
+}
+
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr adler32_state adler32_engine<Isa>::initial() const noexcept {
+  return {};
+}
+
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr adler32_state adler32_engine<Isa>::update(adler32_state state, std::span<std::byte const> data) const noexcept {
   if consteval {
     return adler32_detail::update_bytes(state, data);
   } else {
-    return adler32_detail::sum_loop(state, data);
+    return adler32_detail::sum_loop<Isa>(state, data);
   }
 }
 
-template <byte_range Range> constexpr adler32_state adler32_update(adler32_state state, Range &&data) noexcept {
-  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = adler32_update(state, chunk); });
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr adler32_state adler32_engine<Isa>::update(adler32_state state, Range &&data) const noexcept {
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-constexpr std::uint32_t adler32_finalize(adler32_state state) noexcept {
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr std::uint32_t adler32_engine<Isa>::finalize(adler32_state const &state) const noexcept {
   return (adler32_detail::reduce_once(state.sum2) << 16U) | adler32_detail::reduce_once(state.sum1);
 }
 
-template <std::same_as<std::uint32_t> Checksum> constexpr std::uint32_t adler32_update(Checksum checksum, std::span<std::byte const> data) noexcept {
-  adler32_state const state{.sum1 = static_cast<std::uint16_t>(checksum), .sum2 = static_cast<std::uint16_t>(checksum >> 16U)};
-  return adler32_finalize(adler32_update(state, data));
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr adler32_state adler32_engine<Isa>::resume(std::uint32_t checksum) const noexcept {
+  return {.sum1 = static_cast<std::uint16_t>(checksum), .sum2 = static_cast<std::uint16_t>(checksum >> 16U)};
 }
 
-template <std::same_as<std::uint32_t> Checksum, byte_range Range> constexpr std::uint32_t adler32_update(Checksum checksum, Range &&data) noexcept {
-  adler32_state const state{.sum1 = static_cast<std::uint16_t>(checksum), .sum2 = static_cast<std::uint16_t>(checksum >> 16U)};
-  return adler32_finalize(adler32_update(state, std::forward<Range>(data)));
+template <isa Isa>
+  requires(isa_available(Isa))
+constexpr std::uint32_t adler32_engine<Isa>::compute(std::span<std::byte const> data) const noexcept {
+  return finalize(update(initial(), data));
 }
 
-constexpr std::uint32_t adler32_compute(std::span<std::byte const> data) noexcept { return adler32_finalize(adler32_update(adler32_state{}, data)); }
-
-template <byte_range Range> constexpr std::uint32_t adler32_compute(Range &&data) noexcept {
-  return adler32_finalize(adler32_update(adler32_state{}, std::forward<Range>(data)));
+template <isa Isa>
+  requires(isa_available(Isa))
+template <byte_range Range>
+constexpr std::uint32_t adler32_engine<Isa>::compute(Range &&data) const noexcept {
+  return finalize(update(initial(), std::forward<Range>(data)));
 }
+
+template <isa Isa, byte_range Range> constexpr adler32_engine<Isa>::value_type adler32_compute(Range &&data) noexcept {
+  return adler32_engine<Isa>{}.compute(std::forward<Range>(data));
+}
+
+constexpr adler32_dispatch_engine::adler32_dispatch_engine(isa_set cpu) noexcept : dispatch_engine(cpu) {}
 
 } // namespace checksum
 

@@ -16,7 +16,7 @@ struct hash128 {
   std::uint64_t high = 0; ///< The upper 64 bits.
 
   /// Equal if both halves are.
-  [[nodiscard]] constexpr bool operator==(hash128 const &) const noexcept = default;
+  friend constexpr bool operator==(hash128, hash128) noexcept = default;
 };
 
 } // namespace checksum

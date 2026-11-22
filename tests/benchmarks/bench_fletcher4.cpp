@@ -1,30 +1,29 @@
-// Throughput of the ZFS fletcher4 checksum.
+// Throughput of the ZFS fletcher4 checksum, for every preset and through the dispatch engine.
 
 #include <checksum/fletcher4.hpp>
 
+#include "bench_presets.hpp"
+
 #include <benchmark/benchmark.h>
-#include <test_data.hpp>
 
 #include <cstddef>
-#include <cstdint>
 #include <span>
-#include <vector>
 
 namespace {
 
-void fletcher4(benchmark::State &state) {
-  std::vector<std::byte> const data = random_bytes(static_cast<std::size_t>(state.range(0)));
-  std::span<std::byte const> message = data;
-  for(auto _ : state) {
-    benchmark::DoNotOptimize(message);
-    benchmark::DoNotOptimize(checksum::fletcher4_compute(message));
-  }
-  state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations()) * state.range(0));
+template <class Engine> void fletcher4(benchmark::State &state) {
+  Engine const engine{};
+  isa_bench::measure(state, [&](std::span<std::byte const> data) { return engine.compute(data); });
 }
 
-// IPv4 and UDP headers, a full Ethernet payload, a page and a large buffer.
-BENCHMARK(fletcher4)->Arg(20)->Arg(64)->Arg(192)->Arg(256)->Arg(384)->Arg(1500)->Arg(4096)->Arg(std::int64_t{1} << 20);
+// Also the lane thresholds.
+void sizes(benchmark::Benchmark *benchmark) { isa_bench::sizes(benchmark, {192, 384}); }
 
 } // namespace
 
-BENCHMARK_MAIN();
+int main(int argc, char **argv) {
+  isa_bench::register_presets(
+      "fletcher4", [](auto preset) { return fletcher4<checksum::fletcher4_engine<decltype(preset)::value>>; },
+      fletcher4<checksum::fletcher4_dispatch_engine>, sizes);
+  return isa_bench::run(argc, argv);
+}
