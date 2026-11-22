@@ -85,8 +85,8 @@ template <isa Isa = isa::generic, byte_range Range>
 
 namespace checksum::fletcher4_detail {
 
-// The presets a dispatch engine chooses from: generic and those with target options.
-inline constexpr isa_set own_loops = isa_detail::built_with_target_options();
+// The presets a dispatch engine chooses from: generic, those with target options, and riscv_v, the one without them with a kernel.
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options() | isa::riscv_v;
 
 } // namespace checksum::fletcher4_detail
 

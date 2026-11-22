@@ -81,7 +81,8 @@ checksum::isa chosen = fletcher32.preset();
 | every preset on little-endian AArch64, `generic` included | NEON, from 64 B | from 128 B | from 256 B |
 | `thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 64 B | from 128 B | from 256 B |
 | `thumb2_dsp` on little-endian 32-bit Arm (Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B | portable | portable |
-| all others, RISC-V and big-endian included | portable | portable | portable |
+| `riscv_v` on RV64, tested in QEMU only | Vectors of any length, from 64 B | from 128 B | from 256 B |
+| all others, big-endian included | portable | portable | portable |
 
 The byte kernels are shared with Adler-32.
 

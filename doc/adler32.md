@@ -73,7 +73,8 @@ checksum::isa chosen = adler32.preset();
 | every preset on little-endian AArch64, `generic` included | NEON from 64 B, 64 bytes per iteration from 320 B |
 | `thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 64 B |
 | `thumb2_dsp` on little-endian 32-bit Arm (Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B, at any alignment |
-| all others, RISC-V and big-endian included | Portable loop |
+| `riscv_v` on RV64 | Vectors of any length, from 64 B, tested in QEMU only |
+| all others, big-endian included | Portable loop |
 
 The kernels are shared with Fletcher-16, with the modulus 65521.
 

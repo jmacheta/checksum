@@ -309,6 +309,7 @@ words:
 - vsdownload
 - vsetvl
 - vsetvlmax
+- vrsub
 - vshlq
 - vshrq
 - vsrl
@@ -317,6 +318,9 @@ words:
 - vuint
 - vuzpq
 - vwaddu
+- vwmulu
+- vwredsumu
+- vzext
 - wassert
 - wcdma
 - werror

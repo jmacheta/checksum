@@ -127,6 +127,7 @@ chunk of little-endian values. Fletcher-16 and Adler-32 run the same byte kernel
 | little-endian AArch64 | NEON from 64 / 128 / 256 B; bytes use `group_kernel` from 320 B |
 | `thumb2_neon`, `thumb2_crc`, little-endian | NEON, without `group_kernel` |
 | `thumb2_dsp`, little-endian | `usada8` + `smlad`, bytes only, from 64 B |
+| `riscv_v` | Strips of one register group, any vector length, from 64 / 128 / 256 B (unproven) |
 | others | Portable loop |
 
 - Chunk sizes keep vector lanes from overflowing, in every kernel of this file and the Internet checksum.
@@ -168,6 +169,7 @@ modulo 2^64.
 | `x86_avx2` and up | One 256-bit vector per sum, from 128 B |
 | `generic`, `x86_pclmul` on x86-64 | Two 128-bit vectors per sum, from 192 B |
 | little-endian AArch64; `thumb2_neon`, `thumb2_crc` | NEON, from 192 B |
+| `riscv_v` | Four 64-bit lanes per register group, from 192 B (unproven) |
 | other 64-bit presets | Portable lanes, from 256 B |
 | other 32-bit presets | Word loop only, two words per iteration on Arm |
 
