@@ -19,6 +19,8 @@ target_sources(
           ut_fletcher_presets.cpp
           ut_fletcher4.cpp
           ut_fletcher4_presets.cpp
+          ut_fnv1a.cpp
+          ut_fnv1a_presets.cpp
           ut_internet.cpp
           ut_internet_presets.cpp
           ut_isa.cpp

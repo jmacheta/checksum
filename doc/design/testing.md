@@ -85,10 +85,10 @@ finishing run the rows below that apply; the full matrix only for shared code.
 | Preconditions, exceptions, RTTI | also `native-gcc-no-exceptions`; the unit tests include one executable built with `NDEBUG` |
 | x86-64-only code (`x86_64/` headers, x86 preset sources) | the native presets only; presets the CPU lacks are skipped |
 | Arm or RISC-V code (`arm/`, `riscv64/` headers, their preset sources) | also the cross presets of that architecture in `cmake/emulator_presets.json` (QEMU user mode, `-cpu max`) |
-| Shared code: `*_loops.hpp`, `*_arch.hpp`, the table loops, `target.hpp`, `presets.hpp`, `isa.hpp`, `detect.cpp` | also every cross preset: `cross-aarch64`, `cross-aarch64be`, `cross-arm`, `cross-arm-crc32`, `cross-arm-clang`, `cross-arm-crc32-clang`, `cross-riscv64`, `cross-riscv64-clang` |
+| Shared code: `*_loops.hpp`, `*_arch.hpp`, the table loops, `target.hpp`, `presets.hpp`, `isa.hpp`, `detect.cpp` | also every cross preset: `cross-aarch64`, `cross-aarch64be`, `cross-arm`, `cross-arm-crc32`, `cross-arm-clang`, `cross-arm-crc32-clang`, `cross-riscv64`, `cross-riscv64-clang`, `cross-riscv32` |
 | `detect.cpp`, `compiled_isa.hpp`, the 32-bit Arm presets | also the `bare-cortex-*` workflows (`qemu-system-arm`) and the CPU checks below |
 | Code that differs under MSVC (intrinsics, `#if _MSC_VER`, GCC-only constructs) | also `cmake --workflow --preset windows-msvc-wine` (MSVC x64 in Wine; setup in `build_and_tooling.md`); also `cmake --workflow --preset windows-clang-cl-wine` for code that differs by `_MSC_VER`, `__clang__` or `__GNUC__`; MSVC ARM64 is build-only locally (`windows-msvc-arm64-wine`) and runs its tests in CI |
-| `x86_vpclmul` or `x86_avxvnni` kernels | a CPU with them, or Intel SDE (`sde64 -adl -- checksum_ut`, below); QEMU has neither |
+| `x86_vpclmul`, `x86_avxvnni` or `x86_avx512` kernels | a CPU with them, or Intel SDE (`sde64 -adl`, `-icx` or `-spr -- checksum_ut`, below); QEMU has none of them |
 | RVV kernels | also QEMU `-cpu max,vlen=256` and `vlen=512` (no preset covers them; CI runs both) |
 
 Benchmarks and the QEMU matrix are slow: run them only when the change needs them, filtered to what changed.
@@ -113,12 +113,14 @@ in an rv64gc build). The bare-metal benchmarks assert their presets by themselve
 QEMU reports Zbc in `riscv_hwprobe` from 9.0 on, so the RISC-V jobs take QEMU 10.2 (Ubuntu 26.04's statically linked
 `qemu-user`, pinned by sha256 in `ci.yml`) instead of Ubuntu 24.04's 8.2, where `detect_isa()` misses `riscv_zbc`.
 
-The `native-gcc` and `native-clang` jobs run the unit tests again in Intel SDE 10.13 emulating Alder Lake (`-adl`),
-with VPCLMULQDQ and AVX-VNNI, requiring `x86_avxvnni`; the kit is pinned by URL and sha256 in `ci.yml` (Intel Simplified
-Software License, which allows use and redistribution). The full suite takes under a minute in SDE. Locally:
+The `native-gcc` and `native-clang` jobs run the unit tests again in Intel SDE 10.13: Alder Lake (`-adl`) requires
+`x86_avxvnni`, Ice Lake (`-icx`, AVX-512 without AVX-VNNI) `x86_avx512`, and Sapphire Rapids (`-spr`) both. The kit is
+pinned by URL and sha256 in `ci.yml` (Intel Simplified Software License, which allows use and redistribution). The full
+suite takes under a minute in SDE. Locally:
 
 ```sh
 CHECKSUM_EXPECTED_ISA=x86_avxvnni CHECKSUM_REQUIRED_ISA=x86_avxvnni sde64 -adl -- build/native-gcc/tests/unit_tests/Debug/checksum_ut
+CHECKSUM_EXPECTED_ISA=x86_avx512 CHECKSUM_REQUIRED_ISA=x86_avx512 sde64 -icx -- build/native-gcc/tests/unit_tests/Debug/checksum_ut
 ```
 
 The `cross-riscv64` and `cross-riscv64-clang` (Clang 19) jobs run the RVV, detection and dispatch tests again at `-cpu max,vlen=256` and `vlen=512`.
@@ -142,7 +144,8 @@ NEON (bare metal runs the `thumb2` and `thumb2_dsp` builds on Cortex-M3/M4/M7/M3
 `bare-cortex-m0`, `bare-cortex-r5` and `bare-cortex-r52` have no QEMU machine and are only built, with their
 `static_assert` checks), MSVC on ARM64 other than GitHub's `windows-11-arm` (Neoverse N2, so `aarch64_pmull` only), the
 x86-64 presets of MSVC and clang-cl on VPCLMULQDQ or AVX-VNNI (SDE runs only the Linux builds), RVV at vector lengths
-other than 128, 256 and 512 bits, and detection on FreeBSD and Apple platforms. Check those on hardware.
+other than 128, 256 and 512 bits, and detection on FreeBSD. Check those on hardware. The `macos-clang` job runs the
+unit tests on GitHub's Apple silicon runner, requiring `aarch64_pmull` from `sysctlbyname`.
 
 ## Coverage expectations
 

@@ -75,11 +75,12 @@ Short inputs run a word loop. Longer ones run four interleaved lanes, which a ke
 
 | Preset | Lanes |
 | --- | --- |
-| `x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | One 256-bit vector per sum, from 128 B |
+| `x86_avx2`, `x86_vpclmul`, `x86_avxvnni`, `x86_avx512` | One 256-bit vector per sum, from 128 B |
 | `generic`, `x86_pclmul` on x86-64 | Two 128-bit vectors per sum, from 192 B |
 | every preset on little-endian AArch64, `generic` included | NEON, from 192 B |
 | `thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 192 B |
-| other 64-bit targets: RISC-V, big-endian AArch64 | Portable lanes, from 256 B |
+| `riscv_v` on RV64 | One register group per sum, from 192 B, tested in QEMU only |
+| other 64-bit targets: RISC-V without `riscv_v`, big-endian AArch64 | Portable lanes, from 256 B |
 | other 32-bit targets, Cortex-M included | Word loop only |
 
 ### Performance

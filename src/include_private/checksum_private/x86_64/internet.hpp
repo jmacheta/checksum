@@ -1,7 +1,8 @@
 #ifndef CHECKSUM_PRIVATE_X86_64_INTERNET_HPP
 #define CHECKSUM_PRIVATE_X86_64_INTERNET_HPP
 
-// AVX2 kernel of the Internet checksum, for the presets from x86_avx2 on, and the add-with-carry chain of the portable loop.
+// AVX2 kernel of the Internet checksum, for the presets from x86_avx2 on, with 512-bit blocks first on x86_avx512, and the
+// add-with-carry chain of the portable loop.
 // Included only by internet_arch.hpp.
 
 #include <checksum/isa.hpp>
@@ -48,6 +49,31 @@ block_total block_kernel<Isa>::sum(std::span<std::byte const> data) noexcept {
   std::size_t const message_size = data.size();
   __m256i const low_halves = _mm256_set1_epi64x(0xFFFFFFFF);
   std::uint64_t total = 0;
+  if constexpr(isa_detail::includes(Isa, isa::x86_avx512)) {
+    // The same lanes in 512-bit vectors, 128 bytes per block; the AVX2 loop below takes the last 64 bytes.
+    constexpr std::size_t wide_block_size = 2 * vector_block_size;
+    __m512i const wide_low_halves = _mm512_set1_epi64(0xFFFFFFFF);
+    while(data.size() >= wide_block_size) {
+      std::size_t const blocks = std::min(data.size() / wide_block_size, vector_pass_blocks);
+      __m512i sum0 = _mm512_setzero_si512();
+      __m512i sum1 = sum0;
+      __m512i sum2 = sum0;
+      __m512i sum3 = sum0;
+      std::byte const *position = data.data();
+      for(std::size_t block = 0; block < blocks; ++block, position += wide_block_size) {
+        __m512i const first = _mm512_loadu_si512(position);
+        __m512i const second = _mm512_loadu_si512(position + 64);
+        sum0 = _mm512_add_epi64(sum0, _mm512_and_si512(first, wide_low_halves));
+        sum1 = _mm512_add_epi64(sum1, _mm512_srli_epi64(first, 32));
+        sum2 = _mm512_add_epi64(sum2, _mm512_and_si512(second, wide_low_halves));
+        sum3 = _mm512_add_epi64(sum3, _mm512_srli_epi64(second, 32));
+      }
+      data = data.subspan(blocks * wide_block_size);
+      // 32 lanes below 2^58 each: their sum stays below 2^63.
+      __m512i const sum = _mm512_add_epi64(_mm512_add_epi64(sum0, sum1), _mm512_add_epi64(sum2, sum3));
+      total += fold(static_cast<std::uint64_t>(_mm512_reduce_add_epi64(sum)));
+    }
+  }
   while(data.size() >= vector_block_size) {
     std::size_t const blocks = std::min(data.size() / vector_block_size, vector_pass_blocks);
     __m256i sum0 = _mm256_setzero_si256();

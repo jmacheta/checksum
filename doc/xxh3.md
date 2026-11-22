@@ -79,6 +79,7 @@ checksum::isa chosen = xxh3.preset();
 | Preset | Kernel for inputs over 240 bytes |
 | --- | --- |
 | `x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | Two 256-bit vectors |
+| `x86_avx512` | One 512-bit vector (not benchmarked: tested in Intel SDE only) |
 | `generic`, `x86_pclmul` on x86-64 | Four 128-bit SSE2 vectors |
 | every preset on little-endian AArch64, `generic` included | Four lanes in NEON, four scalar |
 | `thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | Eight lanes in NEON |

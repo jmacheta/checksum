@@ -35,6 +35,10 @@ constexpr bool compiler_guarantees(isa preset) noexcept {
   case isa::x86_avxvnni:
     return true;
 #endif
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VL__) && defined(__AVX512VNNI__)
+  case isa::x86_avx512:
+    return true;
+#endif
 #endif
 #endif
 #endif

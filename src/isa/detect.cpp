@@ -39,7 +39,7 @@ namespace {
 
 // The presets this file checks on each architecture, and whether the running CPU executes one of them.
 #if defined(__x86_64__) || defined(_M_X64)
-constexpr std::array checked{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni};
+constexpr std::array checked{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni, isa::x86_avx512};
 #elif defined(__aarch64__) || defined(_M_ARM64)
 constexpr std::array checked{isa::aarch64_crc, isa::aarch64_pmull};
 #elifdef __arm__
@@ -68,7 +68,8 @@ bool apple_feature(char const *name) noexcept {
 // Whether the CPU or the operating system reports that preset runs; false where neither can be asked.
 bool runs(isa preset) noexcept {
 #ifdef _M_X64
-  // CPUID leaf 1, leaf 7 and leaf 7 subleaf 1 as EAX, EBX, ECX, EDX; AVX also needs the OS to save the YMM registers.
+  // CPUID leaf 1, leaf 7 and leaf 7 subleaf 1 as EAX, EBX, ECX, EDX; AVX also needs the OS to save the YMM registers, and
+  // AVX-512 the opmask and ZMM registers too.
   std::array<int, 4> leaf1{};
   std::array<int, 4> leaf7{};
   std::array<int, 4> leaf7_1{};
@@ -81,6 +82,8 @@ bool runs(isa preset) noexcept {
   bool const avx2 = pclmul && ymm_saved && bit(leaf7[1], 5);
   bool const vpclmul = avx2 && bit(leaf7[2], 10);
   bool const avxvnni = vpclmul && bit(leaf7_1[0], 4);
+  bool const zmm_saved = ymm_saved && (_xgetbv(0) & 0xE0U) == 0xE0U;
+  bool const avx512 = vpclmul && zmm_saved && bit(leaf7[1], 16) && bit(leaf7[1], 30) && bit(leaf7[1], 31) && bit(leaf7[2], 11);
 #elifdef __x86_64__
   bool const pclmul = __builtin_cpu_supports("sse4.2") && __builtin_cpu_supports("pclmul");
   bool const avx2 = pclmul && __builtin_cpu_supports("avx2");
@@ -91,6 +94,9 @@ bool runs(isa preset) noexcept {
   unsigned ecx = 0;
   unsigned edx = 0;
   bool const avxvnni = vpclmul && __get_cpuid_count(7, 1, &eax, &ebx, &ecx, &edx) != 0 && ((eax >> 4U) & 1U) != 0;
+  // __builtin_cpu_supports checks that the OS saves the ZMM registers; VNNI is CPUID leaf 7, ECX bit 11.
+  bool const avx512 = vpclmul && __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512vl") &&
+                      __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) != 0 && ((ecx >> 11U) & 1U) != 0;
 #endif
 #if defined(__x86_64__) || defined(_M_X64)
   switch(preset) {
@@ -102,6 +108,8 @@ bool runs(isa preset) noexcept {
     return vpclmul;
   case isa::x86_avxvnni:
     return avxvnni;
+  case isa::x86_avx512:
+    return avx512;
   default:
     return false;
   }

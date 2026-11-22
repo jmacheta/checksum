@@ -50,6 +50,8 @@ template <unsigned Bits, isa Isa> struct group_kernel {
 #include <checksum_private/x86_64/fletcher.hpp>
 #elif defined(CHECKSUM_ARM64) || defined(__arm__)
 #include <checksum_private/arm/fletcher.hpp>
+#elif defined(__riscv) && __riscv_xlen == 64 && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#include <checksum_private/riscv64/fletcher.hpp>
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)

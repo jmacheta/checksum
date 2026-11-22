@@ -75,13 +75,15 @@ checksum::isa chosen = fletcher32.preset();
 
 | Preset | Fletcher-16 | Fletcher-32 | Fletcher-64 |
 | --- | --- | --- | --- |
+| `x86_avx512` (not benchmarked: tested in Intel SDE only) | 512-bit `vpdpbusd`, from 64 B | 64-byte vectors, from 128 B | from 384 B |
 | `x86_avxvnni` | `vpdpbusd`, from 64 B | as AVX2 | as AVX2 |
 | `x86_avx2`, `x86_vpclmul` | 32-byte vectors, from 64 B | from 128 B | from 384 B |
 | `generic`, `x86_pclmul` on x86-64 | 16-byte SSE2 vectors, from 64 B | from 128 B | portable |
 | every preset on little-endian AArch64, `generic` included | NEON, from 64 B | from 128 B | from 256 B |
 | `thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 64 B | from 128 B | from 256 B |
 | `thumb2_dsp` on little-endian 32-bit Arm (Cortex-M4/M7/M33) | `usada8` + `smlad`, from 64 B | portable | portable |
-| all others, RISC-V and big-endian included | portable | portable | portable |
+| `riscv_v` on RV64, tested in QEMU only | Vectors of any length, from 64 B | from 128 B | from 256 B |
+| all others, big-endian included | portable | portable | portable |
 
 The byte kernels are shared with Adler-32.
 

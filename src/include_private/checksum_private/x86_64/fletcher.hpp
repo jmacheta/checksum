@@ -2,7 +2,8 @@
 #define CHECKSUM_PRIVATE_X86_64_FLETCHER_HPP
 
 // x86-64 kernels of the Fletcher checksums and Adler-32: SSE2 vectors for isa::generic, SSSE3 weighting from x86_pclmul,
-// AVX2 vectors from x86_avx2, and vpdpbusd from x86_avxvnni. Included only by fletcher_arch.hpp.
+// AVX2 vectors from x86_avx2, vpdpbusd from x86_avxvnni, and AVX-512 vectors with vpdpbusd on x86_avx512. Included only by
+// fletcher_arch.hpp.
 
 #include <checksum/isa.hpp>
 #include <checksum_private/target.hpp>
@@ -17,7 +18,11 @@
 
 namespace checksum::fletcher_detail {
 
-template <isa Isa> using x86_vector = std::conditional_t<isa_detail::includes(Isa, isa::x86_avx2), __m256i, __m128i>;
+template <isa Isa>
+using x86_vector = std::conditional_t<isa_detail::includes(Isa, isa::x86_avx512), __m512i,
+                                      std::conditional_t<isa_detail::includes(Isa, isa::x86_avx2), __m256i, __m128i>>;
+
+template <isa Isa> inline constexpr bool x86_wide = isa_detail::includes(Isa, isa::x86_avx512);
 template <isa Isa> inline constexpr std::size_t x86_vector_size = sizeof(x86_vector<Isa>);
 
 // Bytes 0, 1, ... of a vector weighted by its size, size - 1, ..., 1; each 32-bit lane sums its own bytes.
@@ -92,7 +97,13 @@ struct block_kernel<32, Isa> {
 namespace checksum::fletcher_detail {
 
 template <isa Isa> x86_vector<Isa> weighted_bytes(x86_vector<Isa> value) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    // pmaddubsw adds pairs of byte products, at most 255 * (64 + 63), without saturating 16 bits.
+    x86_vector<Isa> const weights =
+        _mm512_set_epi8(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                        35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64);
+    return _mm512_madd_epi16(_mm512_maddubs_epi16(value, weights), _mm512_set1_epi16(1));
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     // pmaddubsw adds pairs of byte products, at most 255 * (32 + 31), without saturating 16 bits.
     x86_vector<Isa> const weights =
         _mm256_setr_epi8(32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1);
@@ -110,7 +121,9 @@ template <isa Isa> x86_vector<Isa> weighted_bytes(x86_vector<Isa> value) noexcep
 }
 
 template <isa Isa> x86_vector<Isa> widen16_low(x86_vector<Isa> value) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    return _mm512_unpacklo_epi16(value, _mm512_setzero_si512());
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return _mm256_unpacklo_epi16(value, _mm256_setzero_si256());
   } else {
     return _mm_unpacklo_epi16(value, _mm_setzero_si128());
@@ -118,7 +131,9 @@ template <isa Isa> x86_vector<Isa> widen16_low(x86_vector<Isa> value) noexcept {
 }
 
 template <isa Isa> x86_vector<Isa> widen16_high(x86_vector<Isa> value) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    return _mm512_unpackhi_epi16(value, _mm512_setzero_si512());
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return _mm256_unpackhi_epi16(value, _mm256_setzero_si256());
   } else {
     return _mm_unpackhi_epi16(value, _mm_setzero_si128());
@@ -126,7 +141,9 @@ template <isa Isa> x86_vector<Isa> widen16_high(x86_vector<Isa> value) noexcept 
 }
 
 template <isa Isa> x86_vector<Isa> widen32_low(x86_vector<Isa> value) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    return _mm512_unpacklo_epi32(value, _mm512_setzero_si512());
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return _mm256_unpacklo_epi32(value, _mm256_setzero_si256());
   } else {
     return _mm_unpacklo_epi32(value, _mm_setzero_si128());
@@ -134,7 +151,9 @@ template <isa Isa> x86_vector<Isa> widen32_low(x86_vector<Isa> value) noexcept {
 }
 
 template <isa Isa> x86_vector<Isa> widen32_high(x86_vector<Isa> value) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    return _mm512_unpackhi_epi32(value, _mm512_setzero_si512());
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return _mm256_unpackhi_epi32(value, _mm256_setzero_si256());
   } else {
     return _mm_unpackhi_epi32(value, _mm_setzero_si128());
@@ -142,7 +161,9 @@ template <isa Isa> x86_vector<Isa> widen32_high(x86_vector<Isa> value) noexcept 
 }
 
 template <isa Isa> x86_vector<Isa> add_lanes32(x86_vector<Isa> first, x86_vector<Isa> second) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    return _mm512_add_epi32(first, second);
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return _mm256_add_epi32(first, second);
   } else {
     return _mm_add_epi32(first, second);
@@ -150,7 +171,9 @@ template <isa Isa> x86_vector<Isa> add_lanes32(x86_vector<Isa> first, x86_vector
 }
 
 template <isa Isa> x86_vector<Isa> add_lanes64(x86_vector<Isa> first, x86_vector<Isa> second) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    return _mm512_add_epi64(first, second);
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return _mm256_add_epi64(first, second);
   } else {
     return _mm_add_epi64(first, second);
@@ -159,7 +182,9 @@ template <isa Isa> x86_vector<Isa> add_lanes64(x86_vector<Isa> first, x86_vector
 
 // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast): unaligned vector loads, the intrinsics' interface.
 template <isa Isa> x86_vector<Isa> load_vector(std::byte const *data) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    return _mm512_loadu_si512(data);
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return _mm256_loadu_si256(reinterpret_cast<x86_vector<Isa> const *>(data));
   } else {
     return _mm_loadu_si128(reinterpret_cast<x86_vector<Isa> const *>(data));
@@ -168,7 +193,9 @@ template <isa Isa> x86_vector<Isa> load_vector(std::byte const *data) noexcept {
 
 template <isa Isa, class Lane> std::array<Lane, x86_vector_size<Isa> / sizeof(Lane)> vector_lanes(x86_vector<Isa> value) noexcept {
   std::array<Lane, x86_vector_size<Isa> / sizeof(Lane)> lanes{};
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    _mm512_storeu_si512(lanes.data(), value);
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     _mm256_storeu_si256(reinterpret_cast<x86_vector<Isa> *>(lanes.data()), value);
   } else {
     _mm_storeu_si128(reinterpret_cast<x86_vector<Isa> *>(lanes.data()), value);
@@ -178,7 +205,9 @@ template <isa Isa, class Lane> std::array<Lane, x86_vector_size<Isa> / sizeof(La
 // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 
 template <isa Isa> x86_vector<Isa> byte_sums(x86_vector<Isa> value) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(x86_wide<Isa>) {
+    return _mm512_sad_epu8(value, _mm512_setzero_si512());
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return _mm256_sad_epu8(value, _mm256_setzero_si256());
   } else {
     return _mm_sad_epu8(value, _mm_setzero_si128());
@@ -211,7 +240,61 @@ template <isa Isa, class Lane> std::uint64_t column_total(x86_vector<Isa> low, x
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
 chunk_sums block_kernel<8, Isa>::sum(std::byte const *data, std::size_t blocks) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avxvnni)) {
+  if constexpr(x86_wide<Isa>) {
+    // As for AVX-VNNI below, with the signed weights 127 .. 0 spread over two 64-byte blocks: previous gains the sums every
+    // two blocks, and four accumulators take four blocks per iteration. A last single block weighs 63 .. 0.
+    x86_vector<Isa> const zero = _mm512_setzero_si512();
+    x86_vector<Isa> const first_weights =
+        _mm512_set_epi8(64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94,
+                        95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120,
+                        121, 122, 123, 124, 125, 126, 127);
+    x86_vector<Isa> const second_weights =
+        _mm512_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+                        34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63);
+    x86_vector<Isa> sum = zero;
+    x86_vector<Isa> group_previous = zero;
+    x86_vector<Isa> weighted = zero;
+    x86_vector<Isa> second_weighted = zero;
+    x86_vector<Isa> third_weighted = zero;
+    x86_vector<Isa> fourth_weighted = zero;
+    for(; blocks >= 4; blocks -= 4, data += 4 * block_size) {
+      x86_vector<Isa> const first = load_vector<Isa>(data);
+      x86_vector<Isa> const second = load_vector<Isa>(data + block_size);
+      x86_vector<Isa> const third = load_vector<Isa>(data + (2 * block_size));
+      x86_vector<Isa> const fourth = load_vector<Isa>(data + (3 * block_size));
+      group_previous = _mm512_add_epi64(group_previous, sum);
+      sum = _mm512_add_epi64(sum, _mm512_add_epi64(byte_sums<Isa>(first), byte_sums<Isa>(second)));
+      group_previous = _mm512_add_epi64(group_previous, sum);
+      sum = _mm512_add_epi64(sum, _mm512_add_epi64(byte_sums<Isa>(third), byte_sums<Isa>(fourth)));
+      weighted = _mm512_dpbusd_epi32(weighted, first, first_weights);
+      second_weighted = _mm512_dpbusd_epi32(second_weighted, second, second_weights);
+      third_weighted = _mm512_dpbusd_epi32(third_weighted, third, first_weights);
+      fourth_weighted = _mm512_dpbusd_epi32(fourth_weighted, fourth, second_weights);
+    }
+    if(blocks >= 2) {
+      x86_vector<Isa> const first = load_vector<Isa>(data);
+      x86_vector<Isa> const second = load_vector<Isa>(data + block_size);
+      group_previous = _mm512_add_epi64(group_previous, sum);
+      sum = _mm512_add_epi64(sum, _mm512_add_epi64(byte_sums<Isa>(first), byte_sums<Isa>(second)));
+      weighted = _mm512_dpbusd_epi32(weighted, first, first_weights);
+      second_weighted = _mm512_dpbusd_epi32(second_weighted, second, second_weights);
+      blocks -= 2;
+      data += 2 * block_size;
+    }
+    weighted = add_lanes32<Isa>(add_lanes32<Isa>(weighted, second_weighted), add_lanes32<Isa>(third_weighted, fourth_weighted));
+    x86_vector<Isa> previous = zero;
+    if(blocks != 0) {
+      x86_vector<Isa> const value = load_vector<Isa>(data);
+      previous = sum;
+      sum = _mm512_add_epi64(sum, byte_sums<Isa>(value));
+      weighted = _mm512_dpbusd_epi32(weighted, value, second_weights);
+    }
+    // In 64-bit lanes: 128 * group_previous + 64 * previous + both halves of weighted + sum.
+    x86_vector<Isa> const total = _mm512_add_epi64(
+        _mm512_add_epi64(_mm512_slli_epi64(group_previous, 7), _mm512_slli_epi64(previous, 6)),
+        _mm512_add_epi64(_mm512_add_epi64(_mm512_srli_epi64(weighted, 32), _mm512_and_si512(weighted, _mm512_set1_epi64(0xFFFFFFFF))), sum));
+    return {.sum = static_cast<std::uint64_t>(_mm512_reduce_add_epi64(sum)), .weighted = static_cast<std::uint64_t>(_mm512_reduce_add_epi64(total))};
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avxvnni)) {
     // vpdpbusd weights four blocks by 127, 126, ..., 0 with one instruction per block, and adding the byte sums once at the end
     // makes the weights 128 .. 1; so previous gains the sums only every four blocks. Four accumulators hide the latency of
     // vpdpbusd. The last blocks weigh 31 .. 0 and count their previous per block.

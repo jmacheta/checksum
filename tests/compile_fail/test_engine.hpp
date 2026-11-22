@@ -20,6 +20,9 @@ template <checksum::isa Isa> using test_engine = checksum::fletcher_engine<32, I
 #elifdef CHECKSUM_TEST_FLETCHER4
 #include <checksum/fletcher4.hpp>
 template <checksum::isa Isa> using test_engine = checksum::fletcher4_engine<Isa>;
+#elifdef CHECKSUM_TEST_FNV1A
+#include <checksum/fnv1a.hpp>
+template <checksum::isa Isa> using test_engine = checksum::fnv1a_engine<32, Isa>;
 #elifdef CHECKSUM_TEST_INTERNET
 #include <checksum/internet.hpp>
 template <checksum::isa Isa> using test_engine = checksum::internet_engine<Isa>;

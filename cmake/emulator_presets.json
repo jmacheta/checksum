@@ -79,6 +79,17 @@
             }
         },
         {
+            "name": "cross-riscv32-base",
+            "hidden": true,
+            "inherits": "cross-common",
+            "cacheVariables": {
+                "CMAKE_SYSTEM_PROCESSOR": "riscv32",
+                "CMAKE_C_COMPILER": "riscv32-linux-gnu-gcc",
+                "CMAKE_CXX_COMPILER": "riscv32-linux-gnu-g++",
+                "CMAKE_CROSSCOMPILING_EMULATOR": "qemu-riscv32;-cpu;max"
+            }
+        },
+        {
             "name": "cross-riscv64-clang-base",
             "hidden": true,
             "inherits": "cross-common",
@@ -175,6 +186,16 @@
             }
         },
         {
+            "name": "cross-riscv32",
+            "displayName": "RISC-V 32 Linux in QEMU",
+            "description": "Cross build for RISC-V 32 Linux (rv32gc, ilp32d; Bootlin's riscv32 glibc toolchain as riscv32-linux-gnu-gcc): generic only, since every preset is RV64; tests run in QEMU user mode with -cpu max",
+            "inherits": "cross-riscv32-base",
+            "environment": {
+                "CHECKSUM_EXTRA_CFLAGS": "-march=rv32gc",
+                "CHECKSUM_EXTRA_CXXFLAGS": "-march=rv32gc"
+            }
+        },
+        {
             "name": "cross-riscv64-clang",
             "displayName": "RISC-V 64 Linux in QEMU (Clang)",
             "description": "cross-riscv64 with Clang (rv64gc): generic and the riscv_zbc and riscv_v presets compiled in; tests run in QEMU user mode with -cpu max",
@@ -226,6 +247,12 @@
             "name": "cross-riscv64-debug",
             "displayName": "all [Debug]",
             "configurePreset": "cross-riscv64",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-riscv32-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "cross-riscv32",
             "configuration": "Debug"
         },
         {
@@ -301,6 +328,13 @@
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "cross-riscv64",
+            "configuration": "Debug"
+        },
+        {
+            "name": "cross-riscv32-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "cross-riscv32",
             "configuration": "Debug"
         },
         {
@@ -442,6 +476,25 @@
                 {
                     "type": "test",
                     "name": "cross-riscv64-debug"
+                }
+            ]
+        },
+        {
+            "name": "cross-riscv32",
+            "displayName": "RISC-V 32 Linux in QEMU",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cross-riscv32"
+                },
+                {
+                    "type": "build",
+                    "name": "cross-riscv32-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "cross-riscv32-debug"
                 }
             ]
         },

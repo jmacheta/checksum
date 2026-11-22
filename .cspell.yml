@@ -47,6 +47,7 @@ words:
 - ASMFLAGS
 - autosar
 - avxvnni
+- BADC
 - balign
 - bkpt
 - bootlin
@@ -61,6 +62,7 @@ words:
 - castsi
 - ccitt
 - cdma
+- chongo
 - cinc
 - cksum
 - clmul
@@ -139,6 +141,7 @@ words:
 - immediates
 - immintrin
 - inlines
+- inserti
 - intrin
 - iscsi
 - jamcrc
@@ -254,6 +257,7 @@ words:
 - Tdata
 - teledisk
 - templatize
+- ternarylogic
 - TESTW
 - tparam
 - TRCENA
@@ -309,6 +313,7 @@ words:
 - vsdownload
 - vsetvl
 - vsetvlmax
+- vrsub
 - vshlq
 - vshrq
 - vsrl
@@ -317,6 +322,9 @@ words:
 - vuint
 - vuzpq
 - vwaddu
+- vwmulu
+- vwredsumu
+- vzext
 - wassert
 - wcdma
 - werror

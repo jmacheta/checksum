@@ -19,8 +19,9 @@
 namespace checksum {
 
 /// Instruction-set preset: a set of CPU extensions that the library compiles a variant of every algorithm for. Each
-/// preset includes the earlier ones of its line (x86, AArch64, 32-bit Arm), the two RISC-V presets are independent, and
-/// values are only ever appended, never reordered.
+/// preset includes the presets it extends: the earlier rungs of its ladder (x86, AArch64, 32-bit Arm), where x86_avxvnni
+/// and x86_avx512 both extend x86_vpclmul. The two RISC-V presets are independent, and values are only ever appended,
+/// never reordered.
 enum class isa : std::uint8_t {
   generic,       ///< The default: only what every CPU of the architecture has (SSE2 on x86-64; NEON on little-endian AArch64).
   x86_pclmul,    ///< x86-64 with SSE4.2 and PCLMULQDQ (SSSE3 included).
@@ -35,6 +36,7 @@ enum class isa : std::uint8_t {
   thumb2_crc,    ///< thumb2_neon on ARMv8-A with the CRC32 instructions.
   riscv_zbc,     ///< RV64 with Zbc carry-less multiplication.
   riscv_v,       ///< RV64 with the V extension.
+  x86_avx512,    ///< x86_vpclmul plus AVX-512 F, BW, VL and VNNI (Ice Lake, Zen 4 and later), without x86_avxvnni.
 };
 
 /// Whether this build has the variants of preset: generic always; x86-64 and AArch64 presets with GCC, Clang, MSVC or clang-cl; RISC-V
@@ -51,7 +53,7 @@ public:
   /// generic alone.
   constexpr isa_set() noexcept = default;
 
-  /// preset and the earlier presets of its line, so that an explicit choice falls back one rung at a time.
+  /// preset and the presets it extends, so that an explicit choice falls back one rung at a time.
   constexpr isa_set(isa preset) noexcept; // NOLINT(hicpp-explicit-conversions): a preset is the set of what it includes.
 
   /// Whether the set contains preset.
@@ -78,17 +80,20 @@ private:
 /// Implementation details; not part of the public API.
 namespace checksum::isa_detail {
 
-// The first preset of the line of preset; a preset without a line is its own.
+// The preset that preset extends; generic for the first rung of a ladder and for independent presets.
+constexpr isa parent(isa preset) noexcept;
+
+// The first rung of the ladder of preset; an independent preset is its own.
 constexpr isa line(isa preset) noexcept;
 
-// Whether preset have runs everything preset want does: want is generic or an earlier preset of the same line.
+// Whether preset have runs everything preset want does: want is generic, have itself, or a preset that have extends.
 constexpr bool includes(isa have, isa want) noexcept;
 
 // The presets besides generic that this architecture and compiler build, ascending; the preset sources
 // (checksum_private/presets.hpp) check the same macros.
 #if ((defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)) ||                                                                            \
     (defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64) && !defined(_M_ARM64EC))
-inline constexpr std::array built_presets{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni};
+inline constexpr std::array built_presets{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni, isa::x86_avx512};
 #elif ((defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64))
 inline constexpr std::array built_presets{isa::aarch64_crc, isa::aarch64_pmull};
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__arm__) && __ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' && !defined(__SOFTFP__) &&       \
@@ -134,24 +139,45 @@ template <isa_set const &OwnLoops, std::size_t Index, class Function> constexpr 
 
 namespace checksum::isa_detail {
 
-constexpr isa line(isa preset) noexcept {
+constexpr isa parent(isa preset) noexcept {
   switch(preset) {
   case isa::x86_avx2:
-  case isa::x86_vpclmul:
-  case isa::x86_avxvnni:
     return isa::x86_pclmul;
+  case isa::x86_vpclmul:
+    return isa::x86_avx2;
+  case isa::x86_avxvnni:
+  case isa::x86_avx512:
+    return isa::x86_vpclmul;
   case isa::aarch64_pmull:
     return isa::aarch64_crc;
   case isa::thumb2_dsp:
-  case isa::thumb2_neon:
-  case isa::thumb2_crc:
     return isa::thumb2;
+  case isa::thumb2_neon:
+    return isa::thumb2_dsp;
+  case isa::thumb2_crc:
+    return isa::thumb2_neon;
   default:
-    return preset;
+    return isa::generic;
   }
 }
 
-constexpr bool includes(isa have, isa want) noexcept { return want == isa::generic || (line(have) == line(want) && want <= have); }
+constexpr isa line(isa preset) noexcept {
+  while(parent(preset) != isa::generic) {
+    preset = parent(preset);
+  }
+  return preset;
+}
+
+constexpr bool includes(isa have, isa want) noexcept {
+  for(;; have = parent(have)) {
+    if(have == want || want == isa::generic) {
+      return true;
+    }
+    if(have == isa::generic) {
+      return false;
+    }
+  }
+}
 
 } // namespace checksum::isa_detail
 

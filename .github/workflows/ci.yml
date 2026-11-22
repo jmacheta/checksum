@@ -63,6 +63,8 @@ jobs:
           # Clang 18 builds riscv_v only with the build's own V (presets.hpp), so the rv64gc build has riscv_zbc alone; Clang 19 adds V itself.
           - { preset: cross-riscv64-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 lld-18 g++-14-riscv64-linux-gnu", emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic", required: riscv_zbc }
           - { preset: cross-riscv64-clang, cc: clang-19, cxx: clang++-19, packages: "clang-19 lld-19 g++-14-riscv64-linux-gnu", emulator: qemu-riscv64, cpu_checks: "max,zbc=false,v=false:generic max,zbc=false:riscv_v", required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
+          # RV32 Linux: Ubuntu has no cross compiler for it, so Bootlin's glibc toolchain; every preset is RV64, so generic only.
+          - { preset: cross-riscv32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: riscv32-buildroot-linux-gnu, vendor: bootlin, cross: riscv32-linux-gnu }
           # Big-endian AArch64: Ubuntu has no cross compiler for it; the Arm GNU Toolchain comes from setup-gcc-toolchain (cached).
           - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1, required: aarch64_pmull }
           # Newest compilers, so that a new release that breaks the build shows up here: GCC (xPack) and Clang (apt.llvm.org)
@@ -86,7 +88,7 @@ jobs:
         id: toolchain
         if: matrix.toolchain
         timeout-minutes: 10
-        uses: jmacheta/setup-gcc-toolchain@902d3659aab2b37c2a76daeb17eea51c859a081a # v2.2.0
+        uses: jmacheta/setup-gcc-toolchain@79ab97389ae603bd509cf6888f3a3fc44a25187f # v2.3.0
         with:
           toolchain: ${{ matrix.toolchain }}
           vendor: ${{ matrix.vendor }}
@@ -176,7 +178,7 @@ jobs:
           path: ${{ runner.temp }}/sde.tar.xz
           key: sde-${{ env.SDE_SHA256 }}
 
-      # x86_vpclmul and x86_avxvnni: the unit tests on a CPU model with VPCLMULQDQ and AVX-VNNI, which /proc/cpuinfo does not show.
+      # x86_vpclmul, x86_avxvnni and x86_avx512: the unit tests on CPU models with them, which /proc/cpuinfo does not show.
       - name: Tests in Intel SDE
         if: matrix.sde
         timeout-minutes: 15
@@ -188,6 +190,37 @@ jobs:
           echo "$SDE_SHA256  $RUNNER_TEMP/sde.tar.xz" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/sde" && tar -xJf "$RUNNER_TEMP/sde.tar.xz" -C "$RUNNER_TEMP/sde" --strip-components=1
           "$RUNNER_TEMP/sde/sde64" ${{ matrix.sde }} -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
+          # x86_avx512 on Ice Lake, which has AVX-512 but not AVX-VNNI, and on Sapphire Rapids, which has both.
+          CHECKSUM_EXPECTED_ISA=x86_avx512 CHECKSUM_REQUIRED_ISA=x86_avx512 \
+            "$RUNNER_TEMP/sde/sde64" -icx -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
+          CHECKSUM_EXPECTED_ISA=x86_avxvnni,x86_avx512 CHECKSUM_REQUIRED_ISA=x86_avxvnni,x86_avx512 \
+            "$RUNNER_TEMP/sde/sde64" -spr -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
+
+  # Apple silicon (M1 or later, with CRC32 and PMULL): detect_isa() through sysctlbyname, with the Xcode Clang and libc++.
+  build-and-test-macos:
+    name: build-and-test (macos-clang, Apple Clang)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install ninja
+        timeout-minutes: 10
+        run: |
+          command -v ninja || brew install ninja
+          clang++ --version
+
+      - name: Cache CPM packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
+        with:
+          path: .cpm-cache
+          key: cpm-macos-${{ hashFiles('cmake/requirements.cmake') }}
+
+      - name: Configure, build and test
+        env:
+          CHECKSUM_REQUIRED_ISA: aarch64_pmull
+        run: cmake --workflow --preset macos-clang
 
   # The library and the benchmarks with their checks for Cortex-M, -R and -A with the Arm GNU Toolchain; the smoke tests run
   # in QEMU system mode where the preset names a machine (cmake/bare_metal_presets.json).
@@ -207,7 +240,7 @@ jobs:
 
       - name: Install the Arm GNU Toolchain
         timeout-minutes: 10
-        uses: jmacheta/setup-gcc-toolchain@902d3659aab2b37c2a76daeb17eea51c859a081a # v2.2.0
+        uses: jmacheta/setup-gcc-toolchain@79ab97389ae603bd509cf6888f3a3fc44a25187f # v2.3.0
         with:
           toolchain: arm-none-eabi
           vendor: arm

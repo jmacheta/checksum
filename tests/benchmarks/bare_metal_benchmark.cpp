@@ -95,7 +95,7 @@ consteval isa_set guaranteed_presets() {
 
 // Whether isa_available() accepts exactly generic and the presets of the line up to CHECKSUM_EXPECTED_BUILT.
 consteval bool built_as_expected() {
-  for(unsigned value = 0; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
+  for(unsigned value = 0; value <= static_cast<unsigned>(isa::x86_avx512); ++value) { // the last enumerator
     if(checksum::isa_available(static_cast<isa>(value)) != expected_built.contains(static_cast<isa>(value))) {
       return false;
     }
