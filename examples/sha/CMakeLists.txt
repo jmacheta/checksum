@@ -1,0 +1,2 @@
+add_executable(checksum_example_sha_firmware_image firmware_image.cpp)
+target_link_libraries(checksum_example_sha_firmware_image PRIVATE checksum::checksum)

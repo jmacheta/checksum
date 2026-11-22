@@ -30,6 +30,7 @@ ignoreRegExpList:
  - /-D[A-Z]+/g # ignore compiler define flags
 
 words:
+- abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq
 - ACLE
 - adccp
 - adcs
@@ -114,6 +115,7 @@ words:
 - fdata
 - fetchcontent
 - ffunction
+- FIPS
 - flexray
 - FPEXC
 - fsanitize
@@ -131,6 +133,7 @@ words:
 - hdlc
 - hicpp
 - hitag
+- HMAC
 - hwcap
 - hwprobe
 - icelake

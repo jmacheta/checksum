@@ -20,6 +20,7 @@ MB/s at 4 KiB with GCC: the fastest preset, and `isa::generic` in parentheses. E
 | [XXH3-64](#xxh3) | 72 946 (28 498) | 4 728 | 26.4 |
 | [MurmurHash3 x86_32](#murmurhash3) | 5 288 | 1 187 | 32.4 |
 | [FNV-1a 32](#fnv-1a) | 1 384 | 373 | 17.7 |
+| [SHA-256](#sha-1-and-sha-2) | 475 | 79 | 1.32 |
 
 `x86_avx512` is not benchmarked: none of these machines has AVX-512, and its kernels are tested in Intel SDE only.
 Where a single figure stands, no preset of that CPU beats `generic`. On AArch64 `generic` already has the NEON kernels,
@@ -434,3 +435,37 @@ row faster. On the Cortex-M4, FNV-1a 32 takes 4.51 cycles per byte at 4 KiB and 
 
 Cortex-M4, GCC 14.3: the inline loop takes 132 B of code for FNV-1a 32 and 188 B for FNV-1a 64 at `-O2`, 100 B and
 156 B at `-Os`.
+
+## SHA-1 and SHA-2
+
+User guide: [sha.md](sha.md). Every preset runs the same portable code. SHA-224 runs at the speed of SHA-256, and
+SHA-384, SHA-512/224 and SHA-512/256 at the speed of SHA-512.
+
+| Hash, platform | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| SHA-1, x86-64 GCC | 266 | 501 | 888 | 1 166 | 1 196 | 1 157 |
+| SHA-256, x86-64 GCC | 126 | 221 | 373 | 469 | 475 | 485 |
+| SHA-512, x86-64 GCC | 91 | 294 | 454 | 706 | 712 | 739 |
+| SHA-1, AArch64 | 36 | 64 | 108 | 138 | 140 | 140 |
+| SHA-256, AArch64 | 21 | 37 | 62 | 78 | 79 | 81 |
+| SHA-512, AArch64 | 14 | 45 | 68 | 105 | 106 | 108 |
+| SHA-1, AArch32 | 31 | 57 | 101 | 131 | 134 | 136 |
+| SHA-256, AArch32 | 22 | 40 | 70 | 90 | 92 | 93 |
+| SHA-512, AArch32 | 6 | 21 | 31 | 48 | 48 | 50 |
+| SHA-1, Cortex-M4 | 0.43 | 0.80 | 1.46 | 1.92 | 1.96 | |
+| SHA-256, Cortex-M4 | 0.31 | 0.56 | 1.00 | 1.30 | 1.32 | |
+| SHA-512, Cortex-M4 | 0.08 | 0.24 | 0.35 | 0.53 | 0.53 | |
+
+Short messages pay for the padding block: up to 55 bytes take one block of SHA-256, and up to 111 one block of
+SHA-512. On the Cortex-M4, SHA-1 takes 40.9 cycles per byte at 4 KiB, SHA-256 60.5 and SHA-512 150.
+
+The rounds are unrolled by eight (five for SHA-1) with the variables renamed, and the message schedule is a full array.
+Against the rolled loop of one round per iteration, this is 1.9× faster for SHA-1 with GCC on x86-64, 1.1× for SHA-2,
+and on the Cortex-M4 1.84× for SHA-1 and 1.33× for SHA-256; SHA-512 there is 13 % slower, since its 64-bit variables
+do not fit the registers.
+
+### Code size
+
+Cortex-M4, GCC 14.3: the compression functions take 1 628 B (SHA-1), 796 B (SHA-256) and 2 654 B (SHA-512) at `-O2`,
+and 1 110 B, 638 B and 1 394 B at `-Os`; padding and the update path add about 400 B per variant.
+

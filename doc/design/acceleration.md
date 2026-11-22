@@ -15,7 +15,7 @@ How presets, kernels, dispatch and detection are structured, and the rules a cha
 - **No shared state between preset sources.** Every helper is a template on the preset or has internal linkage, and
   there is no static state.
 - **Generic-only loops** are built once, for `generic`, and their own-loop set is `isa_set{}`: `crc_lut_none`,
-  `crc_lut_nibble`, `crc_lut_byte`, XXH32, XXH64 and MurmurHash3. Add per-preset copies only if they beat it on
+  `crc_lut_nibble`, `crc_lut_byte`, XXH32, XXH64, MurmurHash3 and SHA. Add per-preset copies only if they beat it on
   hardware.
 
 ### Kernels
@@ -145,6 +145,7 @@ speed-up and cost code size, so each has one generic loop.
 - The XXH32/XXH64 stripe loop is not inlined, so compilers do not pack the lanes into one vector.
 - XXH64's one-shot keeps its lanes in locals only on 64-bit targets, since they spill on Cortex-M.
 - FNV-1a has no loop in `src/`: its inline loop takes four bytes per iteration, 1.55× faster on Cortex-M4.
+- SHA has no kernels yet; SHA-NI and the Arm SHA instructions are the next ones (not in any preset yet).
 
 ## XXH3
 

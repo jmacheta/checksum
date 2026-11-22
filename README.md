@@ -2,14 +2,15 @@
 
 [![CI](https://github.com/jmacheta/checksum/actions/workflows/ci.yml/badge.svg)](https://github.com/jmacheta/checksum/actions/workflows/ci.yml)
 
-A C++23 library of fast non-cryptographic checksums and hashes, for everything from a Cortex-M0 to a server. One API
-covers CRC, the Internet checksum, Adler-32, Fletcher, fletcher4, xxHash, MurmurHash3 and FNV-1a, at compile time
-and at run time.
+A C++23 library of fast checksums and hashes, for everything from a Cortex-M0 to a server. One API covers CRC, the
+Internet checksum, Adler-32, Fletcher, fletcher4, xxHash, MurmurHash3, FNV-1a, SHA-1 and SHA-2, at compile time and at
+run time.
 
 ## Features
 
-- **Eight algorithm families:** CRC of any width with all 112 catalogued CRCs built in, the Internet checksum,
-  Adler-32, Fletcher-16/32/64, ZFS fletcher4, xxHash (XXH32, XXH64, XXH3), MurmurHash3 and FNV-1a (32, 64).
+- **Nine algorithm families:** CRC of any width with all 112 catalogued CRCs built in, the Internet checksum,
+  Adler-32, Fletcher-16/32/64, ZFS fletcher4, xxHash (XXH32, XXH64, XXH3), MurmurHash3, FNV-1a (32, 64), and SHA-1
+  and SHA-2 (SHA-224, -256, -384, -512, -512/224, -512/256).
 - **Verified values:** CI checks results against reference vectors generated with zlib, OpenZFS, xxHash and
   SMHasher, and against the CRC catalogue's check values, on every unit-test target, big-endian AArch64 included.
 - **`constexpr` everywhere:** any checksum can be computed in a `static_assert`, with the same result as at run time.
@@ -96,6 +97,7 @@ Each guide's presets table lists which preset enables which kernel.
 | XXH3-64, XXH3-128 | `checksum/xxh3.hpp` | [doc/xxh3.md](doc/xxh3.md) |
 | MurmurHash3 | `checksum/murmur3.hpp` | [doc/murmur3.md](doc/murmur3.md) |
 | FNV-1a 32, 64 | `checksum/fnv1a.hpp` | [doc/fnv1a.md](doc/fnv1a.md) |
+| SHA-1, SHA-2 | `checksum/sha.hpp` | [doc/sha.md](doc/sha.md) |
 
 [doc/performance.md](doc/performance.md) has measured speed, code size and comparisons on x86-64, Cortex-A72, Cortex-M4
 and Cortex-M33.

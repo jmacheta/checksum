@@ -95,6 +95,7 @@ target_sources(
           internet/sum_loop_x86_vpclmul.cpp
           isa/detect.cpp
           murmur3/block_loop.cpp
+          sha/block_loop.cpp
           xxh3/multiply_fold.cpp
           xxh3/stripe_loop.cpp
           xxh3/stripe_loop_aarch64_crc.cpp
@@ -128,6 +129,7 @@ target_sources(
          include/checksum/internet.hpp
          include/checksum/isa.hpp
          include/checksum/murmur3.hpp
+         include/checksum/sha.hpp
          include/checksum/xxh3.hpp
          include/checksum/xxhash.hpp
 )

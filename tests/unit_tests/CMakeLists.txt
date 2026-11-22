@@ -26,6 +26,8 @@ target_sources(
           ut_isa.cpp
           ut_murmur3.cpp
           ut_murmur3_presets.cpp
+          ut_sha.cpp
+          ut_sha_presets.cpp
           ut_xxh3.cpp
           ut_xxh3_presets.cpp
           ut_xxhash.cpp
@@ -42,6 +44,7 @@ target_sources(
           include/fletcher4_reference_vectors.hpp
           include/isa_test_support.hpp
           include/murmur3_reference_vectors.hpp
+          include/sha_reference_vectors.hpp
           include/xxh3_reference_vectors.hpp
           include/xxhash_reference_vectors.hpp
 )
