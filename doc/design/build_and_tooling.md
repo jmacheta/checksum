@@ -23,7 +23,8 @@
   `-release` for the plain native builds), and the workflow preset of the same name runs configure, build and test.
   Binaries go to `build/<preset>/`.
 - `CMakePresets.json` holds the typical native builds (`native-gcc`, `native-clang`, `native-asan`,
-  `native-gcc-no-exceptions`, `native-clang-libcxx`, `windows-msvc`, and `windows-clang-cl` with clang-cl and lld-link).
+  `native-gcc-no-exceptions`, `native-clang-libcxx`, `macos-clang`, `windows-msvc`, and `windows-clang-cl` with clang-cl
+  and lld-link).
 - Everything else is in dedicated files under `cmake/`, included by `CMakePresets.json`: `emulator_presets.json`
   (cross builds tested in QEMU user mode), `bare_metal_presets.json` (`arm-none-eabi`, benchmarks with smoke tests in QEMU system mode),
   `benchmark_presets.json`, `msvc_wine_presets.json` and the shared hidden presets of `common_presets.json`. A preset
@@ -62,7 +63,7 @@ Apply as part of every edit:
 GitHub Actions (`.github/workflows/ci.yml`): the workflows of the native presets and the cross presets on Ubuntu, and
 `windows-msvc` on Windows; they build and run the correctness tests only, not the benchmarks. CI also runs clang-cl
 (`windows-clang-cl` on `windows-latest`) and MSVC ARM64 (`windows-msvc` on the `windows-11-arm` runner, the only place
-the MSVC ARM64 kernels run). Most jobs use the minimum supported compilers (GCC 14, Clang 18); some also run the
+the MSVC ARM64 kernels run), and `macos-clang` on `macos-15` (Apple silicon, Xcode Clang and libc++). Most jobs use the minimum supported compilers (GCC 14, Clang 18); some also run the
 detection and dispatch tests in QEMU user mode on CPU models without extensions (`cpu_checks`), and the `bare-metal` job
 runs the `bare-cortex-*` workflows. The jobs named "latest" use the newest GCC (xPack), Clang (apt.llvm.org) and the Arm
 and Bootlin cross toolchains of [setup-gcc-toolchain](https://github.com/jmacheta/setup-gcc-toolchain), so a new

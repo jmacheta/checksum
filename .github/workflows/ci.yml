@@ -176,7 +176,7 @@ jobs:
           path: ${{ runner.temp }}/sde.tar.xz
           key: sde-${{ env.SDE_SHA256 }}
 
-      # x86_vpclmul and x86_avxvnni: the unit tests on a CPU model with VPCLMULQDQ and AVX-VNNI, which /proc/cpuinfo does not show.
+      # x86_vpclmul, x86_avxvnni and x86_avx512: the unit tests on CPU models with them, which /proc/cpuinfo does not show.
       - name: Tests in Intel SDE
         if: matrix.sde
         timeout-minutes: 15
@@ -188,6 +188,37 @@ jobs:
           echo "$SDE_SHA256  $RUNNER_TEMP/sde.tar.xz" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/sde" && tar -xJf "$RUNNER_TEMP/sde.tar.xz" -C "$RUNNER_TEMP/sde" --strip-components=1
           "$RUNNER_TEMP/sde/sde64" ${{ matrix.sde }} -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
+          # x86_avx512 on Ice Lake, which has AVX-512 but not AVX-VNNI, and on Sapphire Rapids, which has both.
+          CHECKSUM_EXPECTED_ISA=x86_avx512 CHECKSUM_REQUIRED_ISA=x86_avx512 \
+            "$RUNNER_TEMP/sde/sde64" -icx -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
+          CHECKSUM_EXPECTED_ISA=x86_avxvnni,x86_avx512 CHECKSUM_REQUIRED_ISA=x86_avxvnni,x86_avx512 \
+            "$RUNNER_TEMP/sde/sde64" -spr -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
+
+  # Apple silicon (M1 or later, with CRC32 and PMULL): detect_isa() through sysctlbyname, with the Xcode Clang and libc++.
+  build-and-test-macos:
+    name: build-and-test (macos-clang, Apple Clang)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install ninja
+        timeout-minutes: 10
+        run: |
+          command -v ninja || brew install ninja
+          clang++ --version
+
+      - name: Cache CPM packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.1.0
+        with:
+          path: .cpm-cache
+          key: cpm-macos-${{ hashFiles('cmake/requirements.cmake') }}
+
+      - name: Configure, build and test
+        env:
+          CHECKSUM_REQUIRED_ISA: aarch64_pmull
+        run: cmake --workflow --preset macos-clang
 
   # The library and the benchmarks with their checks for Cortex-M, -R and -A with the Arm GNU Toolchain; the smoke tests run
   # in QEMU system mode where the preset names a machine (cmake/bare_metal_presets.json).

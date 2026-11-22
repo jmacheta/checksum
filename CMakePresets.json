@@ -56,6 +56,15 @@
             }
         },
         {
+            "name": "macos-clang",
+            "displayName": "macOS native (Apple Clang)",
+            "description": "Native macOS build using the Xcode Clang and libc++; Apple's linker strips unused sections with -dead_strip",
+            "inherits": "clang",
+            "environment": {
+                "LDFLAGS": "-Wl,-dead_strip"
+            }
+        },
+        {
             "name": "windows-msvc",
             "displayName": "Windows native (MSVC)",
             "description": "Native Windows x64 build using MSVC, from a developer command prompt (cl and ninja on PATH); static CRT to match GoogleTest's default",
@@ -132,6 +141,12 @@
             "configuration": "Debug"
         },
         {
+            "name": "macos-clang-debug",
+            "displayName": "all [Debug]",
+            "configurePreset": "macos-clang",
+            "configuration": "Debug"
+        },
+        {
             "name": "windows-msvc-debug",
             "displayName": "all [Debug]",
             "configurePreset": "windows-msvc",
@@ -178,6 +193,13 @@
             "inherits": "test-common",
             "displayName": "Run Tests [Debug]",
             "configurePreset": "native-clang-libcxx",
+            "configuration": "Debug"
+        },
+        {
+            "name": "macos-clang-debug",
+            "inherits": "test-common",
+            "displayName": "Run Tests [Debug]",
+            "configurePreset": "macos-clang",
             "configuration": "Debug"
         },
         {
@@ -288,6 +310,25 @@
                 {
                     "type": "test",
                     "name": "native-clang-libcxx-debug"
+                }
+            ]
+        },
+        {
+            "name": "macos-clang",
+            "displayName": "macOS native (Apple Clang)",
+            "description": "Configure, build [Debug], test",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-clang-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "macos-clang-debug"
                 }
             ]
         },
