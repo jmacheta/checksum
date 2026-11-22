@@ -16,8 +16,8 @@ run time.
 - **`constexpr` everywhere:** any checksum can be computed in a `static_assert`, with the same result as at run time.
 - **Embedded-friendly:** no heap, no global state, no exceptions or RTTI needed. A table-free CRC-32 costs about
   100 bytes of code and a 32-byte engine on Cortex-M4.
-- **Fast:** kernels for PCLMULQDQ, AVX2, AVX-VNNI, Arm CRC32, PMULL, NEON, the Cortex-M DSP instructions, and RISC-V
-  Zbc and V. On long x86-64 inputs it is on par with xxHash, OpenZFS and Intel ISA-L, and faster than
+- **Fast:** kernels for PCLMULQDQ, AVX2, AVX-VNNI, AVX-512, SHA-NI, Arm CRC32, PMULL, NEON, the Arm SHA instructions,
+  the Cortex-M DSP instructions, and RISC-V Zbc and V. On long x86-64 inputs it is on par with xxHash, OpenZFS and Intel ISA-L, and faster than
   zlib-ng, Linux and DPDK.
 - **Run-time dispatch:** name the instruction set at compile time, or let the library pick the best for the running CPU.
 - **Portable:** GCC 14+, Clang 18+, MSVC and clang-cl, on x86-64, AArch64, 32-bit Arm, RISC-V (RV32 and RV64) and bare metal.

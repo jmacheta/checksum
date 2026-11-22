@@ -151,7 +151,18 @@ speed-up and cost code size, so each has one generic loop.
 - The XXH32/XXH64 stripe loop is not inlined, so compilers do not pack the lanes into one vector.
 - XXH64's one-shot keeps its lanes in locals only on 64-bit targets, since they spill on Cortex-M.
 - FNV-1a has no loop in `src/`: its inline loop takes four bytes per iteration, 1.55× faster on Cortex-M4.
-- SHA has no kernels yet; SHA-NI and the Arm SHA instructions are the next ones (not in any preset yet).
+
+## SHA-1 and SHA-2
+
+SHA's own-loop set holds `x86_sha`, `aarch64_sha2` and `aarch64_sha512` only (`isa_detail::only()`), so every other
+preset runs generic's loop. A kernel replaces the strategy's rounds; `finalize()` and the buffered block go through the
+same loop, so short messages gain too.
+
+| Preset | Kernel |
+| --- | --- |
+| `x86_sha` | SHA-NI for SHA-1 and SHA-256, four rounds per group, fully unrolled with the schedule interleaved |
+| `aarch64_sha2`, little-endian | SHA1 and SHA256 instructions (unproven) |
+| `aarch64_sha512`, little-endian, not MSVC | Adds the SHA512 instructions, two rounds per step (unproven) |
 
 ## XXH3
 

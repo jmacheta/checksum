@@ -31,6 +31,7 @@ ignoreRegExpList:
 
 words:
 - abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq
+- abef
 - ACLE
 - adccp
 - adcs
@@ -40,6 +41,7 @@ words:
 - addtogroup
 - aixm
 - alderlake
+- alignr
 - anyofallof
 - argn
 - armv
@@ -62,6 +64,8 @@ words:
 - castagnoli
 - castsi
 - ccitt
+- cdab
+- cdgh
 - cdma
 - chongo
 - cinc
@@ -97,6 +101,7 @@ words:
 - DACR
 - darc
 - datagram
+- dchg
 - dect
 - demcr
 - dpbusd
@@ -104,6 +109,7 @@ words:
 - dpkg
 - dtcm
 - eabi
+- efgh
 - elen
 - elifdef
 - endforeach
@@ -113,6 +119,7 @@ words:
 - extracti
 - fconstexpr
 - fdata
+- feba
 - fetchcontent
 - ffunction
 - FIPS
@@ -132,6 +139,7 @@ words:
 - gtest
 - Haswell
 - hdlc
+- hgfe
 - hicpp
 - hitag
 - HMAC
@@ -235,6 +243,7 @@ words:
 - riello
 - RISCV
 - riscv
+- rnds
 - rocksoft
 - rodata
 - rohc
@@ -318,6 +327,7 @@ words:
 - vsetvl
 - vsetvlmax
 - vrsub
+- vsha
 - vshlq
 - vshrq
 - vsrl

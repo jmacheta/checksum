@@ -47,12 +47,23 @@ for(auto page : pages) {
 bool valid = running.value() == expected;
 ```
 
-No preset has a kernel yet: every preset runs the same portable code.
+When you know the CPU has SHA instructions, name the preset: the hash then runs them, whatever the strategy. On an
+i7-13700K, `isa::x86_sha` (SHA-NI) runs SHA-256 at 2 600 MB/s, 5× the portable code, and short messages 3× faster.
+
+```cpp
+auto digest = checksum::sha_compute<sha_variant::sha256, checksum::sha_compact, checksum::isa::x86_sha>(image);
+```
+
+| Preset | Kernel |
+| --- | --- |
+| `x86_sha` (SHA-NI: Goldmont, Zen, Ice Lake and later) | SHA-1 and SHA-256; SHA-512 runs the portable code |
+| `aarch64_sha2` (little-endian AArch64) | SHA-1 and SHA-256, tested in QEMU only |
+| `aarch64_sha512` (little-endian AArch64; Apple M1, Neoverse V1/N2 and later) | As above, plus SHA-512, tested in QEMU only; not with MSVC |
+| all others, the other x86 and AArch64 presets included | Portable code |
 
 ## You don't know the CPU, or you need broad compatibility
 
-You need nothing extra today: the dispatch engine always runs the portable loop. Use it if you dispatch every
-algorithm, and your code will pick up CPU kernels when they arrive.
+The dispatch engine picks the SHA instructions where the CPU has them, and the portable code elsewhere.
 
 ```cpp
 static checksum::sha_dispatch_engine<sha_variant::sha256> const sha;

@@ -79,8 +79,9 @@ template <sha_variant Variant> struct sha_state {
   }
 };
 
-/// The hash Variant, computed as Strategy chooses (sha_compact or sha_unrolled). Every instruction-set preset Isa
-/// (checksum/isa.hpp) runs the loop of isa::generic. Empty: make one wherever it is needed.
+/// The hash Variant, computed as Strategy chooses (sha_compact or sha_unrolled). The presets with SHA instructions
+/// (x86_sha, aarch64_sha2, aarch64_sha512 of checksum/isa.hpp) run them whatever the strategy; the others run the loop of
+/// isa::generic. Empty: make one wherever it is needed.
 template <sha_variant Variant, sha_strategy Strategy = sha_compact, isa Isa = isa::generic>
   requires(isa_available(Isa))
 class sha_engine {
@@ -89,7 +90,7 @@ public:
   /// The digest, in the byte order of FIPS 180-4.
   using value_type = std::array<std::uint8_t, sha_detail::parameters<Variant>::digest_size>;
 
-  /// generic, whose loop every preset runs.
+  /// The preset whose loop the engine runs: Isa, or the nearest preset it extends that has a loop of its own (isa_detail::loop_preset()).
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -119,8 +120,8 @@ template <sha_variant Variant, sha_strategy Strategy = sha_compact, isa Isa = is
 
 namespace checksum::sha_detail {
 
-// The presets a dispatch engine chooses from: generic alone, whose loop every preset runs.
-inline constexpr isa_set own_loops = isa_set{};
+// The presets a dispatch engine chooses from: generic and the presets with SHA instructions; the others run generic's loop.
+inline constexpr isa_set own_loops = isa_detail::only(isa::x86_sha) | isa_detail::only(isa::aarch64_sha2) | isa_detail::only(isa::aarch64_sha512);
 
 } // namespace checksum::sha_detail
 
@@ -134,7 +135,7 @@ template <sha_variant Variant, class Strategy, isa Old, isa Isa> struct rebind_p
 
 namespace checksum {
 
-/// A sha_engine with the dispatch engines' interface. No preset has a loop of its own yet, so it always chooses generic.
+/// A sha_engine with the dispatch engines' interface: it runs the SHA instructions where the CPU has them.
 template <sha_variant Variant, sha_strategy Strategy = sha_compact>
 class sha_dispatch_engine : public detail::dispatch_engine<sha_engine<Variant, Strategy>, sha_detail::own_loops> {
 public:
@@ -244,11 +245,11 @@ template <sha_variant Core, class Strategy> constexpr void compress(word_array<C
 // Folds the whole blocks of data into words.
 template <sha_variant Core, class Strategy> constexpr void fold_blocks(word_array<Core> &words, std::span<std::byte const> data) noexcept;
 
-// fold_blocks(); defined once in src/sha/block_loop.cpp for each core and strategy, the loop of every preset.
-template <sha_variant Core, class Strategy> void block_loop(word_array<Core> &words, std::span<std::byte const> data) noexcept;
+// The CPU kernel of Isa, else fold_blocks(); defined in src/sha/ for each core and strategy, once per preset of own_loops.
+template <sha_variant Core, class Strategy, isa Isa> void block_loop(word_array<Core> &words, std::span<std::byte const> data) noexcept;
 
 // fold_blocks() during constant evaluation, else block_loop().
-template <sha_variant Core, class Strategy> constexpr void fold(word_array<Core> &words, std::span<std::byte const> data) noexcept;
+template <sha_variant Core, class Strategy, isa Isa> constexpr void fold(word_array<Core> &words, std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::sha_detail
 
@@ -445,11 +446,11 @@ template <sha_variant Core, class Strategy> constexpr void fold_blocks(word_arra
   }
 }
 
-template <sha_variant Core, class Strategy> constexpr void fold(word_array<Core> &words, std::span<std::byte const> data) noexcept {
+template <sha_variant Core, class Strategy, isa Isa> constexpr void fold(word_array<Core> &words, std::span<std::byte const> data) noexcept {
   if consteval {
     fold_blocks<Core, Strategy>(words, data);
   } else {
-    block_loop<Core, Strategy>(words, data);
+    block_loop<Core, Strategy, Isa>(words, data);
   }
 }
 
@@ -483,11 +484,11 @@ constexpr sha_state<Variant> sha_engine<Variant, Strategy, Isa>::update(sha_stat
     if(buffered + fill < block_size) {
       return state;
     }
-    sha_detail::compress<core, Strategy>(state.words, state.buffer.data());
+    sha_detail::fold<core, Strategy, isa_detail::loop_preset(Isa, sha_detail::own_loops)>(state.words, state.buffer);
   }
   std::size_t const whole = data.size() - (data.size() % block_size);
   if(whole != 0) {
-    sha_detail::fold<core, Strategy>(state.words, data.first(whole));
+    sha_detail::fold<core, Strategy, isa_detail::loop_preset(Isa, sha_detail::own_loops)>(state.words, data.first(whole));
   }
   std::ranges::copy(data.subspan(whole), state.buffer.begin());
   return state;
@@ -512,19 +513,17 @@ sha_engine<Variant, Strategy, Isa>::finalize(sha_state<Variant> const &state) co
   // below 2^61 bytes.
   constexpr std::size_t length_size = 2 * sizeof(word);
   auto const buffered = static_cast<std::size_t>(state.length % block_size);
-  std::array<std::byte, block_size> block = state.buffer;
   auto words = state.words;
-  block[buffered] = std::byte{0x80};
-  std::ranges::fill(std::span(block).subspan(buffered + 1), std::byte{0});
-  if(buffered + 1 > block_size - length_size) {
-    sha_detail::compress<core, Strategy>(words, block.data());
-    block.fill(std::byte{0});
-  }
+  // The message bytes, 0x80, zeros and the length: one block, or two where the length does not fit after the message.
+  std::array<std::byte, 2 * block_size> blocks{};
+  std::ranges::copy(std::span(state.buffer).first(buffered), blocks.begin());
+  blocks[buffered] = std::byte{0x80};
+  std::size_t const padded = buffered + 1 > block_size - length_size ? 2 * block_size : block_size;
   std::uint64_t const bits = state.length * 8;
   for(std::size_t index = 0; index < 8; ++index) {
-    block[block_size - 1 - index] = static_cast<std::byte>(bits >> (8 * index));
+    blocks[padded - 1 - index] = static_cast<std::byte>(bits >> (8 * index));
   }
-  sha_detail::compress<core, Strategy>(words, block.data());
+  sha_detail::fold<core, Strategy, isa_detail::loop_preset(Isa, sha_detail::own_loops)>(words, std::span(blocks).first(padded));
   value_type digest{};
   for(std::size_t index = 0; index < digest.size(); ++index) {
     digest[index] = static_cast<std::uint8_t>(words[index / sizeof(word)] >> (8 * (sizeof(word) - 1 - (index % sizeof(word)))));

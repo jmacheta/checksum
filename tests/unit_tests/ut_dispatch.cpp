@@ -10,6 +10,7 @@
 #include <checksum/internet.hpp>
 #include <checksum/isa.hpp>
 #include <checksum/murmur3.hpp>
+#include <checksum/sha.hpp>
 #include <checksum/xxh3.hpp>
 #include <checksum/xxhash.hpp>
 
@@ -59,6 +60,8 @@ static_assert(internet_detail::own_loops == (target_options | isa::riscv_v) && x
               adler32_detail::own_loops == (target_options | isa::riscv_v) && fletcher_detail::own_loops == (target_options | isa::riscv_v) &&
               fletcher4_detail::own_loops == (target_options | isa::riscv_v) && xxhash_detail::own_loops == isa_set{} &&
               murmur3_detail::own_loops == isa_set{});
+static_assert(sha_detail::own_loops.contains(isa::x86_sha) && !sha_detail::own_loops.contains(isa::x86_pclmul) &&
+              sha_detail::own_loops.contains(isa::aarch64_sha512) && !sha_detail::own_loops.contains(isa::aarch64_pmull));
 static_assert(crc_detail::own_loops<crc_lut_sliced, std::uint32_t> == (target_options | isa::riscv_zbc) &&
               crc_detail::own_loops<crc_lut_braided, std::uint64_t> == (target_options | isa::riscv_zbc) &&
               crc_detail::own_loops<crc_lut_byte, std::uint32_t> == isa_set{});
@@ -176,6 +179,10 @@ void check_engines(isa_set cpu, std::vector<std::byte> const &buffer) {
   check_engine(xxhash_engine<64>{}, xxhash_dispatch_engine<64>(0, cpu), isa_set{}, cpu, buffer);
   check_engine(murmur3_engine<32>{9}, murmur3_dispatch_engine<32>(9, cpu), isa_set{}, cpu, buffer);
   check_engine(murmur3_engine<128>{2}, murmur3_dispatch_engine<128>(2, cpu), isa_set{}, cpu, buffer);
+  check_engine(sha_engine<sha_variant::sha1>{}, sha_dispatch_engine<sha_variant::sha1>(cpu), sha_detail::own_loops, cpu, buffer);
+  check_engine(sha_engine<sha_variant::sha256, sha_unrolled>{}, sha_dispatch_engine<sha_variant::sha256, sha_unrolled>(cpu), sha_detail::own_loops,
+               cpu, buffer);
+  check_engine(sha_engine<sha_variant::sha512>{}, sha_dispatch_engine<sha_variant::sha512>(cpu), sha_detail::own_loops, cpu, buffer);
 }
 
 // Default-constructed engines detect the CPU themselves.
@@ -193,6 +200,7 @@ TEST(dispatch, default_engines_choose_the_detected_preset) {
   EXPECT_EQ(xxhash_dispatch_engine<64>{}.preset(), isa::generic);
   EXPECT_EQ(murmur3_dispatch_engine<32>{}.preset(), isa::generic);
   EXPECT_EQ(murmur3_dispatch_engine<128>{}.preset(), isa::generic);
+  EXPECT_EQ(sha_dispatch_engine<sha_variant::sha256>{}.preset(), isa_detail::select(detect_isa(), sha_detail::own_loops));
   auto const crc = crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(crc32_iso_hdlc);
   ASSERT_TRUE(crc.has_value());
   EXPECT_EQ(crc->preset(), isa_detail::select(detect_isa(), target_options | isa::riscv_zbc));

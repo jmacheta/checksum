@@ -20,9 +20,9 @@ MB/s at 4 KiB with GCC: the fastest preset, and `isa::generic` in parentheses. E
 | [XXH3-64](#xxh3) | 72 946 (28 498) | 4 728 | 26.4 |
 | [MurmurHash3 x86_32](#murmurhash3) | 5 288 | 1 187 | 32.4 |
 | [FNV-1a 32](#fnv-1a) | 1 384 | 373 | 17.7 |
-| [SHA-256](#sha-1-and-sha-2) | 499 | 79 | 1.33 |
+| [SHA-256](#sha-1-and-sha-2) | 2 606 (499) | 79 | 1.33 |
 
-For SHA-256 the figures are the faster of its two strategies.
+For SHA-256 the figures are the faster of its two strategies; the Cortex-A72 has no SHA instructions.
 `x86_avx512` is not benchmarked: none of these machines has AVX-512, and its kernels are tested in Intel SDE only.
 Where a single figure stands, no preset of that CPU beats `generic`. On AArch64 `generic` already has the NEON kernels,
 and only CRC gains from `aarch64_crc`.
@@ -484,6 +484,16 @@ SHA-512, `sha_unrolled` 41.0, 60.3 and 150.
 about twice as fast with it everywhere, and SHA-256 1.2-1.5× on Arm. On x86-64 with `-march=native`, GCC vectorizes the
 compact schedule and SHA-2 is 5-10 % faster with `sha_compact`; SHA-512 on the Cortex-M4 is 13 % slower unrolled, since
 its 64-bit variables do not fit the registers.
+
+With SHA-NI (`isa::x86_sha`, either strategy), MB/s on the i7-13700K:
+
+| Hash | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| SHA-1 | 395 | 999 | 1 981 | 2 750 | 2 851 | 2 935 |
+| SHA-256 | 409 | 954 | 1 845 | 2 525 | 2 606 | 2 679 |
+
+SHA-512 has no SHA-NI instructions and runs the portable code there. The Arm SHA kernels are tested in QEMU only: the
+Cortex-A72 of the Pi 4 has no SHA instructions.
 
 For reference, OpenSSL 3.5 runs SHA-1, SHA-256 and SHA-512 at 1 258, 621 and 949 MB/s on the i7-13700K with its scalar
 assembly, and SHA-256 at about 2 650 MB/s with SHA-NI; at 183, 136 and 194 MB/s on the Cortex-A72 with NEON.

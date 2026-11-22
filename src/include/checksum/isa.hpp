@@ -49,6 +49,10 @@ enum class isa : std::uint8_t {
 /// it rejects is a compile error; the answer is the same in every translation unit.
 [[nodiscard]] constexpr bool isa_available(isa preset) noexcept;
 
+namespace isa_detail {
+struct set_access;
+} // namespace isa_detail
+
 /// A set of presets that a CPU runs, for the dispatch engines of every algorithm (e.g. internet_dispatch_engine), which run
 /// the best variant this build has inside the set. It always contains generic.
 class isa_set {
@@ -69,6 +73,8 @@ public:
 
 private:
   constexpr explicit isa_set(std::uint32_t mask) noexcept;
+
+  friend struct isa_detail::set_access;
 
   std::uint32_t bits = 1; // bit n for the preset of value n
 };
@@ -115,6 +121,9 @@ inline constexpr std::array built_presets{isa::riscv_zbc};
 #else
 inline constexpr std::array<isa, 0> built_presets{};
 #endif
+
+// generic and preset, without the presets it extends: an own-loop set of an algorithm with loops for a few presets only.
+constexpr isa_set only(isa preset) noexcept;
 
 // The preset whose loop an engine of preset runs, for an algorithm whose own-loop set is own_loops: preset or the nearest
 // preset it extends that the set contains, else generic.
@@ -233,6 +242,12 @@ constexpr bool isa_set::contains(isa preset) const noexcept { return ((bits >> s
 namespace checksum::isa_detail {
 
 constexpr bool without_target_options(isa preset) noexcept { return preset == isa::riscv_zbc || preset == isa::riscv_v; }
+
+struct set_access {
+  static constexpr isa_set only(isa preset) noexcept { return isa_set((1U << static_cast<unsigned>(preset)) | 1U); }
+};
+
+constexpr isa_set only(isa preset) noexcept { return set_access::only(preset); }
 
 constexpr bool algorithm_specific(isa preset) noexcept {
   return preset == isa::x86_sha || preset == isa::aarch64_sha2 || preset == isa::aarch64_sha512;

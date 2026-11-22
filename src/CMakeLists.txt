@@ -96,6 +96,9 @@ target_sources(
           isa/detect.cpp
           murmur3/block_loop.cpp
           sha/block_loop.cpp
+          sha/block_loop_aarch64_sha2.cpp
+          sha/block_loop_aarch64_sha512.cpp
+          sha/block_loop_x86_sha.cpp
           xxh3/multiply_fold.cpp
           xxh3/stripe_loop.cpp
           xxh3/stripe_loop_aarch64_crc.cpp
