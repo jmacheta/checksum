@@ -419,15 +419,16 @@ User guide: [fnv1a.md](fnv1a.md). Every preset runs the same portable code.
 | FNV-1a 32, x86-64 GCC | 4 116 | 2 564 | 1 667 | 1 410 | 1 384 | 1 368 |
 | FNV-1a 64, x86-64 GCC | 4 250 | 2 588 | 1 666 | 1 410 | 1 383 | 1 368 |
 | FNV-1a 32, AArch64 | 476 | 400 | 374 | 373 | 373 | 372 |
-| FNV-1a 64, AArch64 | 343 | 272 | 251 | 249 | 249 | 248 |
+| FNV-1a 64, AArch64 | 343 | 282 | 294 | 298 | 298 | 296 |
 | FNV-1a 32, AArch32 | 459 | 397 | 374 | 373 | 373 | 371 |
 | FNV-1a 64, AArch32 | 355 | 368 | 367 | 372 | 373 | 370 |
 | FNV-1a 32, Cortex-M4 | 10.5 | 14.6 | 16.9 | 17.6 | 17.7 | |
 | FNV-1a 64, Cortex-M4 | 6.6 | 8.2 | 8.9 | 9.1 | 9.1 | |
 
-Each byte waits for the multiplication of the previous one: about 4 cycles per byte on x86-64 and the Cortex-A72. In
-AArch64, FNV-1a 64 takes 6, since the A72's 64-bit multiplication is slower than the two 32-bit ones that AArch32
-uses. On the Cortex-M4, FNV-1a 32 takes 4.51 cycles per byte at 4 KiB and FNV-1a 64 8.76.
+Each byte waits for the multiplication of the previous one: about 4 cycles per byte on x86-64 and the Cortex-A72. The
+A72's 64-bit multiplication is slower, so from 64 bytes FNV-1a 64 in AArch64 multiplies 32-bit halves, as AArch32 does:
+5 cycles per byte instead of 6. Below 64 bytes the single multiplication stays, since it hashes many short inputs in a
+row faster. On the Cortex-M4, FNV-1a 32 takes 4.51 cycles per byte at 4 KiB and FNV-1a 64 8.76.
 
 ### Code size
 

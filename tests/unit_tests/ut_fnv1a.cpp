@@ -69,6 +69,8 @@ static_assert(fnv1a_compute<32>(std::span(message)) == prefix_vectors.back().has
 static_assert(fnv1a_compute<64>(std::span(message).first(100)) == prefix_vectors[11].hash64);
 static_assert(engine_checks::chunked(fnv1a_engine<64>{}, message, 7) == prefix_vectors.back().hash64);
 static_assert(engine_checks::continued(fnv1a_engine<32>{}, fnv1a_compute<32>("foo"sv), "bar"sv) == 0xBF9CF968U);
+// The 32-bit halves of AArch64 on every target.
+static_assert(fnv1a_detail::fold_halves(0xCBF29CE484222325U, std::span(message)) == prefix_vectors.back().hash64);
 static_assert(fnv1a_engine<32>{}.initial() == fnv1a_state<32>{} && fnv1a_engine<64>{}.finalize(fnv1a_state<64>{}) == 0xCBF29CE484222325U);
 static_assert(resumable_engine<fnv1a_engine<32>> && resumable_engine<fnv1a_dispatch_engine<64>>);
 static_assert(fnv1a_dispatch_engine<64>(isa_set{}).preset() == isa::generic);
