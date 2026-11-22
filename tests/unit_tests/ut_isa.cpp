@@ -24,8 +24,12 @@ using checksum::isa_detail::includes;
 
 static_assert(isa_available(isa::generic));
 
-// Each line includes its earlier presets and generic, nothing of another line; the RISC-V presets are independent.
+// Each preset includes the presets it extends and generic, nothing of another ladder; the RISC-V presets are independent.
 static_assert(includes(isa::x86_avxvnni, isa::x86_pclmul) && includes(isa::x86_avx2, isa::x86_avx2) && !includes(isa::x86_avx2, isa::x86_vpclmul));
+static_assert(includes(isa::x86_avx512, isa::x86_vpclmul) && includes(isa::x86_avx512, isa::x86_pclmul) &&
+              !includes(isa::x86_avx512, isa::x86_avxvnni) && !includes(isa::x86_avxvnni, isa::x86_avx512) &&
+              checksum::isa_detail::line(isa::x86_avx512) == isa::x86_pclmul);
+static_assert(isa_set{isa::x86_avx512} == (isa_set{isa::x86_vpclmul} | isa::x86_avx512));
 static_assert(includes(isa::aarch64_pmull, isa::aarch64_crc) && !includes(isa::aarch64_crc, isa::aarch64_pmull));
 static_assert(includes(isa::thumb2_crc, isa::thumb2) && includes(isa::thumb2_neon, isa::thumb2_dsp) && !includes(isa::thumb2_dsp, isa::thumb2_neon));
 static_assert(!includes(isa::riscv_v, isa::riscv_zbc) && !includes(isa::riscv_zbc, isa::riscv_v));
@@ -67,7 +71,7 @@ TEST(isa_test_support, every_built_preset_has_name) {
 TEST(isa_test_support, required_presets_run) {
   std::optional<isa_set> const required = isa_cpu::required_presets();
   ASSERT_TRUE(required) << "CHECKSUM_REQUIRED_ISA names an unknown preset";
-  for(unsigned value = 1; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
+  for(unsigned value = 1; value <= static_cast<unsigned>(isa_cpu::last_preset); ++value) {
     auto const preset = static_cast<isa>(value);
     if(required->contains(preset)) {
       EXPECT_NE(std::ranges::find(checksum::isa_detail::built_presets, preset), checksum::isa_detail::built_presets.end())
@@ -80,7 +84,7 @@ TEST(isa_test_support, required_presets_run) {
 TEST(detect_isa, contains_only_built_presets_and_their_lower_rungs) {
   isa_set const cpu = checksum::detect_isa();
   EXPECT_TRUE(cpu.contains(isa::generic));
-  for(unsigned value = 0; value <= static_cast<unsigned>(isa::riscv_v); ++value) {
+  for(unsigned value = 0; value <= static_cast<unsigned>(isa_cpu::last_preset); ++value) {
     auto const preset = static_cast<isa>(value);
     if(!cpu.contains(preset)) {
       continue;
@@ -128,10 +132,19 @@ std::optional<isa_set> cpuinfo_presets() {
     return std::nullopt;
   }
   auto const has = [&](std::string_view flag) { return flags->contains(" " + std::string(flag) + " "); };
-  return ladder({{isa::x86_pclmul, has("sse4_2") && has("pclmulqdq")},
-                 {isa::x86_avx2, has("avx2")},
-                 {isa::x86_vpclmul, has("vpclmulqdq")},
-                 {isa::x86_avxvnni, has("avx_vnni")}});
+  isa_set const vpclmul =
+      ladder({{isa::x86_pclmul, has("sse4_2") && has("pclmulqdq")}, {isa::x86_avx2, has("avx2")}, {isa::x86_vpclmul, has("vpclmulqdq")}});
+  if(!vpclmul.contains(isa::x86_vpclmul)) {
+    return vpclmul;
+  }
+  isa_set result = vpclmul;
+  if(has("avx_vnni")) {
+    result = result | isa::x86_avxvnni;
+  }
+  if(has("avx512f") && has("avx512bw") && has("avx512vl") && has("avx512_vnni")) {
+    result = result | isa::x86_avx512;
+  }
+  return result;
 #elifdef __aarch64__
   std::optional<std::string> const features = cpuinfo_words("Features");
   if(!features) {

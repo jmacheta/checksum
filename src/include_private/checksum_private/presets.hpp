@@ -11,6 +11,7 @@
 #define CHECKSUM_TARGET_X86_AVX2 "sse4.2,pclmul,avx2"
 #define CHECKSUM_TARGET_X86_VPCLMUL "sse4.2,pclmul,avx2,vpclmulqdq"
 #define CHECKSUM_TARGET_X86_AVXVNNI "sse4.2,pclmul,avx2,vpclmulqdq,avxvnni"
+#define CHECKSUM_TARGET_X86_AVX512 "sse4.2,pclmul,avx2,vpclmulqdq,avx512f,avx512bw,avx512vl,avx512vnni"
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)
 #define CHECKSUM_TARGET_AARCH64_CRC "+crc"
 #define CHECKSUM_TARGET_AARCH64_PMULL "+crc+aes"
@@ -56,6 +57,7 @@
 #define CHECKSUM_TARGET_X86_AVX2 ""
 #define CHECKSUM_TARGET_X86_VPCLMUL ""
 #define CHECKSUM_TARGET_X86_AVXVNNI ""
+#define CHECKSUM_TARGET_X86_AVX512 ""
 #elif defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64)
 #define CHECKSUM_TARGET_AARCH64_CRC ""
 #define CHECKSUM_TARGET_AARCH64_PMULL ""

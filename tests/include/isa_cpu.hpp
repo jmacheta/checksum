@@ -32,6 +32,9 @@ template <class Function> void for_each_built_preset(Function const &function) {
   }(std::make_index_sequence<built_count>{});
 }
 
+// The last enumerator of checksum::isa.
+inline constexpr checksum::isa last_preset = checksum::isa::x86_avx512;
+
 // The enumerator's name, or an empty view for a preset this list lacks; ut_isa.cpp checks every built preset has one.
 constexpr std::string_view name(checksum::isa preset) noexcept {
   using enum checksum::isa;
@@ -62,6 +65,8 @@ constexpr std::string_view name(checksum::isa preset) noexcept {
     return "riscv_zbc";
   case riscv_v:
     return "riscv_v";
+  case x86_avx512:
+    return "x86_avx512";
   }
   return {};
 }
@@ -72,14 +77,14 @@ inline bool cpu_runs(checksum::isa preset) {
   return cpu.contains(preset);
 }
 
-// The presets of a comma-separated list of preset names, e.g. "aarch64_pmull,riscv_v", each with the earlier presets of its
-// line; none if a name is unknown.
+// The presets of a comma-separated list of preset names, e.g. "aarch64_pmull,riscv_v", each with the presets it extends;
+// none if a name is unknown.
 inline std::optional<checksum::isa_set> named_presets(std::string_view names) {
   checksum::isa_set result;
   for(auto const part : std::views::split(names, ',')) {
     std::string_view const word(part.begin(), part.end());
     bool known = false;
-    for(unsigned value = 0; value <= static_cast<unsigned>(checksum::isa::riscv_v); ++value) {
+    for(unsigned value = 0; value <= static_cast<unsigned>(last_preset); ++value) {
       if(name(static_cast<checksum::isa>(value)) == word) {
         result = result | static_cast<checksum::isa>(value);
         known = true;
