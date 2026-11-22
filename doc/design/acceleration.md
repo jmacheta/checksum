@@ -88,6 +88,7 @@ kernel per bit order serves every width and register. Its 160 bytes of constants
 | --- | --- |
 | `x86_pclmul` and up | PCLMULQDQ folding from 16 B; CRC-32C ends with two SSE4.2 `crc32` instead of Barrett |
 | `x86_vpclmul` and up | Adds a 256-bit VPCLMULQDQ loop from 256 B |
+| `x86_avx512` | Its 256-byte steps in four 512-bit vectors (unproven) |
 | `aarch64_crc`, `thumb2_crc` | CRC32/CRC32C instructions for CRC-32 and CRC-32C |
 | `aarch64_pmull` | PMULL folding for other CRCs, little-endian (unproven) |
 | `riscv_zbc` | Zbc folding, little-endian (unproven) |
@@ -103,7 +104,7 @@ The portable loop sums native words in two add-with-carry chains and byte-swaps 
 
 | Preset | Kernel |
 | --- | --- |
-| `x86_avx2` and up | 32-bit halves in 64-bit lanes, from 512 B |
+| `x86_avx2` and up | 32-bit halves in 64-bit lanes, from 512 B; 512-bit vectors first on `x86_avx512` (unproven) |
 | little-endian AArch64, `generic` included | NEON `uadalp`, from 512 B |
 | `thumb2_neon`, `thumb2_crc`, little-endian | NEON, from 192 B |
 | `thumb2`, `thumb2_dsp`, and NEON presets on big-endian | `ldm` + `adcs` assembly, from 192 B |
@@ -121,7 +122,8 @@ chunk of little-endian values. Fletcher-16 and Adler-32 run the same byte kernel
 
 | Preset | Kernel (8 / 16 / 32-bit values) |
 | --- | --- |
-| `x86_avxvnni` | `vpdpbusd` from 64 B / as AVX2 / as AVX2 (not run in CI) |
+| `x86_avx512` | 64-byte vectors with 512-bit `vpdpbusd`, from 64 / 128 / 384 B (unproven) |
+| `x86_avxvnni` | `vpdpbusd` from 64 B / as AVX2 / as AVX2 |
 | `x86_avx2`, `x86_vpclmul` | 32-byte vectors from 64 / 128 / 384 B |
 | `generic`, `x86_pclmul` on x86-64 | 16-byte vectors from 64 / 128 B / none |
 | little-endian AArch64 | NEON from 64 / 128 / 256 B; bytes use `group_kernel` from 320 B |
@@ -152,7 +154,8 @@ accumulators through `stripe_kernel`, whose copy is first declared inside the ta
 | Preset | Kernel |
 | --- | --- |
 | `generic`, `x86_pclmul` on x86-64 | Four 128-bit vectors |
-| `x86_avx2` and up | Two 256-bit vectors |
+| `x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | Two 256-bit vectors |
+| `x86_avx512` | One 512-bit vector (unproven) |
 | little-endian AArch64 | Four lanes in NEON, four scalar |
 | `thumb2_neon`, `thumb2_crc`, little-endian | Eight lanes in NEON |
 | `riscv_v` (VLEN ≥ 128) | One `vuint64m4_t` group (unproven) |
@@ -167,7 +170,7 @@ modulo 2^64.
 
 | Preset | Lanes |
 | --- | --- |
-| `x86_avx2` and up | One 256-bit vector per sum, from 128 B |
+| `x86_avx2` and up | One 256-bit vector per sum, from 128 B (four lanes: AVX-512 would gain nothing) |
 | `generic`, `x86_pclmul` on x86-64 | Two 128-bit vectors per sum, from 192 B |
 | little-endian AArch64; `thumb2_neon`, `thumb2_crc` | NEON, from 192 B |
 | `riscv_v` | Four 64-bit lanes per register group, from 192 B (unproven) |

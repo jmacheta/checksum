@@ -70,11 +70,11 @@ A few toolchains need more:
 ## Hardware acceleration
 
 Every function takes an instruction-set preset as its last template argument. The default, `isa::generic`, runs on
-every CPU of the architecture; the others add CPU extensions, each including the ones before it on its line:
+every CPU of the architecture; the others add CPU extensions, each including the presets it extends:
 
 | Architecture | Presets |
 | --- | --- |
-| x86-64 | `x86_pclmul` → `x86_avx2` → `x86_vpclmul` → `x86_avxvnni` |
+| x86-64 | `x86_pclmul` → `x86_avx2` → `x86_vpclmul` → `x86_avxvnni`, and `x86_vpclmul` → `x86_avx512` |
 | AArch64 | `aarch64_crc` → `aarch64_pmull` |
 | 32-bit Arm | `thumb2` → `thumb2_dsp` → `thumb2_neon` → `thumb2_crc` |
 | RISC-V RV64 | `riscv_zbc` and `riscv_v`, independent of each other |

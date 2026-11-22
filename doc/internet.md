@@ -73,6 +73,7 @@ checksum::isa chosen = internet.preset();
 | Preset | Kernel |
 | --- | --- |
 | `x86_avx2`, `x86_vpclmul`, `x86_avxvnni` | 32-bit halves summed in 64-bit vector lanes, from 512 B |
+| `x86_avx512` | As above, in 512-bit vectors (not benchmarked: tested in Intel SDE only) |
 | every preset on little-endian AArch64, `generic` included | NEON `uadalp`, from 512 B |
 | `thumb2_neon`, `thumb2_crc` on little-endian 32-bit Arm | NEON, from 192 B |
 | `thumb2`, `thumb2_dsp` (Cortex-M3/M4/M7/M33), and the NEON presets on big-endian | `ldm` + `adcs` assembly, from 192 B, at any alignment |

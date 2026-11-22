@@ -75,6 +75,7 @@ checksum::isa chosen = fletcher32.preset();
 
 | Preset | Fletcher-16 | Fletcher-32 | Fletcher-64 |
 | --- | --- | --- | --- |
+| `x86_avx512` (not benchmarked: tested in Intel SDE only) | 512-bit `vpdpbusd`, from 64 B | 64-byte vectors, from 128 B | from 384 B |
 | `x86_avxvnni` | `vpdpbusd`, from 64 B | as AVX2 | as AVX2 |
 | `x86_avx2`, `x86_vpclmul` | 32-byte vectors, from 64 B | from 128 B | from 384 B |
 | `generic`, `x86_pclmul` on x86-64 | 16-byte SSE2 vectors, from 64 B | from 128 B | portable |

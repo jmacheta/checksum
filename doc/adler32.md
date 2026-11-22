@@ -67,6 +67,7 @@ checksum::isa chosen = adler32.preset();
 
 | Preset | Kernel |
 | --- | --- |
+| `x86_avx512` | 512-bit `vpdpbusd`, 256 bytes per iteration, from 64 B (not benchmarked: tested in Intel SDE only) |
 | `x86_avxvnni` | `vpdpbusd`, 128 bytes per iteration, from 64 B |
 | `x86_avx2`, `x86_vpclmul` | 32-byte vectors, from 64 B |
 | `generic`, `x86_pclmul` on x86-64 | 16-byte SSE2 vectors, from 64 B |

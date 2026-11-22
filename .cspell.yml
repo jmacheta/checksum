@@ -47,6 +47,7 @@ words:
 - ASMFLAGS
 - autosar
 - avxvnni
+- BADC
 - balign
 - bkpt
 - bootlin
@@ -140,6 +141,7 @@ words:
 - immediates
 - immintrin
 - inlines
+- inserti
 - intrin
 - iscsi
 - jamcrc
@@ -255,6 +257,7 @@ words:
 - Tdata
 - teledisk
 - templatize
+- ternarylogic
 - TESTW
 - tparam
 - TRCENA

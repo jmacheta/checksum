@@ -1,8 +1,8 @@
 #ifndef CHECKSUM_PRIVATE_X86_64_XXH3_HPP
 #define CHECKSUM_PRIVATE_X86_64_XXH3_HPP
 
-// SSE2 and AVX2 kernels of the XXH3 stripe loop: SSE2 is the x86-64 baseline, AVX2 runs from the x86_avx2 preset. Included only by
-// xxh3_arch.hpp.
+// SSE2, AVX2 and AVX-512 kernels of the XXH3 stripe loop: SSE2 is the x86-64 baseline, AVX2 runs from the x86_avx2 preset and
+// AVX-512 on x86_avx512. Included only by xxh3_arch.hpp.
 
 #include <checksum/isa.hpp>
 #include <checksum_private/target.hpp>
@@ -23,8 +23,9 @@ struct stripe_kernel<Isa> {
   static constexpr bool available = true;
   // Both kernels beat the portable loop from 256 bytes, the shortest size measured, with GCC and Clang on a Core Ultra 7 155H.
   static constexpr std::size_t minimum_size = 0;
-  using lanes =
-      std::conditional_t<isa_detail::includes(Isa, isa::x86_avx2), isa_detail::vector_array<__m256i, 2>, isa_detail::vector_array<__m128i, 4>>;
+  using lanes = std::conditional_t<
+      isa_detail::includes(Isa, isa::x86_avx512), isa_detail::vector_array<__m512i, 1>,
+      std::conditional_t<isa_detail::includes(Isa, isa::x86_avx2), isa_detail::vector_array<__m256i, 2>, isa_detail::vector_array<__m128i, 4>>>;
   static lanes load(accumulator_array const &accumulators) noexcept;
   static void store(accumulator_array &accumulators, lanes const &values) noexcept;
   static void accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept;
@@ -36,7 +37,9 @@ struct stripe_kernel<Isa> {
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
 CHECKSUM_ALWAYS_INLINE inline auto stripe_kernel<Isa>::load(accumulator_array const &accumulators) noexcept -> lanes {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(isa_detail::includes(Isa, isa::x86_avx512)) {
+    return {_mm512_loadu_si512(accumulators.data())};
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     return {_mm256_loadu_si256(reinterpret_cast<__m256i const *>(accumulators.data())),
             _mm256_loadu_si256(reinterpret_cast<__m256i const *>(accumulators.data() + 4))};
   } else {
@@ -51,7 +54,10 @@ CHECKSUM_ALWAYS_INLINE inline auto stripe_kernel<Isa>::load(accumulator_array co
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
 CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::store(accumulator_array &accumulators, lanes const &values) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(isa_detail::includes(Isa, isa::x86_avx512)) {
+    _mm512_storeu_si512(accumulators.data(), values[0]);
+    return;
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(accumulators.data()), values[0]);
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(accumulators.data() + 4), values[1]);
     return;
@@ -67,7 +73,13 @@ template <isa Isa>
   requires(target_detail::any_preset<Isa>)
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): the stripe and the secret are both bytes.
 CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::accumulate(lanes &values, std::byte const *stripe, std::byte const *secret) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(isa_detail::includes(Isa, isa::x86_avx512)) {
+    __m512i const data = _mm512_loadu_si512(stripe);
+    __m512i const key = _mm512_xor_si512(data, _mm512_loadu_si512(secret));
+    __m512i const product = _mm512_mul_epu32(key, _mm512_srli_epi64(key, 32));
+    values[0] = _mm512_add_epi64(values[0], _mm512_add_epi64(product, _mm512_shuffle_epi32(data, _MM_PERM_BADC)));
+    return;
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     for(std::size_t index = 0; index < values.size(); ++index) {
       __m256i const data = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(stripe) + index);
       __m256i const key = _mm256_xor_si256(data, _mm256_loadu_si256(reinterpret_cast<__m256i const *>(secret) + index));
@@ -89,7 +101,14 @@ CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::accumulate(lanes &values,
 template <isa Isa>
   requires(target_detail::any_preset<Isa>)
 CHECKSUM_ALWAYS_INLINE inline void stripe_kernel<Isa>::scramble(lanes &values, std::byte const *secret) noexcept {
-  if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
+  if constexpr(isa_detail::includes(Isa, isa::x86_avx512)) {
+    __m512i const prime = _mm512_set1_epi32(static_cast<int>(primes_32::prime_1));
+    // value ^ (value >> shift) ^ secret in one instruction: 0x96 is the truth table of a three-way exclusive or.
+    __m512i const key = _mm512_ternarylogic_epi64(values[0], _mm512_srli_epi64(values[0], scramble_shift), _mm512_loadu_si512(secret), 0x96);
+    __m512i const high = _mm512_mul_epu32(_mm512_srli_epi64(key, 32), prime);
+    values[0] = _mm512_add_epi64(_mm512_mul_epu32(key, prime), _mm512_slli_epi64(high, 32));
+    return;
+  } else if constexpr(isa_detail::includes(Isa, isa::x86_avx2)) {
     __m256i const prime = _mm256_set1_epi32(static_cast<int>(primes_32::prime_1));
     for(std::size_t index = 0; index < values.size(); ++index) {
       __m256i const mixed = _mm256_xor_si256(values[index], _mm256_srli_epi64(values[index], scramble_shift));

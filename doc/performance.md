@@ -21,6 +21,7 @@ MB/s at 4 KiB with GCC: the fastest preset, and `isa::generic` in parentheses. E
 | [MurmurHash3 x86_32](#murmurhash3) | 5 288 | 1 187 | 32.4 |
 | [FNV-1a 32](#fnv-1a) | 1 384 | 373 | 17.7 |
 
+`x86_avx512` is not benchmarked: none of these machines has AVX-512, and its kernels are tested in Intel SDE only.
 Where a single figure stands, no preset of that CPU beats `generic`. On AArch64 `generic` already has the NEON kernels,
 and only CRC gains from `aarch64_crc`.
 

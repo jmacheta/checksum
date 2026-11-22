@@ -180,6 +180,7 @@ as fast at half the size.
 | --- | --- |
 | `x86_pclmul`, `x86_avx2` | PCLMULQDQ folding for every CRC from 16 B; for CRC-32C, SSE4.2 `crc32` |
 | `x86_vpclmul`, `x86_avxvnni` | As above, plus 256-bit VPCLMULQDQ folding from 256 B |
+| `x86_avx512` | As above, the long loop in 512-bit vectors (not benchmarked: tested in Intel SDE only) |
 | `aarch64_crc`, `thumb2_crc` | CRC32 instructions for CRC-32 and CRC-32C |
 | `aarch64_pmull` | CRC32 instructions, plus PMULL folding for every other CRC from 16 B (little-endian only) |
 | `riscv_zbc` | Zbc `clmul` folding from 16 B, on little-endian RV64 |

@@ -2,7 +2,8 @@
 #define CHECKSUM_PRIVATE_X86_64_CRC_HPP
 
 // x86-64 kernels: PCLMULQDQ folding and the SSE4.2 crc32 instruction for CRC-32C from the x86_pclmul preset on, plus a 256-bit
-// VPCLMULQDQ loop from 256 bytes from x86_vpclmul on. isa::generic (SSE2) has none. Included only by crc_arch.hpp.
+// VPCLMULQDQ loop from 256 bytes from x86_vpclmul on, whose 256-byte steps run in 512-bit vectors on x86_avx512. isa::generic
+// (SSE2) has none. Included only by crc_arch.hpp.
 
 #include <checksum/isa.hpp>
 #include <checksum_private/target.hpp>
@@ -90,6 +91,12 @@ template <isa Isa> struct pclmul_kernel {
 
   // fold() of two blocks with the constants of each lane.
   static __m256i fold_two(__m256i accumulators, __m256i constants, __m256i next) noexcept;
+
+  // The 256-byte steps of fold_wide_blocks() in four 512-bit accumulators, while at least 256 bytes follow consumed; only on
+  // x86_avx512. Accumulator j holds the 256-bit accumulators 2j and 2j + 1.
+  template <bool Reflected>
+  static void fold_by_sixteen_512(isa_detail::vector_array<__m256i, 8> &accumulators, folding_pair const &by_sixteen, std::span<std::byte const> data,
+                                  std::size_t &consumed) noexcept;
 
   // Eight 256-bit accumulators (blocks 2j, 2j + 1 in accumulator j) fold 256 bytes per step, then four fold 128 and
   // 64. Returns 8 blocks (2 per vector) with fewer than 64 bytes left after them; consumed: the bytes they cover.
@@ -258,6 +265,39 @@ CHECKSUM_ALWAYS_INLINE inline __m256i pclmul_kernel<Isa>::fold_two(__m256i accum
       _mm256_xor_si256(_mm256_clmulepi64_epi128(accumulators, constants, 0x00), _mm256_clmulepi64_epi128(accumulators, constants, 0x11)), next);
 }
 
+template <isa Isa>
+template <bool Reflected>
+CHECKSUM_ALWAYS_INLINE inline void pclmul_kernel<Isa>::fold_by_sixteen_512(isa_detail::vector_array<__m256i, 8> &accumulators,
+                                                                           folding_pair const &by_sixteen, std::span<std::byte const> data,
+                                                                           std::size_t &consumed) noexcept {
+  if constexpr(isa_detail::includes(Isa, isa::x86_avx512)) {
+    constexpr std::size_t quarter = 64; // bytes per 512-bit accumulator
+    constexpr std::size_t step = 256;
+    __m512i const constants = _mm512_broadcast_i32x4(pair(by_sixteen));
+    __m512i const reverse = _mm512_broadcast_i32x4(_mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0));
+    isa_detail::vector_array<__m512i, 4> lanes512{};
+    for(std::size_t index = 0; index < lanes512.size(); ++index) {
+      lanes512[index] = _mm512_inserti64x4(_mm512_castsi256_si512(accumulators[2 * index]), accumulators[(2 * index) + 1], 1);
+    }
+    do { // NOLINT(cppcoreguidelines-avoid-do-while): the caller tested the first step
+      for(std::size_t index = 0; index < lanes512.size(); ++index) {
+        __m512i next = _mm512_loadu_si512(data.data() + consumed + (index * quarter));
+        if constexpr(!Reflected) {
+          next = _mm512_shuffle_epi8(next, reverse);
+        }
+        // 0x96: the three-way exclusive or of both products and the next blocks.
+        lanes512[index] = _mm512_ternarylogic_epi64(_mm512_clmulepi64_epi128(lanes512[index], constants, 0x00),
+                                                    _mm512_clmulepi64_epi128(lanes512[index], constants, 0x11), next, 0x96);
+      }
+      consumed += step;
+    } while(data.size() - consumed >= step);
+    for(std::size_t index = 0; index < lanes512.size(); ++index) {
+      accumulators[2 * index] = _mm512_castsi512_si256(lanes512[index]);
+      accumulators[(2 * index) + 1] = _mm512_extracti64x4_epi64(lanes512[index], 1);
+    }
+  }
+}
+
 // Inlined only into the non-inlined long-input callers (fold_long_message(), fold_long_crc32()): a second call cost
 // 8-15 % at 256 bytes.
 template <isa Isa>
@@ -277,12 +317,16 @@ pclmul_kernel<Isa>::fold_wide_blocks(folding_constants const &constants, std::ui
   consumed = eight;
   // Branches that 256 bytes do not take are marked unlikely, so that path runs without taken jumps.
   if(data.size() - consumed >= eight) [[unlikely]] {
-    do { // NOLINT(cppcoreguidelines-avoid-do-while): only the first test is marked unlikely
-      unrolled<8>([&](auto index) {
-        accumulators[index] = fold_two(accumulators[index], by_sixteen, load_two<Reflected>(data.subspan(consumed + (index * half))));
-      });
-      consumed += eight;
-    } while(data.size() - consumed >= eight);
+    if constexpr(isa_detail::includes(Isa, isa::x86_avx512)) {
+      fold_by_sixteen_512<Reflected>(accumulators, constants.by_sixteen, data, consumed);
+    } else {
+      do { // NOLINT(cppcoreguidelines-avoid-do-while): only the first test is marked unlikely
+        unrolled<8>([&](auto index) {
+          accumulators[index] = fold_two(accumulators[index], by_sixteen, load_two<Reflected>(data.subspan(consumed + (index * half))));
+        });
+        consumed += eight;
+      } while(data.size() - consumed >= eight);
+    }
   }
   // Blocks 2j, 2j + 1 fold over eight blocks onto blocks 2j + 8, 2j + 9.
   isa_detail::vector_array<__m256i, 4> pairs{};
