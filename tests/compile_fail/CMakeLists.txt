@@ -7,7 +7,7 @@ set(every_algorithm_tests "accumulator_from_temporary@deleted (function|construc
                           "unavailable_preset@(isa_available|associated constraints are not satisfied)"
 )
 set(crc_tests "engine_rejected_parameters@bad_optional_access" "invalid_parameters@bad_optional_access"
-              "precondition_in_constant_evaluation@(__assert_fail|_wassert)"
+              "precondition_in_constant_evaluation@(__assert_fail|_wassert|__assert_rtn)"
 )
 set(algorithms
     adler32
