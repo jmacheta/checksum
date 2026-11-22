@@ -1,4 +1,4 @@
-// Throughput of SHA-1, SHA-256 and SHA-512, for every preset and through the dispatch engine.
+// Throughput of SHA-1, SHA-256 and SHA-512 with both strategies, for every preset and through the dispatch engine.
 
 #include <checksum/sha.hpp>
 
@@ -19,17 +19,20 @@ template <class Engine> void sha(benchmark::State &state) {
 
 void sizes(benchmark::Benchmark *benchmark) { isa_bench::sizes(benchmark); }
 
-template <checksum::sha_variant Variant> void register_variant(std::string const &name) {
+template <checksum::sha_variant Variant, class Strategy> void register_variant(std::string const &name) {
   isa_bench::register_presets(
-      name, [](auto preset) { return sha<checksum::sha_engine<Variant, decltype(preset)::value>>; }, sha<checksum::sha_dispatch_engine<Variant>>,
-      sizes);
+      name, [](auto preset) { return sha<checksum::sha_engine<Variant, Strategy, decltype(preset)::value>>; },
+      sha<checksum::sha_dispatch_engine<Variant, Strategy>>, sizes);
 }
 
 } // namespace
 
 int main(int argc, char **argv) {
-  register_variant<checksum::sha_variant::sha1>("sha1");
-  register_variant<checksum::sha_variant::sha256>("sha256");
-  register_variant<checksum::sha_variant::sha512>("sha512");
+  register_variant<checksum::sha_variant::sha1, checksum::sha_compact>("sha1");
+  register_variant<checksum::sha_variant::sha256, checksum::sha_compact>("sha256");
+  register_variant<checksum::sha_variant::sha512, checksum::sha_compact>("sha512");
+  register_variant<checksum::sha_variant::sha1, checksum::sha_unrolled>("sha1_unrolled");
+  register_variant<checksum::sha_variant::sha256, checksum::sha_unrolled>("sha256_unrolled");
+  register_variant<checksum::sha_variant::sha512, checksum::sha_unrolled>("sha512_unrolled");
   return isa_bench::run(argc, argv);
 }

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <ranges>
@@ -51,7 +52,18 @@ template <sha_variant Variant> struct parameters;
 
 namespace checksum {
 
-/// Running hash of Variant: the hash value after the whole blocks, the byte count and the unfinished block. Every value is
+/// Strategy of sha_engine, the default: one round per iteration and a 16-word message schedule, the least code and stack.
+struct sha_compact {};
+
+/// Strategy of sha_engine: eight rounds per iteration (five for SHA-1) and the whole message schedule, faster on most cores
+/// for more code and stack; on 32-bit in-order cores SHA-512 is slower.
+struct sha_unrolled {};
+
+/// sha_compact or sha_unrolled.
+template <class Strategy>
+concept sha_strategy = std::same_as<Strategy, sha_compact> || std::same_as<Strategy, sha_unrolled>;
+
+/// Running hash of Variant, shared by both strategies: the hash value after the whole blocks, the byte count and the unfinished block. Every value is
 /// valid; the default is the empty message.
 template <sha_variant Variant> struct sha_state {
   /// The hash value after the whole blocks folded so far.
@@ -67,9 +79,9 @@ template <sha_variant Variant> struct sha_state {
   }
 };
 
-/// The hash Variant. Every instruction-set preset Isa (checksum/isa.hpp) runs the loop of isa::generic. Empty: make one
-/// wherever it is needed.
-template <sha_variant Variant, isa Isa = isa::generic>
+/// The hash Variant, computed as Strategy chooses (sha_compact or sha_unrolled). Every instruction-set preset Isa
+/// (checksum/isa.hpp) runs the loop of isa::generic. Empty: make one wherever it is needed.
+template <sha_variant Variant, sha_strategy Strategy = sha_compact, isa Isa = isa::generic>
   requires(isa_available(Isa))
 class sha_engine {
 public:
@@ -99,9 +111,9 @@ public:
   template <byte_range Range> [[nodiscard]] constexpr value_type compute(Range &&data) const noexcept;
 };
 
-/// sha_engine<Variant, Isa>{}.compute(data).
-template <sha_variant Variant, isa Isa = isa::generic, byte_range Range>
-[[nodiscard]] constexpr sha_engine<Variant, Isa>::value_type sha_compute(Range &&data) noexcept;
+/// sha_engine<Variant, Strategy, Isa>{}.compute(data).
+template <sha_variant Variant, sha_strategy Strategy = sha_compact, isa Isa = isa::generic, byte_range Range>
+[[nodiscard]] constexpr sha_engine<Variant, Strategy, Isa>::value_type sha_compute(Range &&data) noexcept;
 
 } // namespace checksum
 
@@ -114,8 +126,8 @@ inline constexpr isa_set own_loops = isa_set{};
 
 namespace checksum::detail {
 
-template <sha_variant Variant, isa Old, isa Isa> struct rebind_preset<sha_engine<Variant, Old>, Isa> {
-  using type = sha_engine<Variant, Isa>;
+template <sha_variant Variant, class Strategy, isa Old, isa Isa> struct rebind_preset<sha_engine<Variant, Strategy, Old>, Isa> {
+  using type = sha_engine<Variant, Strategy, Isa>;
 };
 
 } // namespace checksum::detail
@@ -123,7 +135,8 @@ template <sha_variant Variant, isa Old, isa Isa> struct rebind_preset<sha_engine
 namespace checksum {
 
 /// A sha_engine with the dispatch engines' interface. No preset has a loop of its own yet, so it always chooses generic.
-template <sha_variant Variant> class sha_dispatch_engine : public detail::dispatch_engine<sha_engine<Variant>, sha_detail::own_loops> {
+template <sha_variant Variant, sha_strategy Strategy = sha_compact>
+class sha_dispatch_engine : public detail::dispatch_engine<sha_engine<Variant, Strategy>, sha_detail::own_loops> {
 public:
   /// cpu does not change the loop.
   constexpr explicit sha_dispatch_engine(isa_set cpu = detect_isa()) noexcept;
@@ -221,17 +234,21 @@ template <> struct parameters<sha_variant::sha512_256> {
 // Reads a big-endian integer from the first sizeof(Word) bytes at data.
 template <class Word> constexpr Word load_big(std::byte const *data) noexcept;
 
-// Folds one block into words: the compression function of Core (core()).
-template <sha_variant Core> constexpr void compress(word_array<Core> &words, std::byte const *block) noexcept;
+// Folds one block into words: the compression function of Core (core()), one round per iteration or unrolled.
+template <sha_variant Core> constexpr void compress_compact(word_array<Core> &words, std::byte const *block) noexcept;
+template <sha_variant Core> constexpr void compress_unrolled(word_array<Core> &words, std::byte const *block) noexcept;
+
+// compress_compact() or compress_unrolled(), as Strategy selects.
+template <sha_variant Core, class Strategy> constexpr void compress(word_array<Core> &words, std::byte const *block) noexcept;
 
 // Folds the whole blocks of data into words.
-template <sha_variant Core> constexpr void fold_blocks(word_array<Core> &words, std::span<std::byte const> data) noexcept;
+template <sha_variant Core, class Strategy> constexpr void fold_blocks(word_array<Core> &words, std::span<std::byte const> data) noexcept;
 
-// fold_blocks(); defined once in src/sha/block_loop.cpp for each core, the loop of every preset.
-template <sha_variant Core> void block_loop(word_array<Core> &words, std::span<std::byte const> data) noexcept;
+// fold_blocks(); defined once in src/sha/block_loop.cpp for each core and strategy, the loop of every preset.
+template <sha_variant Core, class Strategy> void block_loop(word_array<Core> &words, std::span<std::byte const> data) noexcept;
 
 // fold_blocks() during constant evaluation, else block_loop().
-template <sha_variant Core> constexpr void fold(word_array<Core> &words, std::span<std::byte const> data) noexcept;
+template <sha_variant Core, class Strategy> constexpr void fold(word_array<Core> &words, std::span<std::byte const> data) noexcept;
 
 } // namespace checksum::sha_detail
 
@@ -299,7 +316,7 @@ constexpr void sha2_round(Value a, Value b, Value c, Value &d, Value e, Value f,
   h = first + (std::rotr(a, big_0[0]) ^ std::rotr(a, big_0[1]) ^ std::rotr(a, big_0[2])) + ((a & b) | (c & (a | b)));
 }
 
-template <sha_variant Core> constexpr void compress(word_array<Core> &words, std::byte const *block) noexcept {
+template <sha_variant Core> constexpr void compress_unrolled(word_array<Core> &words, std::byte const *block) noexcept {
   using value = word<Core>;
   constexpr std::size_t size = sizeof(value);
   if constexpr(Core == sha_variant::sha1) {
@@ -352,18 +369,87 @@ template <sha_variant Core> constexpr void compress(word_array<Core> &words, std
   }
 }
 
-template <sha_variant Core> constexpr void fold_blocks(word_array<Core> &words, std::span<std::byte const> data) noexcept {
-  constexpr std::size_t block_size = parameters<Core>::block_size;
-  for(std::size_t offset = 0; offset + block_size <= data.size(); offset += block_size) {
-    compress<Core>(words, data.data() + offset);
+template <sha_variant Core> constexpr void compress_compact(word_array<Core> &words, std::byte const *block) noexcept {
+  using value = word<Core>;
+  constexpr std::size_t size = sizeof(value);
+  std::array<value, 16> schedule{};
+  for(std::size_t index = 0; index < schedule.size(); ++index) {
+    schedule[index] = load_big<value>(block + (index * size));
+  }
+  if constexpr(Core == sha_variant::sha1) {
+    auto [a, b, c, d, e] = words;
+    for(std::size_t round = 0; round < 80; ++round) {
+      if(round >= 16) {
+        schedule[round % 16] =
+            std::rotl(schedule[(round - 3) % 16] ^ schedule[(round - 8) % 16] ^ schedule[(round - 14) % 16] ^ schedule[round % 16], 1);
+      }
+      value const mixed = round < 20 ? (b & c) | (~b & d) : round < 40 || round >= 60 ? b ^ c ^ d : (b & c) | (b & d) | (c & d);
+      value const next = std::rotl(a, 5) + mixed + e + sha1_constants[round / 20] + schedule[round % 16];
+      e = d;
+      d = c;
+      c = std::rotl(b, 30);
+      b = a;
+      a = next;
+    }
+    words = {words[0] + a, words[1] + b, words[2] + c, words[3] + d, words[4] + e};
+  } else {
+    // The rotations of FIPS 180-4 for SHA-256 and SHA-512: Σ0, Σ1, then σ0 and σ1 with their shifts last.
+    constexpr bool wide = Core == sha_variant::sha512;
+    constexpr std::array<int, 3> big_0 = wide ? std::array{28, 34, 39} : std::array{2, 13, 22};
+    constexpr std::array<int, 3> big_1 = wide ? std::array{14, 18, 41} : std::array{6, 11, 25};
+    constexpr std::array<int, 3> small_0 = wide ? std::array{1, 8, 7} : std::array{7, 18, 3};
+    constexpr std::array<int, 3> small_1 = wide ? std::array{19, 61, 6} : std::array{17, 19, 10};
+    constexpr std::size_t rounds = wide ? 80 : 64;
+    auto [a, b, c, d, e, f, g, h] = words;
+    for(std::size_t round = 0; round < rounds; ++round) {
+      if(round >= 16) {
+        value const early = schedule[(round - 15) % 16];
+        value const late = schedule[(round - 2) % 16];
+        schedule[round % 16] += (std::rotr(early, small_0[0]) ^ std::rotr(early, small_0[1]) ^ (early >> small_0[2])) + schedule[(round - 7) % 16] +
+                                (std::rotr(late, small_1[0]) ^ std::rotr(late, small_1[1]) ^ (late >> small_1[2]));
+      }
+      value constant = 0;
+      if constexpr(wide) {
+        constant = sha512_constants[round];
+      } else {
+        constant = sha256_constants[round];
+      }
+      value const first =
+          h + (std::rotr(e, big_1[0]) ^ std::rotr(e, big_1[1]) ^ std::rotr(e, big_1[2])) + ((e & f) ^ (~e & g)) + constant + schedule[round % 16];
+      value const second = (std::rotr(a, big_0[0]) ^ std::rotr(a, big_0[1]) ^ std::rotr(a, big_0[2])) + ((a & b) ^ (a & c) ^ (b & c));
+      h = g;
+      g = f;
+      f = e;
+      e = d + first;
+      d = c;
+      c = b;
+      b = a;
+      a = first + second;
+    }
+    words = {words[0] + a, words[1] + b, words[2] + c, words[3] + d, words[4] + e, words[5] + f, words[6] + g, words[7] + h};
   }
 }
 
-template <sha_variant Core> constexpr void fold(word_array<Core> &words, std::span<std::byte const> data) noexcept {
-  if consteval {
-    fold_blocks<Core>(words, data);
+template <sha_variant Core, class Strategy> constexpr void compress(word_array<Core> &words, std::byte const *block) noexcept {
+  if constexpr(std::same_as<Strategy, sha_unrolled>) {
+    compress_unrolled<Core>(words, block);
   } else {
-    block_loop<Core>(words, data);
+    compress_compact<Core>(words, block);
+  }
+}
+
+template <sha_variant Core, class Strategy> constexpr void fold_blocks(word_array<Core> &words, std::span<std::byte const> data) noexcept {
+  constexpr std::size_t block_size = parameters<Core>::block_size;
+  for(std::size_t offset = 0; offset + block_size <= data.size(); offset += block_size) {
+    compress<Core, Strategy>(words, data.data() + offset);
+  }
+}
+
+template <sha_variant Core, class Strategy> constexpr void fold(word_array<Core> &words, std::span<std::byte const> data) noexcept {
+  if consteval {
+    fold_blocks<Core, Strategy>(words, data);
+  } else {
+    block_loop<Core, Strategy>(words, data);
   }
 }
 
@@ -371,21 +457,21 @@ template <sha_variant Core> constexpr void fold(word_array<Core> &words, std::sp
 
 namespace checksum {
 
-template <sha_variant Variant, isa Isa>
+template <sha_variant Variant, sha_strategy Strategy, isa Isa>
   requires(isa_available(Isa))
-constexpr isa sha_engine<Variant, Isa>::preset() noexcept {
+constexpr isa sha_engine<Variant, Strategy, Isa>::preset() noexcept {
   return Isa;
 }
 
-template <sha_variant Variant, isa Isa>
+template <sha_variant Variant, sha_strategy Strategy, isa Isa>
   requires(isa_available(Isa))
-constexpr sha_state<Variant> sha_engine<Variant, Isa>::initial() const noexcept {
+constexpr sha_state<Variant> sha_engine<Variant, Strategy, Isa>::initial() const noexcept {
   return {};
 }
 
-template <sha_variant Variant, isa Isa>
+template <sha_variant Variant, sha_strategy Strategy, isa Isa>
   requires(isa_available(Isa))
-constexpr sha_state<Variant> sha_engine<Variant, Isa>::update(sha_state<Variant> state, std::span<std::byte const> data) const noexcept {
+constexpr sha_state<Variant> sha_engine<Variant, Strategy, Isa>::update(sha_state<Variant> state, std::span<std::byte const> data) const noexcept {
   constexpr sha_variant core = sha_detail::core(Variant);
   constexpr std::size_t block_size = sha_detail::parameters<Variant>::block_size;
   auto const buffered = static_cast<std::size_t>(state.length % block_size);
@@ -397,27 +483,28 @@ constexpr sha_state<Variant> sha_engine<Variant, Isa>::update(sha_state<Variant>
     if(buffered + fill < block_size) {
       return state;
     }
-    sha_detail::compress<core>(state.words, state.buffer.data());
+    sha_detail::compress<core, Strategy>(state.words, state.buffer.data());
   }
   std::size_t const whole = data.size() - (data.size() % block_size);
   if(whole != 0) {
-    sha_detail::fold<core>(state.words, data.first(whole));
+    sha_detail::fold<core, Strategy>(state.words, data.first(whole));
   }
   std::ranges::copy(data.subspan(whole), state.buffer.begin());
   return state;
 }
 
-template <sha_variant Variant, isa Isa>
+template <sha_variant Variant, sha_strategy Strategy, isa Isa>
   requires(isa_available(Isa))
 template <byte_range Range>
-constexpr sha_state<Variant> sha_engine<Variant, Isa>::update(sha_state<Variant> state, Range &&data) const noexcept {
+constexpr sha_state<Variant> sha_engine<Variant, Strategy, Isa>::update(sha_state<Variant> state, Range &&data) const noexcept {
   detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) { state = update(state, chunk); });
   return state;
 }
 
-template <sha_variant Variant, isa Isa>
+template <sha_variant Variant, sha_strategy Strategy, isa Isa>
   requires(isa_available(Isa))
-constexpr sha_engine<Variant, Isa>::value_type sha_engine<Variant, Isa>::finalize(sha_state<Variant> const &state) const noexcept {
+constexpr sha_engine<Variant, Strategy, Isa>::value_type
+sha_engine<Variant, Strategy, Isa>::finalize(sha_state<Variant> const &state) const noexcept {
   constexpr sha_variant core = sha_detail::core(Variant);
   using word = sha_detail::word<Variant>;
   constexpr std::size_t block_size = sha_detail::parameters<Variant>::block_size;
@@ -430,14 +517,14 @@ constexpr sha_engine<Variant, Isa>::value_type sha_engine<Variant, Isa>::finaliz
   block[buffered] = std::byte{0x80};
   std::ranges::fill(std::span(block).subspan(buffered + 1), std::byte{0});
   if(buffered + 1 > block_size - length_size) {
-    sha_detail::compress<core>(words, block.data());
+    sha_detail::compress<core, Strategy>(words, block.data());
     block.fill(std::byte{0});
   }
   std::uint64_t const bits = state.length * 8;
   for(std::size_t index = 0; index < 8; ++index) {
     block[block_size - 1 - index] = static_cast<std::byte>(bits >> (8 * index));
   }
-  sha_detail::compress<core>(words, block.data());
+  sha_detail::compress<core, Strategy>(words, block.data());
   value_type digest{};
   for(std::size_t index = 0; index < digest.size(); ++index) {
     digest[index] = static_cast<std::uint8_t>(words[index / sizeof(word)] >> (8 * (sizeof(word) - 1 - (index % sizeof(word)))));
@@ -445,26 +532,27 @@ constexpr sha_engine<Variant, Isa>::value_type sha_engine<Variant, Isa>::finaliz
   return digest;
 }
 
-template <sha_variant Variant, isa Isa>
+template <sha_variant Variant, sha_strategy Strategy, isa Isa>
   requires(isa_available(Isa))
-constexpr sha_engine<Variant, Isa>::value_type sha_engine<Variant, Isa>::compute(std::span<std::byte const> data) const noexcept {
+constexpr sha_engine<Variant, Strategy, Isa>::value_type sha_engine<Variant, Strategy, Isa>::compute(std::span<std::byte const> data) const noexcept {
   return finalize(update(initial(), data));
 }
 
-template <sha_variant Variant, isa Isa>
+template <sha_variant Variant, sha_strategy Strategy, isa Isa>
   requires(isa_available(Isa))
 template <byte_range Range>
-constexpr sha_engine<Variant, Isa>::value_type sha_engine<Variant, Isa>::compute(Range &&data) const noexcept {
+constexpr sha_engine<Variant, Strategy, Isa>::value_type sha_engine<Variant, Strategy, Isa>::compute(Range &&data) const noexcept {
   return finalize(update(initial(), std::forward<Range>(data)));
 }
 
-template <sha_variant Variant, isa Isa, byte_range Range> constexpr sha_engine<Variant, Isa>::value_type sha_compute(Range &&data) noexcept {
-  return sha_engine<Variant, Isa>{}.compute(std::forward<Range>(data));
+template <sha_variant Variant, sha_strategy Strategy, isa Isa, byte_range Range>
+constexpr sha_engine<Variant, Strategy, Isa>::value_type sha_compute(Range &&data) noexcept {
+  return sha_engine<Variant, Strategy, Isa>{}.compute(std::forward<Range>(data));
 }
 
-template <sha_variant Variant>
-constexpr sha_dispatch_engine<Variant>::sha_dispatch_engine(isa_set cpu) noexcept
-    : detail::dispatch_engine<sha_engine<Variant>, sha_detail::own_loops>(cpu) {}
+template <sha_variant Variant, sha_strategy Strategy>
+constexpr sha_dispatch_engine<Variant, Strategy>::sha_dispatch_engine(isa_set cpu) noexcept
+    : detail::dispatch_engine<sha_engine<Variant, Strategy>, sha_detail::own_loops>(cpu) {}
 
 } // namespace checksum
 

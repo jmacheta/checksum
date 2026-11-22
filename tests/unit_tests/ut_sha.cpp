@@ -54,7 +54,8 @@ static_assert(sha_compute<sha512_256>("abc"sv) == digest<32>("53048e2681941ef99b
 static_assert(sha_compute<sha256>("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"sv) ==
               digest<32>("248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"));
 static_assert(sha_compute<sha1>(""sv) == digest<20>("da39a3ee5e6b4b0d3255bfef95601890afd80709"));
-static_assert(engine<sha_engine<sha256>> && engine<sha_dispatch_engine<sha512>> && !resumable_engine<sha_engine<sha1>>);
+static_assert(engine<sha_engine<sha256>> && engine<sha_dispatch_engine<sha512, sha_unrolled>> && !resumable_engine<sha_engine<sha1>>);
+static_assert(sha_compute<sha512, sha_unrolled>("abc"sv) == sha_compute<sha512>("abc"sv) && !sha_strategy<int>);
 static_assert(sha_dispatch_engine<sha384>(isa_set{}).preset() == isa::generic);
 
 template <class Variant> class sha : public testing::Test {};
@@ -75,47 +76,75 @@ struct variant_names {
 
 TYPED_TEST_SUITE(sha, variants, variant_names);
 
+// Calls check.template operator()<Strategy>() for both strategies.
+template <class Check> void for_each_strategy(Check const &check) {
+  check.template operator()<sha_compact>();
+  check.template operator()<sha_unrolled>();
+}
+
 TYPED_TEST(sha, reference_values) {
   constexpr sha_variant variant = TypeParam::value;
   using vectors = sha_test::vector_set<variant>;
-  for(std::size_t index = 0; index < sha_test::prefix_sizes.size(); ++index) {
-    std::size_t const size = sha_test::prefix_sizes[index];
-    auto const data = std::span(message).first(size);
-    EXPECT_EQ(sha_compute<variant>(data), vectors::prefixes[index]) << "size " << size;
-    EXPECT_EQ(sha_dispatch_engine<variant>{}.compute(data), vectors::prefixes[index]) << "size " << size;
-  }
+  for_each_strategy([]<class Strategy>() {
+    for(std::size_t index = 0; index < sha_test::prefix_sizes.size(); ++index) {
+      std::size_t const size = sha_test::prefix_sizes[index];
+      auto const data = std::span(message).first(size);
+      EXPECT_EQ((sha_compute<variant, Strategy>(data)), vectors::prefixes[index]) << "size " << size;
+      EXPECT_EQ((sha_dispatch_engine<variant, Strategy>{}.compute(data)), vectors::prefixes[index]) << "size " << size;
+    }
+  });
 }
 
-// The prefixes up to 200 bytes, computed during constant evaluation.
+// The prefixes up to 200 bytes, computed during constant evaluation with both strategies.
 TYPED_TEST(sha, constant_evaluation) {
   static constexpr sha_variant variant = TypeParam::value;
   using vectors = sha_test::vector_set<variant>;
-  static constexpr auto computed = [] {
-    std::array<typename vectors::digest, 18> result{};
-    for(std::size_t index = 0; index < result.size(); ++index) {
-      result[index] = sha_compute<variant>(std::span(message).first(sha_test::prefix_sizes[index]));
+  for_each_strategy([]<class Strategy>() {
+    static constexpr auto computed = [] {
+      std::array<typename vectors::digest, 18> result{};
+      for(std::size_t index = 0; index < result.size(); ++index) {
+        result[index] = sha_compute<variant, Strategy>(std::span(message).first(sha_test::prefix_sizes[index]));
+      }
+      return result;
+    }();
+    static_assert(sha_test::prefix_sizes[computed.size() - 1] == 200);
+    for(std::size_t index = 0; index < computed.size(); ++index) {
+      EXPECT_EQ(computed[index], vectors::prefixes[index]) << "size " << sha_test::prefix_sizes[index];
     }
-    return result;
-  }();
-  static_assert(sha_test::prefix_sizes[computed.size() - 1] == 200);
-  for(std::size_t index = 0; index < computed.size(); ++index) {
-    EXPECT_EQ(computed[index], vectors::prefixes[index]) << "size " << sha_test::prefix_sizes[index];
-  }
-  static_assert(engine_checks::chunked(sha_engine<variant>{}, std::span(message).first(200), 7) == vectors::prefixes[17]);
+    static_assert(engine_checks::chunked(sha_engine<variant, Strategy>{}, std::span(message).first(200), 7) == vectors::prefixes[17]);
+  });
 }
 
 TYPED_TEST(sha, split_anywhere) {
-  engine_checks::check_split_anywhere(sha_engine<TypeParam::value>{}, std::span(message).first(300));
-  EXPECT_TRUE(engine_checks::same_state_for_any_split(sha_engine<TypeParam::value>{}, std::span(message).first(260)));
+  for_each_strategy([]<class Strategy>() {
+    engine_checks::check_split_anywhere(sha_engine<TypeParam::value, Strategy>{}, std::span(message).first(300));
+    EXPECT_TRUE(engine_checks::same_state_for_any_split(sha_engine<TypeParam::value, Strategy>{}, std::span(message).first(260)));
+  });
+}
+
+// A state is the same for both strategies: either may continue and finish what the other started.
+TYPED_TEST(sha, strategies_share_the_state) {
+  constexpr sha_variant variant = TypeParam::value;
+  using vectors = sha_test::vector_set<variant>;
+  sha_engine<variant, sha_compact> const compact;
+  sha_engine<variant, sha_unrolled> const unrolled;
+  for(std::size_t const split : {0UZ, 1UZ, 64UZ, 129UZ, 999UZ, 1000UZ}) {
+    auto const first = std::span(message).first(split);
+    auto const rest = std::span(message).subspan(split);
+    EXPECT_EQ(unrolled.finalize(unrolled.update(compact.update(compact.initial(), first), rest)), vectors::prefixes.back()) << "split " << split;
+    EXPECT_EQ(compact.finalize(compact.update(unrolled.update(unrolled.initial(), first), rest)), vectors::prefixes.back()) << "split " << split;
+  }
 }
 
 // Pieces of every size up to past two blocks, so that splits fall at every offset around the block and padding boundaries.
 TYPED_TEST(sha, split_into_chunks) {
   constexpr sha_variant variant = TypeParam::value;
   using vectors = sha_test::vector_set<variant>;
-  for(std::size_t chunk_size = 1; chunk_size <= 260; ++chunk_size) {
-    ASSERT_EQ(engine_checks::chunked(sha_engine<variant>{}, message, chunk_size), vectors::prefixes.back()) << "chunk " << chunk_size;
-  }
+  for_each_strategy([]<class Strategy>() {
+    for(std::size_t chunk_size = 1; chunk_size <= 260; ++chunk_size) {
+      ASSERT_EQ(engine_checks::chunked(sha_engine<variant, Strategy>{}, message, chunk_size), vectors::prefixes.back()) << "chunk " << chunk_size;
+    }
+  });
 }
 
 TYPED_TEST(sha, byte_ranges) {
@@ -128,16 +157,20 @@ TYPED_TEST(sha, byte_ranges) {
   EXPECT_EQ(sha_compute<variant>(std::vector<unsigned char>(text.begin(), text.end())), expected);
   // Longer than one 64-byte chunk of a non-contiguous range.
   EXPECT_EQ(sha_compute<variant>(std::list<std::byte>(message.begin(), message.end())), vectors::prefixes.back());
+  // A digest is a range of bytes itself.
+  EXPECT_EQ(sha_compute<variant>(expected), sha_compute<variant>(std::as_bytes(std::span(expected))));
 }
 
 TYPED_TEST(sha, long_messages) {
   constexpr sha_variant variant = TypeParam::value;
   using vectors = sha_test::vector_set<variant>;
   auto const data = random_bytes(sha_test::long_message_size, 5);
-  EXPECT_EQ(sha_compute<variant>(data), vectors::long_message);
-  EXPECT_EQ(engine_checks::chunked(sha_engine<variant>{}, data, 4099), vectors::long_message);
   std::vector<char> const a(1'000'000, 'a');
-  EXPECT_EQ(sha_compute<variant>(a), vectors::million_a);
+  for_each_strategy([&]<class Strategy>() {
+    EXPECT_EQ((sha_compute<variant, Strategy>(data)), vectors::long_message);
+    EXPECT_EQ(engine_checks::chunked(sha_engine<variant, Strategy>{}, data, 4099), vectors::long_message);
+    EXPECT_EQ((sha_compute<variant, Strategy>(a)), vectors::million_a);
+  });
 }
 
 } // namespace

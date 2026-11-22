@@ -16,11 +16,15 @@ using namespace checksum;
 using namespace std::literals;
 using enum sha_variant;
 
-// Calls check(sha_engine<Variant, Preset>{}, sha_engine<Variant>{}) for one variant of each compression function.
+// Calls check(sha_engine<Variant, Strategy, Preset>{}, sha_engine<Variant>{}) for one variant of each compression function and
+// both strategies.
 template <isa Preset, class Check> void for_each_core(Check check) {
-  check(sha_engine<sha1, Preset>{}, sha_engine<sha1>{});
-  check(sha_engine<sha256, Preset>{}, sha_engine<sha256>{});
-  check(sha_engine<sha512, Preset>{}, sha_engine<sha512>{});
+  check(sha_engine<sha1, sha_compact, Preset>{}, sha_engine<sha1>{});
+  check(sha_engine<sha256, sha_compact, Preset>{}, sha_engine<sha256>{});
+  check(sha_engine<sha512, sha_compact, Preset>{}, sha_engine<sha512>{});
+  check(sha_engine<sha1, sha_unrolled, Preset>{}, sha_engine<sha1>{});
+  check(sha_engine<sha256, sha_unrolled, Preset>{}, sha_engine<sha256>{});
+  check(sha_engine<sha512, sha_unrolled, Preset>{}, sha_engine<sha512>{});
 }
 
 template <class Preset> using sha_presets = isa_test::preset_test<Preset>;
@@ -29,10 +33,10 @@ TYPED_TEST_SUITE(sha_presets, isa_test::presets, isa_test::preset_name);
 // Constant evaluation runs the portable code for every preset.
 TYPED_TEST(sha_presets, constant_evaluation) {
   constexpr isa preset = TypeParam::value;
-  static_assert(sha_compute<sha256, preset>("123456789"sv) == sha_compute<sha256>("123456789"sv));
-  static_assert(engine_checks::split_check_text(sha_engine<sha512, preset>{}) == sha_compute<sha512>("123456789"sv));
+  static_assert(sha_compute<sha256, sha_compact, preset>("123456789"sv) == sha_compute<sha256>("123456789"sv));
+  static_assert(engine_checks::split_check_text(sha_engine<sha512, sha_unrolled, preset>{}) == sha_compute<sha512>("123456789"sv));
   auto const buffer = random_bytes(1003, 4);
-  EXPECT_EQ((sha_compute<sha1, preset>(at(buffer, 3, 1000))), sha_compute<sha1>(at(buffer, 3, 1000)));
+  EXPECT_EQ((sha_compute<sha1, sha_compact, preset>(at(buffer, 3, 1000))), sha_compute<sha1>(at(buffer, 3, 1000)));
 }
 
 TYPED_TEST(sha_presets, match_generic_for_every_size) {

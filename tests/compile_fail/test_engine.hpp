@@ -31,7 +31,7 @@ template <checksum::isa Isa> using test_engine = checksum::internet_engine<Isa>;
 template <checksum::isa Isa> using test_engine = checksum::murmur3_engine<32, Isa>;
 #elifdef CHECKSUM_TEST_SHA
 #include <checksum/sha.hpp>
-template <checksum::isa Isa> using test_engine = checksum::sha_engine<checksum::sha_variant::sha256, Isa>;
+template <checksum::isa Isa> using test_engine = checksum::sha_engine<checksum::sha_variant::sha256, checksum::sha_compact, Isa>;
 #elifdef CHECKSUM_TEST_XXH3
 #include <checksum/xxh3.hpp>
 template <checksum::isa Isa> using test_engine = checksum::xxh3_engine<64, Isa>;
