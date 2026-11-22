@@ -40,8 +40,9 @@ What every algorithm in this repository has to satisfy.
 
 ## Out of scope
 
-- Cryptographic hashes, message authentication and keyed hashes meant to resist attackers (SHA, SipHash): the library
-  is for non-cryptographic checksums and hashes only.
+- Message authentication and keyed hashes meant to resist attackers (HMAC, SipHash), code hardened against timing
+  attacks on secret data, and cryptographic hashes other than SHA-1 and SHA-2. SHA serves as an integrity check of
+  public data, such as firmware images.
 - A C API, and features users can build from the public API (frame verification, residue checks).
 - Mandatory run-time CPU detection: it is an optional layer on top of the compile-time presets, and programs that make
   no dispatch engine link none of it.

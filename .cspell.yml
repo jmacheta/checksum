@@ -30,6 +30,8 @@ ignoreRegExpList:
  - /-D[A-Z]+/g # ignore compiler define flags
 
 words:
+- abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq
+- abef
 - ACLE
 - adccp
 - adcs
@@ -39,6 +41,7 @@ words:
 - addtogroup
 - aixm
 - alderlake
+- alignr
 - anyofallof
 - argn
 - armv
@@ -61,6 +64,8 @@ words:
 - castagnoli
 - castsi
 - ccitt
+- cdab
+- cdgh
 - cdma
 - chongo
 - cinc
@@ -96,6 +101,7 @@ words:
 - DACR
 - darc
 - datagram
+- dchg
 - dect
 - demcr
 - dpbusd
@@ -103,6 +109,7 @@ words:
 - dpkg
 - dtcm
 - eabi
+- efgh
 - elen
 - elifdef
 - endforeach
@@ -112,8 +119,10 @@ words:
 - extracti
 - fconstexpr
 - fdata
+- feba
 - fetchcontent
 - ffunction
+- FIPS
 - flexray
 - FPEXC
 - fsanitize
@@ -125,12 +134,15 @@ words:
 - glibcxx
 - GNUC
 - gnueabihf
+- Goldmont
 - googletest
 - gtest
 - Haswell
 - hdlc
+- hgfe
 - hicpp
 - hitag
+- HMAC
 - hwcap
 - hwprobe
 - icelake
@@ -199,6 +211,7 @@ words:
 - nrsc
 - nullopt
 - nvme
+- objdump
 - openpgp
 - opensafety
 - orrs
@@ -231,6 +244,7 @@ words:
 - riello
 - RISCV
 - riscv
+- rnds
 - rocksoft
 - rodata
 - rohc
@@ -314,6 +328,7 @@ words:
 - vsetvl
 - vsetvlmax
 - vrsub
+- vsha
 - vshlq
 - vshrq
 - vsrl

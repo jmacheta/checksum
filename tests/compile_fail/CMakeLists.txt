@@ -17,6 +17,7 @@ set(algorithms
     fnv1a
     internet
     murmur3
+    sha
     xxh3
     xxhash
 )

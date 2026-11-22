@@ -10,6 +10,7 @@
 #include <checksum/internet.hpp>
 #include <checksum/isa.hpp>
 #include <checksum/murmur3.hpp>
+#include <checksum/sha.hpp>
 #include <checksum/xxh3.hpp>
 #include <checksum/xxhash.hpp>
 
@@ -40,9 +41,8 @@ static_assert(isa_set{isa::thumb2_crc}.contains(isa::thumb2_dsp) && !isa_set{isa
 static_assert((isa_set{isa::riscv_zbc} | isa::riscv_v).contains(isa::riscv_zbc) && (isa_set{isa::riscv_zbc} | isa::riscv_v).contains(isa::riscv_v));
 
 // select() takes the latest preset of this build in both the CPU's set and the algorithm's own-loop set, else generic. An
-// own-loop set holds the presets with target options plus the presets without them (RISC-V) that the algorithm has a kernel
-// for: riscv_zbc for CRC, riscv_v for Internet and XXH3, none for the others; xxHash, MurmurHash3 and the CRC strategies
-// without preset loops hold generic alone.
+// own-loop set holds the presets with target options and code of their own, plus the presets without them (RISC-V) that the
+// algorithm has a kernel for; xxHash, MurmurHash3, FNV-1a and the CRC strategies without preset loops hold generic alone.
 constexpr isa_set riscv_both = isa_set{isa::riscv_zbc} | isa::riscv_v;
 constexpr isa_set target_options = isa_detail::built_with_target_options();
 static_assert(isa_detail::select(isa_set{}, target_options) == isa::generic);
@@ -55,13 +55,18 @@ static_assert(isa_detail::select(isa::riscv_v, target_options | isa::riscv_zbc) 
               isa_detail::select(isa::riscv_zbc, target_options | isa::riscv_v) == isa::generic);
 static_assert(isa_detail::select(isa::x86_avxvnni, isa_set{}) == isa::generic && isa_detail::select(isa::thumb2_crc, isa_set{}) == isa::generic &&
               isa_detail::select(riscv_both, isa_set{}) == isa::generic);
-static_assert(internet_detail::own_loops == (target_options | isa::riscv_v) && xxh3_detail::own_loops == (target_options | isa::riscv_v) &&
-              adler32_detail::own_loops == (target_options | isa::riscv_v) && fletcher_detail::own_loops == (target_options | isa::riscv_v) &&
-              fletcher4_detail::own_loops == (target_options | isa::riscv_v) && xxhash_detail::own_loops == isa_set{} &&
-              murmur3_detail::own_loops == isa_set{});
-static_assert(crc_detail::own_loops<crc_lut_sliced, std::uint32_t> == (target_options | isa::riscv_zbc) &&
-              crc_detail::own_loops<crc_lut_braided, std::uint64_t> == (target_options | isa::riscv_zbc) &&
-              crc_detail::own_loops<crc_lut_byte, std::uint32_t> == isa_set{});
+static_assert(xxhash_detail::own_loops == isa_set{} && murmur3_detail::own_loops == isa_set{} &&
+              crc_detail::own_loops<crc_lut_sliced, std::uint32_t> == crc_detail::own_loops<crc_lut_braided, std::uint64_t>);
+// A preset whose loop compiles to its parent's code has no loop of its own: its engines run the parent's.
+constexpr isa built_or_generic(isa preset) { return isa_available(preset) ? preset : isa::generic; }
+static_assert(isa_detail::loop_preset(isa::x86_vpclmul, internet_detail::own_loops) == built_or_generic(isa::x86_avx2) &&
+              isa_detail::loop_preset(isa::x86_avxvnni, adler32_detail::own_loops) == built_or_generic(isa::x86_avxvnni) &&
+              isa_detail::loop_preset(isa::aarch64_pmull, fletcher_detail::own_loops) == built_or_generic(isa::aarch64_crc) &&
+              isa_detail::loop_preset(isa::thumb2_crc, xxh3_detail::own_loops) == built_or_generic(isa::thumb2_neon) &&
+              isa_detail::loop_preset(isa::x86_avxvnni, crc_detail::own_loops<crc_lut_sliced, std::uint32_t>) == built_or_generic(isa::x86_vpclmul));
+static_assert(sha_detail::own_loops.contains(isa::x86_sha) && !sha_detail::own_loops.contains(isa::x86_pclmul) &&
+              sha_detail::own_loops.contains(isa::aarch64_sha512) && !sha_detail::own_loops.contains(isa::aarch64_pmull));
+static_assert(crc_detail::own_loops<crc_lut_byte, std::uint32_t> == isa_set{});
 
 // The dispatch engines report the preset whose loop runs.
 static_assert(internet_dispatch_engine(riscv_both).preset() == isa_detail::select(riscv_both, isa::riscv_v) &&
@@ -164,38 +169,43 @@ void check_engine(Generic const &generic, Dispatch const &dispatch, isa_set own_
 
 // Every dispatch engine made for cpu against the generic template.
 void check_engines(isa_set cpu, std::vector<std::byte> const &buffer) {
-  check_engine(internet_engine{}, internet_dispatch_engine(cpu), target_options | isa::riscv_v, cpu, buffer);
-  check_engine(adler32_engine{}, adler32_dispatch_engine(cpu), target_options | isa::riscv_v, cpu, buffer);
-  check_engine(fletcher_engine<16>{}, fletcher_dispatch_engine<16>(cpu), target_options | isa::riscv_v, cpu, buffer);
-  check_engine(fletcher_engine<32>{}, fletcher_dispatch_engine<32>(cpu), target_options | isa::riscv_v, cpu, buffer);
-  check_engine(fletcher_engine<64>{}, fletcher_dispatch_engine<64>(cpu), target_options | isa::riscv_v, cpu, buffer);
-  check_engine(fletcher4_engine{}, fletcher4_dispatch_engine(cpu), target_options | isa::riscv_v, cpu, buffer);
-  check_engine(xxh3_engine<64>{5}, xxh3_dispatch_engine<64>(5, cpu), target_options | isa::riscv_v, cpu, buffer);
-  check_engine(xxh3_engine<128>{}, xxh3_dispatch_engine<128>(0, cpu), target_options | isa::riscv_v, cpu, buffer);
+  check_engine(internet_engine{}, internet_dispatch_engine(cpu), internet_detail::own_loops, cpu, buffer);
+  check_engine(adler32_engine{}, adler32_dispatch_engine(cpu), adler32_detail::own_loops, cpu, buffer);
+  check_engine(fletcher_engine<16>{}, fletcher_dispatch_engine<16>(cpu), fletcher_detail::own_loops, cpu, buffer);
+  check_engine(fletcher_engine<32>{}, fletcher_dispatch_engine<32>(cpu), fletcher_detail::own_loops, cpu, buffer);
+  check_engine(fletcher_engine<64>{}, fletcher_dispatch_engine<64>(cpu), fletcher_detail::own_loops, cpu, buffer);
+  check_engine(fletcher4_engine{}, fletcher4_dispatch_engine(cpu), fletcher4_detail::own_loops, cpu, buffer);
+  check_engine(xxh3_engine<64>{5}, xxh3_dispatch_engine<64>(5, cpu), xxh3_detail::own_loops, cpu, buffer);
+  check_engine(xxh3_engine<128>{}, xxh3_dispatch_engine<128>(0, cpu), xxh3_detail::own_loops, cpu, buffer);
   check_engine(xxhash_engine<32>{3}, xxhash_dispatch_engine<32>(3, cpu), isa_set{}, cpu, buffer);
   check_engine(xxhash_engine<64>{}, xxhash_dispatch_engine<64>(0, cpu), isa_set{}, cpu, buffer);
   check_engine(murmur3_engine<32>{9}, murmur3_dispatch_engine<32>(9, cpu), isa_set{}, cpu, buffer);
   check_engine(murmur3_engine<128>{2}, murmur3_dispatch_engine<128>(2, cpu), isa_set{}, cpu, buffer);
+  check_engine(sha_engine<sha_variant::sha1>{}, sha_dispatch_engine<sha_variant::sha1>(cpu), sha_detail::own_loops, cpu, buffer);
+  check_engine(sha_engine<sha_variant::sha256, sha_unrolled>{}, sha_dispatch_engine<sha_variant::sha256, sha_unrolled>(cpu), sha_detail::own_loops,
+               cpu, buffer);
+  check_engine(sha_engine<sha_variant::sha512>{}, sha_dispatch_engine<sha_variant::sha512>(cpu), sha_detail::own_loops, cpu, buffer);
 }
 
 // Default-constructed engines detect the CPU themselves.
 TEST(dispatch, default_engines_choose_the_detected_preset) {
-  isa const best_rvv = isa_detail::select(detect_isa(), target_options | isa::riscv_v);
-  EXPECT_EQ(internet_dispatch_engine{}.preset(), best_rvv);
-  EXPECT_EQ(adler32_dispatch_engine{}.preset(), best_rvv);
-  EXPECT_EQ(fletcher_dispatch_engine<16>{}.preset(), best_rvv);
-  EXPECT_EQ(fletcher_dispatch_engine<32>{}.preset(), best_rvv);
-  EXPECT_EQ(fletcher_dispatch_engine<64>{}.preset(), best_rvv);
-  EXPECT_EQ(fletcher4_dispatch_engine{}.preset(), best_rvv);
-  EXPECT_EQ(xxh3_dispatch_engine<64>{}.preset(), best_rvv);
-  EXPECT_EQ(xxh3_dispatch_engine<128>{}.preset(), best_rvv);
+  isa_set const cpu = detect_isa();
+  EXPECT_EQ(internet_dispatch_engine{}.preset(), isa_detail::select(cpu, internet_detail::own_loops));
+  EXPECT_EQ(adler32_dispatch_engine{}.preset(), isa_detail::select(cpu, adler32_detail::own_loops));
+  EXPECT_EQ(fletcher_dispatch_engine<16>{}.preset(), isa_detail::select(cpu, fletcher_detail::own_loops));
+  EXPECT_EQ(fletcher_dispatch_engine<32>{}.preset(), isa_detail::select(cpu, fletcher_detail::own_loops));
+  EXPECT_EQ(fletcher_dispatch_engine<64>{}.preset(), isa_detail::select(cpu, fletcher_detail::own_loops));
+  EXPECT_EQ(fletcher4_dispatch_engine{}.preset(), isa_detail::select(cpu, fletcher4_detail::own_loops));
+  EXPECT_EQ(xxh3_dispatch_engine<64>{}.preset(), isa_detail::select(cpu, xxh3_detail::own_loops));
+  EXPECT_EQ(xxh3_dispatch_engine<128>{}.preset(), isa_detail::select(cpu, xxh3_detail::own_loops));
   EXPECT_EQ(xxhash_dispatch_engine<32>{}.preset(), isa::generic);
   EXPECT_EQ(xxhash_dispatch_engine<64>{}.preset(), isa::generic);
   EXPECT_EQ(murmur3_dispatch_engine<32>{}.preset(), isa::generic);
   EXPECT_EQ(murmur3_dispatch_engine<128>{}.preset(), isa::generic);
+  EXPECT_EQ(sha_dispatch_engine<sha_variant::sha256>{}.preset(), isa_detail::select(detect_isa(), sha_detail::own_loops));
   auto const crc = crc_dispatch_engine<std::uint32_t, crc_lut_sliced>::create(crc32_iso_hdlc);
   ASSERT_TRUE(crc.has_value());
-  EXPECT_EQ(crc->preset(), isa_detail::select(detect_isa(), target_options | isa::riscv_zbc));
+  EXPECT_EQ(crc->preset(), isa_detail::select(cpu, crc_detail::own_loops<crc_lut_sliced, std::uint32_t>));
   EXPECT_EQ((crc_dispatch_engine<std::uint32_t, crc_lut_braided>::create(crc32_iso_hdlc)->preset()), crc->preset());
   EXPECT_EQ((crc_dispatch_engine<std::uint32_t, crc_lut_byte>::create(crc32_iso_hdlc)->preset()), isa::generic);
   EXPECT_FALSE((crc_dispatch_engine<std::uint8_t, crc_lut_sliced>::create(crc32_iso_hdlc).has_value()));

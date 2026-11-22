@@ -49,7 +49,7 @@ public:
   /// The checksum: std::uint16_t, std::uint32_t or std::uint64_t.
   using value_type = std::conditional_t<Width == 16, std::uint16_t, std::conditional_t<Width == 32, std::uint32_t, std::uint64_t>>;
 
-  /// The preset whose loop the engine runs: Isa.
+  /// The preset whose loop the engine runs: Isa, or the nearest preset it extends that has a loop of its own (isa_detail::loop_preset()).
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -84,7 +84,7 @@ template <unsigned Width, isa Isa = isa::generic, byte_range Range>
 namespace checksum::fletcher_detail {
 
 // The presets a dispatch engine chooses from: generic, those with target options, and riscv_v, the one without them with a kernel.
-inline constexpr isa_set own_loops = isa_detail::built_with_target_options() | isa::riscv_v;
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options({isa::x86_vpclmul, isa::aarch64_pmull}) | isa::riscv_v;
 
 } // namespace checksum::fletcher_detail
 
@@ -187,7 +187,7 @@ namespace checksum {
 template <unsigned Width, isa Isa>
   requires(Width == 16 || Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr isa fletcher_engine<Width, Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, fletcher_detail::own_loops);
 }
 
 template <unsigned Width, isa Isa>
@@ -202,7 +202,8 @@ constexpr fletcher_state<Width> fletcher_engine<Width, Isa>::update(fletcher_sta
   if consteval {
     return fletcher_detail::update_bytes(state, data);
   } else {
-    return fletcher_detail::from_word<Width>(fletcher_detail::sum_loop<Isa>(fletcher_detail::to_word(state), data));
+    return fletcher_detail::from_word<Width>(
+        fletcher_detail::sum_loop<isa_detail::loop_preset(Isa, fletcher_detail::own_loops)>(fletcher_detail::to_word(state), data));
   }
 }
 

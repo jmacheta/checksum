@@ -270,7 +270,7 @@
             "configurePreset": "cross-aarch64",
             "configuration": "Debug",
             "environment": {
-                "CHECKSUM_EXPECTED_ISA": "aarch64_pmull"
+                "CHECKSUM_EXPECTED_ISA": "aarch64_sha512"
             }
         },
         {
@@ -280,7 +280,7 @@
             "configurePreset": "cross-aarch64be",
             "configuration": "Debug",
             "environment": {
-                "CHECKSUM_EXPECTED_ISA": "aarch64_pmull"
+                "CHECKSUM_EXPECTED_ISA": "aarch64_sha512"
             }
         },
         {

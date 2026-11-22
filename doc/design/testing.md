@@ -107,7 +107,8 @@ and `native-clang` on GitHub's AArch64 runner, where the AArch64 presets run on 
 turns those skips into failures: a preset test fails if the CPU cannot run a required preset, a benchmark executable
 exits with an error, and `isa_test_support.required_presets_run` fails if a required preset is unknown, not built, or not
 run. Every CI job sets it (`required` in `ci.yml`) to what its CPU guarantees: `x86_avx2` on GitHub's x86-64 runners
-(VPCLMULQDQ and AVX-VNNI vary between their CPUs), `aarch64_pmull` on its Arm runners (Neoverse N2) and in QEMU,
+(VPCLMULQDQ and AVX-VNNI vary between their CPUs), `aarch64_sha2` on its Arm runners (Neoverse N2) and on Apple silicon,
+`aarch64_sha512` in QEMU,
 `thumb2_crc` and `riscv_zbc,riscv_v` in QEMU `-cpu max` (`riscv_zbc` alone with Clang 18, which builds no `riscv_v`
 in an rv64gc build). The bare-metal benchmarks assert their presets by themselves.
 QEMU reports Zbc in `riscv_hwprobe` from 9.0 on, so the RISC-V jobs take QEMU 10.2 (Ubuntu 26.04's statically linked
@@ -119,8 +120,8 @@ pinned by URL and sha256 in `ci.yml` (Intel Simplified Software License, which a
 suite takes under a minute in SDE. Locally:
 
 ```sh
-CHECKSUM_EXPECTED_ISA=x86_avxvnni CHECKSUM_REQUIRED_ISA=x86_avxvnni sde64 -adl -- build/native-gcc/tests/unit_tests/Debug/checksum_ut
-CHECKSUM_EXPECTED_ISA=x86_avx512 CHECKSUM_REQUIRED_ISA=x86_avx512 sde64 -icx -- build/native-gcc/tests/unit_tests/Debug/checksum_ut
+CHECKSUM_EXPECTED_ISA=x86_avxvnni,x86_sha CHECKSUM_REQUIRED_ISA=x86_avxvnni,x86_sha sde64 -adl -- build/native-gcc/tests/unit_tests/Debug/checksum_ut
+CHECKSUM_EXPECTED_ISA=x86_avx512,x86_sha CHECKSUM_REQUIRED_ISA=x86_avx512,x86_sha sde64 -icx -- build/native-gcc/tests/unit_tests/Debug/checksum_ut
 ```
 
 The `cross-riscv64` and `cross-riscv64-clang` (Clang 19) jobs run the RVV, detection and dispatch tests again at `-cpu max,vlen=256` and `vlen=512`.
@@ -142,10 +143,10 @@ CHECKSUM_EXPECTED_ISA=generic qemu-riscv64 -cpu max,zbc=false,v=false build/cros
 What CI never runs: AArch64 without CRC32 or PMULL (no QEMU model or GitHub runner lacks them), 32-bit Arm Linux without
 NEON (bare metal runs the `thumb2` and `thumb2_dsp` builds on Cortex-M3/M4/M7/M33 and Cortex-A9 in QEMU;
 `bare-cortex-m0`, `bare-cortex-r5` and `bare-cortex-r52` have no QEMU machine and are only built, with their
-`static_assert` checks), MSVC on ARM64 other than GitHub's `windows-11-arm` (Neoverse N2, so `aarch64_pmull` only), the
+`static_assert` checks), MSVC on ARM64 other than GitHub's `windows-11-arm` (Neoverse N2), the
 x86-64 presets of MSVC and clang-cl on VPCLMULQDQ or AVX-VNNI (SDE runs only the Linux builds), RVV at vector lengths
 other than 128, 256 and 512 bits, and detection on FreeBSD. Check those on hardware. The `macos-clang` job runs the
-unit tests on GitHub's Apple silicon runner, requiring `aarch64_pmull` from `sysctlbyname`.
+unit tests on GitHub's Apple silicon runner, requiring `aarch64_sha2` from `sysctlbyname`.
 
 ## Coverage expectations
 

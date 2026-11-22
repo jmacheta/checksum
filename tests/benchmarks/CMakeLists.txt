@@ -27,6 +27,7 @@ foreach (
         xxh3
         murmur3
         fnv1a
+        sha
 )
   add_executable(checksum_bench_${algorithm} bench_${algorithm}.cpp)
   target_compile_features(checksum_bench_${algorithm} PRIVATE cxx_std_23)
@@ -47,6 +48,7 @@ foreach (
         "xxh3 ^xxh3_128/20$"
         "murmur3 ^murmur3_128/20$"
         "fnv1a ^fnv1a_64/20$"
+        "sha ^sha256/20$"
 )
   separate_arguments(smoke)
   list(GET smoke 0 algorithm)

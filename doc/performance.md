@@ -20,7 +20,9 @@ MB/s at 4 KiB with GCC: the fastest preset, and `isa::generic` in parentheses. E
 | [XXH3-64](#xxh3) | 72 946 (28 498) | 4 728 | 26.4 |
 | [MurmurHash3 x86_32](#murmurhash3) | 5 288 | 1 187 | 32.4 |
 | [FNV-1a 32](#fnv-1a) | 1 384 | 373 | 17.7 |
+| [SHA-256](#sha-1-and-sha-2) | 2 606 (499) | 79 | 1.33 |
 
+For SHA-256 the figures are the faster of its two strategies; the Cortex-A72 has no SHA instructions.
 `x86_avx512` is not benchmarked: none of these machines has AVX-512, and its kernels are tested in Intel SDE only.
 Where a single figure stands, no preset of that CPU beats `generic`. On AArch64 `generic` already has the NEON kernels,
 and only CRC gains from `aarch64_crc`.
@@ -434,3 +436,76 @@ row faster. On the Cortex-M4, FNV-1a 32 takes 4.51 cycles per byte at 4 KiB and 
 
 Cortex-M4, GCC 14.3: the inline loop takes 132 B of code for FNV-1a 32 and 188 B for FNV-1a 64 at `-O2`, 100 B and
 156 B at `-Os`.
+
+## SHA-1 and SHA-2
+
+User guide: [sha.md](sha.md). Every preset runs the same portable code. SHA-224 runs at the speed of SHA-256, and
+SHA-384, SHA-512/224 and SHA-512/256 at the speed of SHA-512.
+
+`sha_compact`, the default:
+
+| Hash, platform | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| SHA-1, x86-64 GCC | 170 | 298 | 484 | 620 | 629 | 643 |
+| SHA-256, x86-64 GCC | 132 | 238 | 391 | 491 | 499 | 510 |
+| SHA-512, x86-64 GCC | 100 | 324 | 505 | 780 | 786 | 819 |
+| SHA-1, AArch64 | 19 | 32 | 52 | 65 | 66 | 67 |
+| SHA-256, AArch64 | 18 | 30 | 50 | 63 | 64 | 65 |
+| SHA-512, AArch64 | 13 | 42 | 64 | 98 | 99 | 102 |
+| SHA-1, AArch32 | 16 | 28 | 47 | 59 | 60 | 61 |
+| SHA-256, AArch32 | 16 | 28 | 46 | 59 | 60 | 60 |
+| SHA-512, AArch32 | 5 | 15 | 22 | 33 | 33 | 35 |
+| SHA-1, Cortex-M4 | 0.27 | 0.48 | 0.82 | 1.05 | 1.06 | |
+| SHA-256, Cortex-M4 | 0.25 | 0.44 | 0.76 | 0.98 | 1.00 | |
+| SHA-512, Cortex-M4 | 0.08 | 0.27 | 0.40 | 0.61 | 0.61 | |
+
+`sha_unrolled`:
+
+| Hash, platform | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| SHA-1, x86-64 GCC | 265 | 500 | 898 | 1 164 | 1 194 | 1 212 |
+| SHA-256, x86-64 GCC | 126 | 220 | 373 | 469 | 476 | 484 |
+| SHA-512, x86-64 GCC | 91 | 293 | 454 | 707 | 712 | 737 |
+| SHA-1, AArch64 | 36 | 64 | 109 | 140 | 142 | 122 |
+| SHA-256, AArch64 | 22 | 37 | 62 | 78 | 79 | 81 |
+| SHA-512, AArch64 | 14 | 45 | 68 | 106 | 106 | 100 |
+| SHA-1, AArch32 | 31 | 57 | 101 | 131 | 134 | 136 |
+| SHA-256, AArch32 | 22 | 41 | 71 | 91 | 92 | 94 |
+| SHA-512, AArch32 | 6 | 21 | 31 | 48 | 48 | 50 |
+| SHA-1, Cortex-M4 | 0.43 | 0.80 | 1.45 | 1.91 | 1.95 | |
+| SHA-256, Cortex-M4 | 0.31 | 0.56 | 1.00 | 1.30 | 1.33 | |
+| SHA-512, Cortex-M4 | 0.08 | 0.24 | 0.35 | 0.53 | 0.53 | |
+
+Short messages pay for the padding block: up to 55 bytes take one block of SHA-256, and up to 111 one block of
+SHA-512. On the Cortex-M4 at 4 KiB, `sha_compact` takes 75.3, 80.1 and 131 cycles per byte for SHA-1, SHA-256 and
+SHA-512, `sha_unrolled` 41.0, 60.3 and 150.
+
+`sha_unrolled` renames the variables of eight rounds (five for SHA-1) and keeps the whole message schedule. SHA-1 runs
+about twice as fast with it everywhere, and SHA-256 1.2-1.5× on Arm. On x86-64 with `-march=native`, GCC vectorizes the
+compact schedule and SHA-2 is 5-10 % faster with `sha_compact`; SHA-512 on the Cortex-M4 is 13 % slower unrolled, since
+its 64-bit variables do not fit the registers.
+
+With SHA-NI (`isa::x86_sha`, either strategy), MB/s on the i7-13700K:
+
+| Hash | 20 B | 64 B | 256 B | 1500 B | 4 KiB | 1 MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| SHA-1 | 395 | 999 | 1 981 | 2 750 | 2 851 | 2 935 |
+| SHA-256 | 409 | 954 | 1 845 | 2 525 | 2 606 | 2 679 |
+
+SHA-512 has no SHA-NI instructions and runs the portable code there. The Arm SHA kernels are tested in QEMU only: the
+Cortex-A72 of the Pi 4 has no SHA instructions.
+
+For reference, OpenSSL 3.5 runs SHA-1, SHA-256 and SHA-512 at 1 258, 621 and 949 MB/s on the i7-13700K with its scalar
+assembly, and SHA-256 at about 2 650 MB/s with SHA-NI; at 183, 136 and 194 MB/s on the Cortex-A72 with NEON.
+
+### Code size
+
+Cortex-M4, GCC 14.3, one variant with its padding and compression function:
+
+| Hash | `sha_compact` `-O2` | `-Os` | `sha_unrolled` `-O2` | `-Os` |
+| --- | --- | --- | --- | --- |
+| SHA-1 | 1 002 B | 616 B | 2 024 B | 1 438 B |
+| SHA-256 | 764 B | 716 B | 1 188 B | 978 B |
+| SHA-512 | 1 300 B | 1 282 B | 3 086 B | 1 788 B |
+
+The message schedule takes 64 B of stack (128 B for SHA-512) with `sha_compact`; 320, 256 and 640 B with `sha_unrolled`.

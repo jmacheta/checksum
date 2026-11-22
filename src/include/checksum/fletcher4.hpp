@@ -51,7 +51,7 @@ public:
   using state_type = fletcher4_state; ///< Running checksum.
   using value_type = fletcher4_value; ///< The checksum.
 
-  /// The preset whose loop the engine runs: Isa.
+  /// The preset whose loop the engine runs: Isa, or the nearest preset it extends that has a loop of its own (isa_detail::loop_preset()).
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -86,7 +86,8 @@ template <isa Isa = isa::generic, byte_range Range>
 namespace checksum::fletcher4_detail {
 
 // The presets a dispatch engine chooses from: generic, those with target options, and riscv_v, the one without them with a kernel.
-inline constexpr isa_set own_loops = isa_detail::built_with_target_options() | isa::riscv_v;
+inline constexpr isa_set own_loops =
+    isa_detail::built_with_target_options({isa::x86_vpclmul, isa::x86_avxvnni, isa::aarch64_pmull, isa::thumb2_dsp, isa::thumb2_crc}) | isa::riscv_v;
 
 } // namespace checksum::fletcher4_detail
 
@@ -171,7 +172,7 @@ namespace checksum {
 template <isa Isa>
   requires(isa_available(Isa))
 constexpr isa fletcher4_engine<Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, fletcher4_detail::own_loops);
 }
 
 template <isa Isa>
@@ -193,7 +194,7 @@ constexpr fletcher4_state fletcher4_engine<Isa>::update(fletcher4_state state, s
     if(head == data.size()) {
       return state;
     }
-    return fletcher4_detail::sum_loop<Isa>(state, data.subspan(head));
+    return fletcher4_detail::sum_loop<isa_detail::loop_preset(Isa, fletcher4_detail::own_loops)>(state, data.subspan(head));
   }
 }
 
@@ -223,7 +224,7 @@ constexpr fletcher4_value fletcher4_engine<Isa>::compute(std::span<std::byte con
   if consteval {
     return finalize(update(initial(), data));
   } else {
-    return fletcher4_detail::compute_loop<Isa>(data);
+    return fletcher4_detail::compute_loop<isa_detail::loop_preset(Isa, fletcher4_detail::own_loops)>(data);
   }
 }
 

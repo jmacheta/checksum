@@ -14,8 +14,17 @@ How presets, kernels, dispatch and detection are structured, and the rules a cha
 - **RISC-V has no target pragma:** RVV kernels carry a target attribute, and Zbc uses inline assembly.
 - **No shared state between preset sources.** Every helper is a template on the preset or has internal linkage, and
   there is no static state.
+- **An engine runs its loop preset:** `isa_detail::loop_preset(Isa, own_loops)`, the preset itself or the nearest one it
+  extends that is in the algorithm's own-loop set, and `preset()` returns it. So an algorithm needs sources only for the
+  presets of its own-loop set.
+- **No source that compiles to its parent's code.** An algorithm passes such presets to
+  `built_with_target_options({...})`, and they run their parent's loop. Before adding a source, compare its disassembly
+  with the parent's (`objdump -d`, preset names stripped) with GCC and Clang, and on Cortex-M for the Thumb-2 presets:
+  identical code gets no source.
+- **Algorithm-specific presets** (`isa_detail::algorithm_specific()`: `x86_sha`, `aarch64_sha2`, `aarch64_sha512`) are
+  left out of `built_with_target_options()`, so only the algorithms that list them build sources for them.
 - **Generic-only loops** are built once, for `generic`, and their own-loop set is `isa_set{}`: `crc_lut_none`,
-  `crc_lut_nibble`, `crc_lut_byte`, XXH32, XXH64 and MurmurHash3. Add per-preset copies only if they beat it on
+  `crc_lut_nibble`, `crc_lut_byte`, XXH32, XXH64, MurmurHash3 and SHA. Add per-preset copies only if they beat it on
   hardware.
 
 ### Kernels
@@ -46,7 +55,7 @@ How presets, kernels, dispatch and detection are structured, and the rules a cha
   would silently make `static` engines generic.
 - **Dispatch engines** pick a built preset with `isa_detail::select()` and call it via `isa_detail::dispatch()`. They
   choose only from the algorithm's own-loop set (`<algorithm>_detail::own_loops`): `generic`, the presets with target
-  options, and the RISC-V presets the algorithm has a kernel for. A `static_assert` in each loops header checks the set.
+  options and code of their own, and the RISC-V presets the algorithm has a kernel for. A `static_assert` in each loops header checks the set.
 - **Detection never guesses.** A preset is reported if `compiler_guarantees()` finds it in the predefined macros, or if
   the CPU or OS reports it: CPUID on x86-64, `getauxval` and `riscv_hwprobe` on Linux, `IsProcessorFeaturePresent` on
   Windows, `elf_aux_info` on FreeBSD and `sysctlbyname` on Apple.
@@ -69,7 +78,9 @@ How presets, kernels, dispatch and detection are structured, and the rules a cha
 2. Add it to `isa_detail::built_presets` for its architecture and compiler, after the earlier rungs.
 3. Add `CHECKSUM_TARGET_<PRESET>` options to `presets.hpp` under the same conditions.
 4. Copy a sibling source for each loop with kernels (adler32, crc `lut_sliced` and `lut_braided`, fletcher, fletcher4,
-   internet, xxh3) and list the new sources in `src/CMakeLists.txt`.
+   internet, xxh3) and list the new sources in `src/CMakeLists.txt`. Where a copy compiles to its parent's code, delete it
+   and add the preset to the algorithm's `built_with_target_options({...})` list instead. A preset for a few algorithms only goes into
+   `algorithm_specific()` instead, and only those algorithms add it to their own-loop sets and get sources.
 5. Specialize the kernels with `requires(isa_detail::includes(Isa, isa::<preset>))`. Add
    `CHECKSUM_PRESET_HAS_<FEATURE>_<preset>` if they need intrinsic types the build may lack.
 6. Add the CPU check to `detect.cpp` (`checked` and `runs()`) and the macros to `compiler_guarantees()`.
@@ -145,6 +156,18 @@ speed-up and cost code size, so each has one generic loop.
 - The XXH32/XXH64 stripe loop is not inlined, so compilers do not pack the lanes into one vector.
 - XXH64's one-shot keeps its lanes in locals only on 64-bit targets, since they spill on Cortex-M.
 - FNV-1a has no loop in `src/`: its inline loop takes four bytes per iteration, 1.55× faster on Cortex-M4.
+
+## SHA-1 and SHA-2
+
+SHA's own-loop set holds `x86_sha`, `aarch64_sha2` and `aarch64_sha512` only (`isa_detail::only()`), so every other
+preset runs generic's loop. A kernel replaces the strategy's rounds; `finalize()` and the buffered block go through the
+same loop, so short messages gain too.
+
+| Preset | Kernel |
+| --- | --- |
+| `x86_sha` | SHA-NI for SHA-1 and SHA-256, four rounds per group, fully unrolled with the schedule interleaved |
+| `aarch64_sha2`, little-endian | SHA1 and SHA256 instructions (unproven) |
+| `aarch64_sha512`, little-endian, not MSVC | Adds the SHA512 instructions, two rounds per step (unproven) |
 
 ## XXH3
 

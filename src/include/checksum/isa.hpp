@@ -1,9 +1,11 @@
 #ifndef CHECKSUM_ISA_HPP
 #define CHECKSUM_ISA_HPP
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <ranges>
 
 /**
@@ -23,20 +25,23 @@ namespace checksum {
 /// and x86_avx512 both extend x86_vpclmul. The two RISC-V presets are independent, and values are only ever appended,
 /// never reordered.
 enum class isa : std::uint8_t {
-  generic,       ///< The default: only what every CPU of the architecture has (SSE2 on x86-64; NEON on little-endian AArch64).
-  x86_pclmul,    ///< x86-64 with SSE4.2 and PCLMULQDQ (SSSE3 included).
-  x86_avx2,      ///< x86_pclmul plus AVX2.
-  x86_vpclmul,   ///< x86_avx2 plus VPCLMULQDQ.
-  x86_avxvnni,   ///< x86_vpclmul plus AVX-VNNI.
-  aarch64_crc,   ///< AArch64 with the CRC32 instructions.
-  aarch64_pmull, ///< aarch64_crc plus the AES extension (PMULL).
-  thumb2,        ///< 32-bit Arm in Thumb-2 state.
-  thumb2_dsp,    ///< thumb2 plus the DSP extension (ARMv7E-M, ARMv7-A).
-  thumb2_neon,   ///< thumb2_dsp on ARMv7-A or later with NEON.
-  thumb2_crc,    ///< thumb2_neon on ARMv8-A with the CRC32 instructions.
-  riscv_zbc,     ///< RV64 with Zbc carry-less multiplication.
-  riscv_v,       ///< RV64 with the V extension.
-  x86_avx512,    ///< x86_vpclmul plus AVX-512 F, BW, VL and VNNI (Ice Lake, Zen 4 and later), without x86_avxvnni.
+  generic,        ///< The default: only what every CPU of the architecture has (SSE2 on x86-64; NEON on little-endian AArch64).
+  x86_pclmul,     ///< x86-64 with SSE4.2 and PCLMULQDQ (SSSE3 included).
+  x86_avx2,       ///< x86_pclmul plus AVX2.
+  x86_vpclmul,    ///< x86_avx2 plus VPCLMULQDQ.
+  x86_avxvnni,    ///< x86_vpclmul plus AVX-VNNI.
+  aarch64_crc,    ///< AArch64 with the CRC32 instructions.
+  aarch64_pmull,  ///< aarch64_crc plus the AES extension (PMULL).
+  thumb2,         ///< 32-bit Arm in Thumb-2 state.
+  thumb2_dsp,     ///< thumb2 plus the DSP extension (ARMv7E-M, ARMv7-A).
+  thumb2_neon,    ///< thumb2_dsp on ARMv7-A or later with NEON.
+  thumb2_crc,     ///< thumb2_neon on ARMv8-A with the CRC32 instructions.
+  riscv_zbc,      ///< RV64 with Zbc carry-less multiplication.
+  riscv_v,        ///< RV64 with the V extension.
+  x86_avx512,     ///< x86_vpclmul plus AVX-512 F, BW, VL and VNNI (Ice Lake, Zen 4 and later), without x86_avxvnni.
+  x86_sha,        ///< x86_pclmul plus the SHA extensions (SHA-NI: Goldmont, Zen, Ice Lake and later), for SHA only.
+  aarch64_sha2,   ///< aarch64_pmull plus the SHA1 and SHA256 instructions, for SHA only.
+  aarch64_sha512, ///< aarch64_sha2 plus the SHA512 instructions (Armv8.2-A SHA3 extension), for SHA only.
 };
 
 /// Whether this build has the variants of preset: generic always; x86-64 and AArch64 presets with GCC, Clang, MSVC or clang-cl; RISC-V
@@ -45,6 +50,10 @@ enum class isa : std::uint8_t {
 /// for A-profile ARMv7 and later with a hardware floating-point ABI (with Clang, where the build has NEON). Naming a preset
 /// it rejects is a compile error; the answer is the same in every translation unit.
 [[nodiscard]] constexpr bool isa_available(isa preset) noexcept;
+
+namespace isa_detail {
+struct set_access;
+} // namespace isa_detail
 
 /// A set of presets that a CPU runs, for the dispatch engines of every algorithm (e.g. internet_dispatch_engine), which run
 /// the best variant this build has inside the set. It always contains generic.
@@ -66,6 +75,8 @@ public:
 
 private:
   constexpr explicit isa_set(std::uint32_t mask) noexcept;
+
+  friend struct isa_detail::set_access;
 
   std::uint32_t bits = 1; // bit n for the preset of value n
 };
@@ -93,9 +104,9 @@ constexpr bool includes(isa have, isa want) noexcept;
 // (checksum_private/presets.hpp) check the same macros.
 #if ((defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)) ||                                                                            \
     (defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64) && !defined(_M_ARM64EC))
-inline constexpr std::array built_presets{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni, isa::x86_avx512};
+inline constexpr std::array built_presets{isa::x86_pclmul, isa::x86_avx2, isa::x86_vpclmul, isa::x86_avxvnni, isa::x86_avx512, isa::x86_sha};
 #elif ((defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)) || (defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64))
-inline constexpr std::array built_presets{isa::aarch64_crc, isa::aarch64_pmull};
+inline constexpr std::array built_presets{isa::aarch64_crc, isa::aarch64_pmull, isa::aarch64_sha2, isa::aarch64_sha512};
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__arm__) && __ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' && !defined(__SOFTFP__) &&       \
     (!defined(__clang__) || (defined(__thumb2__) && defined(__ARM_NEON)))
 inline constexpr std::array built_presets{isa::thumb2, isa::thumb2_dsp, isa::thumb2_neon, isa::thumb2_crc};
@@ -113,13 +124,24 @@ inline constexpr std::array built_presets{isa::riscv_zbc};
 inline constexpr std::array<isa, 0> built_presets{};
 #endif
 
+// generic and preset, without the presets it extends: an own-loop set of an algorithm with loops for a few presets only.
+constexpr isa_set only(isa preset) noexcept;
+
+// The preset whose loop an engine of preset runs, for an algorithm whose own-loop set is own_loops: preset or the nearest
+// preset it extends that the set contains, else generic.
+constexpr isa loop_preset(isa preset, isa_set own_loops) noexcept;
+
+// Presets that only some algorithms have loops for (SHA): built_with_target_options() leaves them out.
+constexpr bool algorithm_specific(isa preset) noexcept;
+
 // Whether preset compiles the loops without target options, as the RISC-V presets do (GCC has no target pragma there): its
 // loop of an algorithm is generic's unless the algorithm has a kernel for it.
 constexpr bool without_target_options(isa preset) noexcept;
 
-// generic and the presets of this build with target options: those that run a loop of their own for every algorithm with
-// per-preset loops. A dispatch engine adds the presets without target options that the algorithm has a kernel for.
-constexpr isa_set built_with_target_options() noexcept;
+// generic and the presets of this build with target options, algorithm_specific() ones and same_as_parent aside: those that
+// run a loop of their own. same_as_parent lists the presets whose loop of the algorithm compiles to the same code as their
+// parent's, so they run the parent's. A dispatch engine adds the presets without target options that the algorithm has a kernel for.
+constexpr isa_set built_with_target_options(std::initializer_list<isa> same_as_parent = {}) noexcept;
 
 // The preset of cpu that a dispatch engine runs: the latest preset of this build in both cpu and own_loops, the presets that
 // run a loop of their own for its algorithm, else generic.
@@ -148,8 +170,14 @@ constexpr isa parent(isa preset) noexcept {
   case isa::x86_avxvnni:
   case isa::x86_avx512:
     return isa::x86_vpclmul;
+  case isa::x86_sha:
+    return isa::x86_pclmul;
   case isa::aarch64_pmull:
     return isa::aarch64_crc;
+  case isa::aarch64_sha2:
+    return isa::aarch64_pmull;
+  case isa::aarch64_sha512:
+    return isa::aarch64_sha2;
   case isa::thumb2_dsp:
     return isa::thumb2;
   case isa::thumb2_neon:
@@ -218,11 +246,30 @@ namespace checksum::isa_detail {
 
 constexpr bool without_target_options(isa preset) noexcept { return preset == isa::riscv_zbc || preset == isa::riscv_v; }
 
-constexpr isa_set built_with_target_options() noexcept {
+struct set_access {
+  static constexpr isa_set only(isa preset) noexcept { return isa_set((1U << static_cast<unsigned>(preset)) | 1U); }
+};
+
+constexpr isa_set only(isa preset) noexcept { return set_access::only(preset); }
+
+constexpr bool algorithm_specific(isa preset) noexcept {
+  return preset == isa::x86_sha || preset == isa::aarch64_sha2 || preset == isa::aarch64_sha512;
+}
+
+constexpr isa loop_preset(isa preset, isa_set own_loops) noexcept {
+  for(; preset != isa::generic; preset = parent(preset)) {
+    if(own_loops.contains(preset)) {
+      return preset;
+    }
+  }
+  return isa::generic;
+}
+
+constexpr isa_set built_with_target_options(std::initializer_list<isa> same_as_parent) noexcept {
   isa_set presets;
   for(isa const preset : built_presets) {
-    if(!without_target_options(preset)) {
-      presets = presets | preset;
+    if(!without_target_options(preset) && !algorithm_specific(preset) && std::ranges::find(same_as_parent, preset) == same_as_parent.end()) {
+      presets = presets | only(preset);
     }
   }
   return presets;

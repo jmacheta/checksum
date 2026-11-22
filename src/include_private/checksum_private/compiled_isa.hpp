@@ -41,6 +41,10 @@ constexpr bool compiler_guarantees(isa preset) noexcept {
 #endif
 #endif
 #endif
+#ifdef __SHA__
+  case isa::x86_sha:
+    return true;
+#endif
 #endif
 #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
   case isa::aarch64_crc:
@@ -48,6 +52,14 @@ constexpr bool compiler_guarantees(isa preset) noexcept {
 #if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
   case isa::aarch64_pmull:
     return true;
+#if defined(__ARM_FEATURE_SHA2) || defined(__ARM_FEATURE_CRYPTO)
+  case isa::aarch64_sha2:
+    return true;
+#ifdef __ARM_FEATURE_SHA512
+  case isa::aarch64_sha512:
+    return true;
+#endif
+#endif
 #endif
 #endif
 #if defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2

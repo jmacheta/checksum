@@ -30,6 +30,14 @@ static_assert(includes(isa::x86_avx512, isa::x86_vpclmul) && includes(isa::x86_a
               !includes(isa::x86_avx512, isa::x86_avxvnni) && !includes(isa::x86_avxvnni, isa::x86_avx512) &&
               checksum::isa_detail::line(isa::x86_avx512) == isa::x86_pclmul);
 static_assert(isa_set{isa::x86_avx512} == (isa_set{isa::x86_vpclmul} | isa::x86_avx512));
+static_assert(includes(isa::x86_sha, isa::x86_pclmul) && !includes(isa::x86_sha, isa::x86_avx2) && !includes(isa::x86_avx512, isa::x86_sha) &&
+              includes(isa::aarch64_sha512, isa::aarch64_crc) && !includes(isa::aarch64_sha2, isa::aarch64_sha512));
+
+// An engine runs the loop of its preset or of the nearest preset it extends that the algorithm has one for.
+static_assert(checksum::isa_detail::loop_preset(isa::x86_sha, isa_set{isa::x86_avx2}) == isa::x86_pclmul &&
+              checksum::isa_detail::loop_preset(isa::x86_avx512, isa_set{isa::x86_avx2}) == isa::x86_avx2 &&
+              checksum::isa_detail::loop_preset(isa::aarch64_sha512, isa_set{}) == isa::generic &&
+              checksum::isa_detail::loop_preset(isa::riscv_v, isa_set{isa::riscv_v}) == isa::riscv_v);
 static_assert(includes(isa::aarch64_pmull, isa::aarch64_crc) && !includes(isa::aarch64_crc, isa::aarch64_pmull));
 static_assert(includes(isa::thumb2_crc, isa::thumb2) && includes(isa::thumb2_neon, isa::thumb2_dsp) && !includes(isa::thumb2_dsp, isa::thumb2_neon));
 static_assert(!includes(isa::riscv_v, isa::riscv_zbc) && !includes(isa::riscv_zbc, isa::riscv_v));
@@ -137,10 +145,13 @@ std::optional<isa_set> cpuinfo_presets() {
   auto const has = [&](std::string_view flag) { return flags->contains(" " + std::string(flag) + " "); };
   isa_set const vpclmul =
       ladder({{isa::x86_pclmul, has("sse4_2") && has("pclmulqdq")}, {isa::x86_avx2, has("avx2")}, {isa::x86_vpclmul, has("vpclmulqdq")}});
-  if(!vpclmul.contains(isa::x86_vpclmul)) {
-    return vpclmul;
-  }
   isa_set result = vpclmul;
+  if(vpclmul.contains(isa::x86_pclmul) && has("sha_ni")) {
+    result = result | isa::x86_sha;
+  }
+  if(!vpclmul.contains(isa::x86_vpclmul)) {
+    return result;
+  }
   if(has("avx_vnni")) {
     result = result | isa::x86_avxvnni;
   }
@@ -153,7 +164,10 @@ std::optional<isa_set> cpuinfo_presets() {
   if(!features) {
     return std::nullopt;
   }
-  return ladder({{isa::aarch64_crc, features->contains(" crc32 ")}, {isa::aarch64_pmull, features->contains(" pmull ")}});
+  return ladder({{isa::aarch64_crc, features->contains(" crc32 ")},
+                 {isa::aarch64_pmull, features->contains(" pmull ")},
+                 {isa::aarch64_sha2, features->contains(" sha2 ")},
+                 {isa::aarch64_sha512, features->contains(" sha512 ")}});
 #elifdef __arm__
   // Linux builds of the thumb2 presets are ARMv7-A or later, which have Thumb-2 and the DSP extension.
   std::optional<std::string> const features = cpuinfo_words("Features");

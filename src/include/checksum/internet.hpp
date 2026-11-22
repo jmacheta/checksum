@@ -41,7 +41,7 @@ public:
   using state_type = internet_state; ///< Running checksum.
   using value_type = std::uint16_t;  ///< The checksum.
 
-  /// The preset whose loop the engine runs: Isa.
+  /// The preset whose loop the engine runs: Isa, or the nearest preset it extends that has a loop of its own (isa_detail::loop_preset()).
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -75,7 +75,9 @@ template <isa Isa = isa::generic, byte_range Range> [[nodiscard]] constexpr inte
 namespace checksum::internet_detail {
 
 // The presets a dispatch engine chooses from: generic, those with target options, and riscv_v, the one without them with a kernel.
-inline constexpr isa_set own_loops = isa_detail::built_with_target_options() | isa::riscv_v;
+inline constexpr isa_set own_loops = isa_detail::built_with_target_options({isa::x86_pclmul, isa::x86_vpclmul, isa::x86_avxvnni, isa::aarch64_crc,
+                                                                            isa::aarch64_pmull, isa::thumb2_dsp}) |
+                                     isa::riscv_v;
 
 } // namespace checksum::internet_detail
 
@@ -148,7 +150,7 @@ namespace checksum {
 template <isa Isa>
   requires(isa_available(Isa))
 constexpr isa internet_engine<Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, internet_detail::own_loops);
 }
 
 template <isa Isa>
@@ -163,7 +165,7 @@ constexpr internet_state internet_engine<Isa>::update(internet_state state, std:
   if consteval {
     return internet_detail::combine(state, internet_detail::sum_bytes(data), data.size());
   } else {
-    return internet_detail::combine(state, internet_detail::sum_loop<Isa>(data), data.size());
+    return internet_detail::combine(state, internet_detail::sum_loop<isa_detail::loop_preset(Isa, internet_detail::own_loops)>(data), data.size());
   }
 }
 

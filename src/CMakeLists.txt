@@ -7,8 +7,6 @@ target_compile_features(checksum PUBLIC cxx_std_23)
 target_sources(
   checksum
   PRIVATE adler32/sum_loop.cpp
-          adler32/sum_loop_aarch64_crc.cpp
-          adler32/sum_loop_aarch64_pmull.cpp
           adler32/sum_loop_riscv_v.cpp
           adler32/sum_loop_riscv_zbc.cpp
           adler32/sum_loop_thumb2.cpp
@@ -19,7 +17,6 @@ target_sources(
           adler32/sum_loop_x86_avxvnni.cpp
           adler32/sum_loop_x86_avx512.cpp
           adler32/sum_loop_x86_pclmul.cpp
-          adler32/sum_loop_x86_vpclmul.cpp
           crc/lut_braided.cpp
           crc/lut_braided_aarch64_crc.cpp
           crc/lut_braided_aarch64_pmull.cpp
@@ -27,10 +24,8 @@ target_sources(
           crc/lut_braided_riscv_zbc.cpp
           crc/lut_braided_thumb2.cpp
           crc/lut_braided_thumb2_crc.cpp
-          crc/lut_braided_thumb2_dsp.cpp
           crc/lut_braided_thumb2_neon.cpp
           crc/lut_braided_x86_avx2.cpp
-          crc/lut_braided_x86_avxvnni.cpp
           crc/lut_braided_x86_avx512.cpp
           crc/lut_braided_x86_pclmul.cpp
           crc/lut_braided_x86_vpclmul.cpp
@@ -44,16 +39,13 @@ target_sources(
           crc/lut_sliced_riscv_zbc.cpp
           crc/lut_sliced_thumb2.cpp
           crc/lut_sliced_thumb2_crc.cpp
-          crc/lut_sliced_thumb2_dsp.cpp
           crc/lut_sliced_thumb2_neon.cpp
           crc/lut_sliced_x86_avx2.cpp
-          crc/lut_sliced_x86_avxvnni.cpp
           crc/lut_sliced_x86_avx512.cpp
           crc/lut_sliced_x86_pclmul.cpp
           crc/lut_sliced_x86_vpclmul.cpp
           fletcher/sum_loop.cpp
           fletcher/sum_loop_aarch64_crc.cpp
-          fletcher/sum_loop_aarch64_pmull.cpp
           fletcher/sum_loop_riscv_v.cpp
           fletcher/sum_loop_riscv_zbc.cpp
           fletcher/sum_loop_thumb2.cpp
@@ -64,52 +56,37 @@ target_sources(
           fletcher/sum_loop_x86_avxvnni.cpp
           fletcher/sum_loop_x86_avx512.cpp
           fletcher/sum_loop_x86_pclmul.cpp
-          fletcher/sum_loop_x86_vpclmul.cpp
           fletcher4/sum_loop.cpp
           fletcher4/sum_loop_aarch64_crc.cpp
-          fletcher4/sum_loop_aarch64_pmull.cpp
           fletcher4/sum_loop_riscv_v.cpp
           fletcher4/sum_loop_riscv_zbc.cpp
           fletcher4/sum_loop_thumb2.cpp
-          fletcher4/sum_loop_thumb2_crc.cpp
-          fletcher4/sum_loop_thumb2_dsp.cpp
           fletcher4/sum_loop_thumb2_neon.cpp
           fletcher4/sum_loop_x86_avx2.cpp
-          fletcher4/sum_loop_x86_avxvnni.cpp
           fletcher4/sum_loop_x86_avx512.cpp
           fletcher4/sum_loop_x86_pclmul.cpp
-          fletcher4/sum_loop_x86_vpclmul.cpp
           internet/sum_loop.cpp
-          internet/sum_loop_aarch64_crc.cpp
-          internet/sum_loop_aarch64_pmull.cpp
           internet/sum_loop_riscv_v.cpp
           internet/sum_loop_riscv_zbc.cpp
           internet/sum_loop_thumb2.cpp
           internet/sum_loop_thumb2_crc.cpp
-          internet/sum_loop_thumb2_dsp.cpp
           internet/sum_loop_thumb2_neon.cpp
           internet/sum_loop_x86_avx2.cpp
-          internet/sum_loop_x86_avxvnni.cpp
           internet/sum_loop_x86_avx512.cpp
-          internet/sum_loop_x86_pclmul.cpp
-          internet/sum_loop_x86_vpclmul.cpp
           isa/detect.cpp
           murmur3/block_loop.cpp
+          sha/block_loop.cpp
+          sha/block_loop_aarch64_sha2.cpp
+          sha/block_loop_aarch64_sha512.cpp
+          sha/block_loop_x86_sha.cpp
           xxh3/multiply_fold.cpp
           xxh3/stripe_loop.cpp
-          xxh3/stripe_loop_aarch64_crc.cpp
-          xxh3/stripe_loop_aarch64_pmull.cpp
           xxh3/stripe_loop_riscv_v.cpp
           xxh3/stripe_loop_riscv_zbc.cpp
           xxh3/stripe_loop_thumb2.cpp
-          xxh3/stripe_loop_thumb2_crc.cpp
-          xxh3/stripe_loop_thumb2_dsp.cpp
           xxh3/stripe_loop_thumb2_neon.cpp
           xxh3/stripe_loop_x86_avx2.cpp
-          xxh3/stripe_loop_x86_avxvnni.cpp
           xxh3/stripe_loop_x86_avx512.cpp
-          xxh3/stripe_loop_x86_pclmul.cpp
-          xxh3/stripe_loop_x86_vpclmul.cpp
           xxhash/stripe_loop.cpp
   PUBLIC FILE_SET
          HEADERS
@@ -128,6 +105,7 @@ target_sources(
          include/checksum/internet.hpp
          include/checksum/isa.hpp
          include/checksum/murmur3.hpp
+         include/checksum/sha.hpp
          include/checksum/xxh3.hpp
          include/checksum/xxhash.hpp
 )
