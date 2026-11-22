@@ -38,11 +38,14 @@ static_assert(!includes(isa::aarch64_pmull, isa::x86_pclmul) && !includes(isa::t
 
 // A build has the presets of its own architecture only.
 #if defined(__x86_64__) || defined(_M_X64)
-static_assert(isa_available(isa::x86_pclmul) && isa_available(isa::x86_avxvnni) && !isa_available(isa::aarch64_crc) && !isa_available(isa::thumb2));
+static_assert(isa_available(isa::x86_pclmul) && isa_available(isa::x86_avxvnni) && isa_available(isa::x86_avx512) &&
+              !isa_available(isa::aarch64_crc) && !isa_available(isa::thumb2));
 #elif defined(__aarch64__) || defined(_M_ARM64)
 static_assert(isa_available(isa::aarch64_crc) && isa_available(isa::aarch64_pmull) && !isa_available(isa::x86_avx2) && !isa_available(isa::thumb2));
-#elifdef __riscv
+#elif defined(__riscv) && __riscv_xlen == 64
 static_assert(isa_available(isa::riscv_zbc) && !isa_available(isa::x86_avx2)); // riscv_v: not with Clang 18 (presets.hpp)
+#elifdef __riscv
+static_assert(checksum::isa_detail::built_presets.empty()); // RV32: generic only
 #endif
 
 // built_presets is ascending, has no generic, and stays on one line except for RISC-V, whose two presets are independent.
