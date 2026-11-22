@@ -121,7 +121,8 @@ public:
   /// @return std::nullopt if the width is 0 or exceeds Register, initial_value or final_xor is not below 2^width, or the strategy rejects them
   [[nodiscard]] static constexpr std::optional<crc_engine> create(crc_parameters const &parameters) noexcept;
 
-  /// The preset whose loop the built-in strategies run: Isa.
+  /// The preset whose loop the built-in strategies run: Isa, or the nearest preset it extends that has a loop of its own; generic
+  /// for the other strategies.
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -771,7 +772,7 @@ constexpr std::optional<crc_engine<Register, Strategy, Isa>> crc_engine<Register
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
   requires(isa_available(Isa))
 constexpr isa crc_engine<Register, Strategy, Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, crc_detail::own_loops<Strategy, Register>);
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
@@ -784,7 +785,8 @@ template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
   requires(isa_available(Isa))
 constexpr typename crc_engine<Register, Strategy, Isa>::state_type
 crc_engine<Register, Strategy, Isa>::update(state_type state, std::span<std::byte const> data) const noexcept {
-  return crc_detail::strategy_update<Strategy, Isa>(table, checked_state(state), data);
+  return crc_detail::strategy_update<Strategy, isa_detail::loop_preset(Isa, crc_detail::own_loops<Strategy, Register>)>(table, checked_state(state),
+                                                                                                                        data);
 }
 
 template <crc_register Register, crc_strategy_for<Register> Strategy, isa Isa>
@@ -793,8 +795,9 @@ template <byte_range Range>
 constexpr typename crc_engine<Register, Strategy, Isa>::state_type crc_engine<Register, Strategy, Isa>::update(state_type state,
                                                                                                                Range &&data) const noexcept {
   state = checked_state(state);
-  detail::for_each_chunk(std::forward<Range>(data),
-                         [&](std::span<std::byte const> chunk) { state = crc_detail::strategy_update<Strategy, Isa>(table, state, chunk); });
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) {
+    state = crc_detail::strategy_update<Strategy, isa_detail::loop_preset(Isa, crc_detail::own_loops<Strategy, Register>)>(table, state, chunk);
+  });
   return state;
 }
 

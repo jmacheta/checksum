@@ -53,7 +53,7 @@ public:
   /// The engine of the hash with seed.
   constexpr explicit xxhash_engine(value_type seed = 0) noexcept;
 
-  /// Isa, whose loop is generic's.
+  /// generic, whose loop every preset runs.
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -284,7 +284,7 @@ constexpr xxhash_engine<Width, Isa>::xxhash_engine(value_type seed) noexcept : h
 template <unsigned Width, isa Isa>
   requires(Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr isa xxhash_engine<Width, Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, xxhash_detail::own_loops);
 }
 
 template <unsigned Width, isa Isa>

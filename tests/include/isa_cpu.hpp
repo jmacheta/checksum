@@ -33,7 +33,7 @@ template <class Function> void for_each_built_preset(Function const &function) {
 }
 
 // The last enumerator of checksum::isa.
-inline constexpr checksum::isa last_preset = checksum::isa::x86_avx512;
+inline constexpr checksum::isa last_preset = checksum::isa::aarch64_sha512;
 
 // The enumerator's name, or an empty view for a preset this list lacks; ut_isa.cpp checks every built preset has one.
 constexpr std::string_view name(checksum::isa preset) noexcept {
@@ -67,6 +67,12 @@ constexpr std::string_view name(checksum::isa preset) noexcept {
     return "riscv_v";
   case x86_avx512:
     return "x86_avx512";
+  case x86_sha:
+    return "x86_sha";
+  case aarch64_sha2:
+    return "aarch64_sha2";
+  case aarch64_sha512:
+    return "aarch64_sha512";
   }
   return {};
 }

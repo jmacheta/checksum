@@ -75,13 +75,16 @@ every CPU of the architecture; the others add CPU extensions, each including the
 
 | Architecture | Presets |
 | --- | --- |
-| x86-64 | `x86_pclmul` → `x86_avx2` → `x86_vpclmul` → `x86_avxvnni`, and `x86_vpclmul` → `x86_avx512` |
-| AArch64 | `aarch64_crc` → `aarch64_pmull` |
+| x86-64 | `x86_pclmul` → `x86_avx2` → `x86_vpclmul` → `x86_avxvnni`, `x86_vpclmul` → `x86_avx512`, and `x86_pclmul` → `x86_sha` |
+| AArch64 | `aarch64_crc` → `aarch64_pmull` → `aarch64_sha2` → `aarch64_sha512` |
 | 32-bit Arm | `thumb2` → `thumb2_dsp` → `thumb2_neon` → `thumb2_crc` |
 | RISC-V RV64 | `riscv_zbc` and `riscv_v`, independent of each other |
 
 Name a preset when you know the target CPU, or use a dispatch engine, which picks one at run time. Compiler flags do not
-select kernels, and every preset gives the same result. Running a preset on a CPU that lacks it is undefined behavior.
+select kernels, and every preset gives the same result. Every algorithm accepts every preset: where it has no code of its
+own for one, it runs that of the nearest preset the given one extends, and `preset()` names it. The `x86_sha`,
+`aarch64_sha2` and `aarch64_sha512` presets serve SHA; the other algorithms run their `x86_pclmul` or `aarch64_pmull`
+code there. Running a preset on a CPU that lacks it is undefined behavior.
 Each guide's presets table lists which preset enables which kernel.
 
 ## Documentation

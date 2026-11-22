@@ -12,9 +12,13 @@
 #define CHECKSUM_TARGET_X86_VPCLMUL "sse4.2,pclmul,avx2,vpclmulqdq"
 #define CHECKSUM_TARGET_X86_AVXVNNI "sse4.2,pclmul,avx2,vpclmulqdq,avxvnni"
 #define CHECKSUM_TARGET_X86_AVX512 "sse4.2,pclmul,avx2,vpclmulqdq,avx512f,avx512bw,avx512vl,avx512vnni"
+#define CHECKSUM_TARGET_X86_SHA "sse4.2,pclmul,sha"
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)
 #define CHECKSUM_TARGET_AARCH64_CRC "+crc"
 #define CHECKSUM_TARGET_AARCH64_PMULL "+crc+aes"
+#define CHECKSUM_TARGET_AARCH64_SHA2 "+crc+aes+sha2"
+// GCC and Clang name the SHA512 instructions after the SHA3 extension that brings them.
+#define CHECKSUM_TARGET_AARCH64_SHA512 "+crc+aes+sha2+sha3"
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__arm__) && __ARM_ARCH_ISA_THUMB >= 2 && (defined(__thumb2__) || !defined(__clang__))
 // GCC inlines the build's always_inline std functions only into code whose target includes the build's, and "arch="
 // replaces the build's architecture, so a preset the build already has only selects Thumb state. Thumb-1 builds have no
@@ -58,9 +62,12 @@
 #define CHECKSUM_TARGET_X86_VPCLMUL ""
 #define CHECKSUM_TARGET_X86_AVXVNNI ""
 #define CHECKSUM_TARGET_X86_AVX512 ""
+#define CHECKSUM_TARGET_X86_SHA ""
 #elif defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64)
 #define CHECKSUM_TARGET_AARCH64_CRC ""
 #define CHECKSUM_TARGET_AARCH64_PMULL ""
+#define CHECKSUM_TARGET_AARCH64_SHA2 ""
+#define CHECKSUM_TARGET_AARCH64_SHA512 ""
 #endif
 // NOLINTEND(cppcoreguidelines-macro-usage)
 

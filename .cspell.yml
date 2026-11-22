@@ -127,6 +127,7 @@ words:
 - glibcxx
 - GNUC
 - gnueabihf
+- Goldmont
 - googletest
 - gtest
 - Haswell

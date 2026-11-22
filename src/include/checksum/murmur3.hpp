@@ -56,7 +56,7 @@ public:
   /// The engine of the hash with seed.
   constexpr explicit murmur3_engine(std::uint32_t seed = 0) noexcept;
 
-  /// Isa, whose loop is generic's.
+  /// generic, whose loop every preset runs.
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -291,7 +291,7 @@ constexpr murmur3_engine<Width, Isa>::murmur3_engine(std::uint32_t seed) noexcep
 template <unsigned Width, isa Isa>
   requires(Width == 32 || Width == 128) && (isa_available(Isa))
 constexpr isa murmur3_engine<Width, Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, murmur3_detail::own_loops);
 }
 
 template <unsigned Width, isa Isa>

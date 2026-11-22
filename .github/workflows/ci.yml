@@ -49,10 +49,10 @@ jobs:
           # Library, tests and a consumer of every header built with -fno-exceptions -fno-rtti.
           - { preset: native-gcc-no-exceptions, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14", required: x86_avx2 }
           # Native AArch64 (GitHub's Arm runner, Neoverse N2 with CRC32 and PMULL): the aarch64 presets on real hardware, and Clang on AArch64.
-          - { preset: native-gcc, runner: ubuntu-24.04-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14", required: aarch64_pmull }
-          - { preset: native-clang, runner: ubuntu-24.04-arm, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14", required: aarch64_pmull }
+          - { preset: native-gcc, runner: ubuntu-24.04-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14", required: aarch64_sha2 }
+          - { preset: native-clang, runner: ubuntu-24.04-arm, cc: clang-18, cxx: clang++-18, packages: "clang-18 g++-14", required: aarch64_sha2 }
           # Arm and RISC-V targets, tests in QEMU user mode with -cpu max: every preset of the architecture (Arm CRC32, PMULL, NEON, ldm + adcs; RISC-V Zbc and vector).
-          - { preset: cross-aarch64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu, required: aarch64_pmull }
+          - { preset: cross-aarch64, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-aarch64-linux-gnu qemu-user", cross: aarch64-linux-gnu, required: aarch64_sha512 }
           - { preset: cross-arm, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf, emulator: qemu-arm, cpu_checks: "cortex-a9:thumb2_neon", required: thumb2_crc }
           # On 32-bit Arm the build's own extensions change how the thumb2 presets compile.
           - { preset: cross-arm-crc32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 g++-14-arm-linux-gnueabihf qemu-user", cross: arm-linux-gnueabihf, required: thumb2_crc }
@@ -66,12 +66,12 @@ jobs:
           # RV32 Linux: Ubuntu has no cross compiler for it, so Bootlin's glibc toolchain; every preset is RV64, so generic only.
           - { preset: cross-riscv32, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: riscv32-buildroot-linux-gnu, vendor: bootlin, cross: riscv32-linux-gnu }
           # Big-endian AArch64: Ubuntu has no cross compiler for it; the Arm GNU Toolchain comes from setup-gcc-toolchain (cached).
-          - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1, required: aarch64_pmull }
+          - { preset: cross-aarch64be, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, version: 14.3.rel1, required: aarch64_sha512 }
           # Newest compilers, so that a new release that breaks the build shows up here: GCC (xPack) and Clang (apt.llvm.org)
           # natively, the newest Arm big-endian AArch64 and Bootlin RISC-V cross toolchains.
           - { preset: native-gcc, compiler: GCC latest, cc: gcc, cxx: g++, packages: "", toolchain: x86_64-gcc, vendor: xpack, required: x86_avx2 }
           - { preset: native-clang, compiler: Clang latest, cc: clang-latest, cxx: clang++-latest, packages: "g++-14", llvm_latest: true, required: x86_avx2 }
-          - { preset: cross-aarch64be, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, required: aarch64_pmull }
+          - { preset: cross-aarch64be, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14 qemu-user", toolchain: aarch64_be-none-linux-gnu, vendor: arm, required: aarch64_sha512 }
           - { preset: cross-riscv64, compiler: GCC latest, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14", toolchain: riscv64-buildroot-linux-gnu, vendor: bootlin, cross: riscv64-linux-gnu, emulator: qemu-riscv64, required: "riscv_zbc,riscv_v", vlen_checks: "256 512" }
     steps:
       - name: Checkout repository
@@ -183,17 +183,17 @@ jobs:
         if: matrix.sde
         timeout-minutes: 15
         env:
-          CHECKSUM_EXPECTED_ISA: x86_avxvnni
-          CHECKSUM_REQUIRED_ISA: x86_avxvnni
+          CHECKSUM_EXPECTED_ISA: x86_avxvnni,x86_sha
+          CHECKSUM_REQUIRED_ISA: x86_avxvnni,x86_sha
         run: |
           [ -f "$RUNNER_TEMP/sde.tar.xz" ] || curl -fsSL --retry 3 --connect-timeout 30 --max-time 300 -o "$RUNNER_TEMP/sde.tar.xz" "$SDE_URL"
           echo "$SDE_SHA256  $RUNNER_TEMP/sde.tar.xz" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/sde" && tar -xJf "$RUNNER_TEMP/sde.tar.xz" -C "$RUNNER_TEMP/sde" --strip-components=1
           "$RUNNER_TEMP/sde/sde64" ${{ matrix.sde }} -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
           # x86_avx512 on Ice Lake, which has AVX-512 but not AVX-VNNI, and on Sapphire Rapids, which has both.
-          CHECKSUM_EXPECTED_ISA=x86_avx512 CHECKSUM_REQUIRED_ISA=x86_avx512 \
+          CHECKSUM_EXPECTED_ISA=x86_avx512,x86_sha CHECKSUM_REQUIRED_ISA=x86_avx512,x86_sha \
             "$RUNNER_TEMP/sde/sde64" -icx -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
-          CHECKSUM_EXPECTED_ISA=x86_avxvnni,x86_avx512 CHECKSUM_REQUIRED_ISA=x86_avxvnni,x86_avx512 \
+          CHECKSUM_EXPECTED_ISA=x86_avxvnni,x86_avx512,x86_sha CHECKSUM_REQUIRED_ISA=x86_avxvnni,x86_avx512,x86_sha \
             "$RUNNER_TEMP/sde/sde64" -spr -- "build/${{ matrix.preset }}/tests/unit_tests/Debug/checksum_ut" --gtest_brief=1
 
   # Apple silicon (M1 or later, with CRC32 and PMULL): detect_isa() through sysctlbyname, with the Xcode Clang and libc++.
@@ -219,7 +219,7 @@ jobs:
 
       - name: Configure, build and test
         env:
-          CHECKSUM_REQUIRED_ISA: aarch64_pmull
+          CHECKSUM_REQUIRED_ISA: aarch64_sha2
         run: cmake --workflow --preset macos-clang
 
   # The library and the benchmarks with their checks for Cortex-M, -R and -A with the Arm GNU Toolchain; the smoke tests run
@@ -319,7 +319,7 @@ jobs:
       - name: Configure, build and test
         shell: cmd
         env:
-          CHECKSUM_REQUIRED_ISA: aarch64_pmull
+          CHECKSUM_REQUIRED_ISA: aarch64_sha2
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvarsarm64.bat" || exit /b 1
           cmake --workflow --preset windows-msvc

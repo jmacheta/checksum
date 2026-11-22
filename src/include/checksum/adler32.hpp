@@ -40,7 +40,7 @@ public:
   using state_type = adler32_state; ///< Running checksum.
   using value_type = std::uint32_t; ///< The checksum.
 
-  /// The preset whose loop the engine runs: Isa.
+  /// The preset whose loop the engine runs: Isa, or the nearest preset it extends that has a loop of its own (isa_detail::loop_preset()).
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -129,7 +129,7 @@ namespace checksum {
 template <isa Isa>
   requires(isa_available(Isa))
 constexpr isa adler32_engine<Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, adler32_detail::own_loops);
 }
 
 template <isa Isa>
@@ -144,7 +144,7 @@ constexpr adler32_state adler32_engine<Isa>::update(adler32_state state, std::sp
   if consteval {
     return adler32_detail::update_bytes(state, data);
   } else {
-    return adler32_detail::sum_loop<Isa>(state, data);
+    return adler32_detail::sum_loop<isa_detail::loop_preset(Isa, adler32_detail::own_loops)>(state, data);
   }
 }
 

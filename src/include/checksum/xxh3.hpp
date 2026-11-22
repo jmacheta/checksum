@@ -68,7 +68,7 @@ public:
   /// The engine of the hash with seed.
   constexpr explicit xxh3_engine(std::uint64_t seed = 0) noexcept;
 
-  /// The preset whose loop the engine runs: Isa.
+  /// The preset whose loop the engine runs: Isa, or the nearest preset it extends that has a loop of its own (isa_detail::loop_preset()).
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -625,7 +625,7 @@ constexpr xxh3_engine<Width, Isa>::xxh3_engine(std::uint64_t seed) noexcept : ha
 template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128) && (isa_available(Isa))
 constexpr isa xxh3_engine<Width, Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, xxh3_detail::own_loops);
 }
 
 template <unsigned Width, isa Isa>
@@ -637,7 +637,7 @@ constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::initial() const noexcept {
 template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128) && (isa_available(Isa))
 constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::update(xxh3_state<Width> state, std::span<std::byte const> data) const noexcept {
-  xxh3_detail::update<Width, Isa>(state, hash_seed, data);
+  xxh3_detail::update<Width, isa_detail::loop_preset(Isa, xxh3_detail::own_loops)>(state, hash_seed, data);
   return state;
 }
 
@@ -645,8 +645,9 @@ template <unsigned Width, isa Isa>
   requires(Width == 64 || Width == 128) && (isa_available(Isa))
 template <byte_range Range>
 constexpr xxh3_state<Width> xxh3_engine<Width, Isa>::update(xxh3_state<Width> state, Range &&data) const noexcept {
-  detail::for_each_chunk(std::forward<Range>(data),
-                         [&](std::span<std::byte const> chunk) { xxh3_detail::update<Width, Isa>(state, hash_seed, chunk); });
+  detail::for_each_chunk(std::forward<Range>(data), [&](std::span<std::byte const> chunk) {
+    xxh3_detail::update<Width, isa_detail::loop_preset(Isa, xxh3_detail::own_loops)>(state, hash_seed, chunk);
+  });
   return state;
 }
 
@@ -670,7 +671,8 @@ constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::finalize(
   }
   return with_secret(hash_seed, [&](secret_array const &secret) {
     accumulator_array accumulators = state.accumulators;
-    fold<Isa>(accumulators, std::span(state.buffer).first(((buffered - 1) / stripe_size) * stripe_size), stripe_index(folded), secret, last_stripe);
+    fold<isa_detail::loop_preset(Isa, own_loops)>(accumulators, std::span(state.buffer).first(((buffered - 1) / stripe_size) * stripe_size),
+                                                  stripe_index(folded), secret, last_stripe);
     return finish_large<Width>(accumulators, state.length, secret);
   });
 }
@@ -687,7 +689,7 @@ constexpr xxh3_engine<Width, Isa>::value_type xxh3_engine<Width, Isa>::compute(s
   if(data.size() <= xxh3_detail::midsize_max) {
     return xxh3_detail::hash_midsize<Width>(data, hash_seed);
   }
-  return xxh3_detail::hash_large<Width, Isa>(data, hash_seed);
+  return xxh3_detail::hash_large<Width, isa_detail::loop_preset(Isa, xxh3_detail::own_loops)>(data, hash_seed);
 }
 
 template <unsigned Width, isa Isa>

@@ -89,7 +89,7 @@ public:
   /// The digest, in the byte order of FIPS 180-4.
   using value_type = std::array<std::uint8_t, sha_detail::parameters<Variant>::digest_size>;
 
-  /// Isa, whose loop is generic's.
+  /// generic, whose loop every preset runs.
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -460,7 +460,7 @@ namespace checksum {
 template <sha_variant Variant, sha_strategy Strategy, isa Isa>
   requires(isa_available(Isa))
 constexpr isa sha_engine<Variant, Strategy, Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, sha_detail::own_loops);
 }
 
 template <sha_variant Variant, sha_strategy Strategy, isa Isa>

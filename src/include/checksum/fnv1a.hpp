@@ -58,7 +58,7 @@ public:
   using state_type = fnv1a_state<Width>;         ///< Running hash.
   using value_type = decltype(state_type::hash); ///< The hash: std::uint32_t or std::uint64_t.
 
-  /// Isa, whose loop is generic's.
+  /// generic, whose loop every preset runs.
   [[nodiscard]] static constexpr isa preset() noexcept;
 
   /// State of an empty message.
@@ -176,7 +176,7 @@ namespace checksum {
 template <unsigned Width, isa Isa>
   requires(Width == 32 || Width == 64) && (isa_available(Isa))
 constexpr isa fnv1a_engine<Width, Isa>::preset() noexcept {
-  return Isa;
+  return isa_detail::loop_preset(Isa, fnv1a_detail::own_loops);
 }
 
 template <unsigned Width, isa Isa>
