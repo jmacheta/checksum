@@ -177,8 +177,10 @@ bool runs(isa preset) noexcept {
 #elifdef __arm__
   // thumb2 and thumb2_dsp exist only where the build's own flags have them: compiler_guarantees() reports them.
 #ifdef __linux__
-  constexpr unsigned long hwcap2_crc32 = 1UL << 4U; // HWCAP2_CRC32 of the kernel's asm/hwcap.h
-  bool const neon = (getauxval(AT_HWCAP) & HWCAP_ARM_NEON) != 0;
+  // HWCAP_ARM_NEON and HWCAP2_CRC32 of the kernel's asm/hwcap.h
+  constexpr unsigned long hwcap_arm_neon = 1UL << 12U;
+  constexpr unsigned long hwcap2_crc32 = 1UL << 4U;
+  bool const neon = (getauxval(AT_HWCAP) & hwcap_arm_neon) != 0;
   bool const crc = neon && (getauxval(AT_HWCAP2) & hwcap2_crc32) != 0;
 #elif defined(__FreeBSD__) && defined(HWCAP_NEON) && defined(HWCAP2_CRC32) && defined(AT_HWCAP2)
   unsigned long hwcap = 0;
